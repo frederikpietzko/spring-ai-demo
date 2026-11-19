@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: A stream ends with exactly one terminal event
-Every chat stream that starts SHALL end with exactly one terminal event: done when the model reply completed, error when it failed with an exception, confirmation-request when the reply is waiting for a human decision (see `adjuster-tools`). Done SHALL NOT follow an error or a confirmation-request. The error message SHALL be generic and SHALL NOT expose the exception text; the cause is only logged. A failure that is not an exception (a JVM error) is not a failed reply: it SHALL be rethrown, and the stream breaks without a terminal event.
+Every chat stream that starts SHALL end with exactly one terminal event: done when the model reply completed, error when it failed with an exception, confirmation-request when the reply is waiting for a human decision (see `adjuster-tools`). Done SHALL NOT follow an error or a confirmation-request. The error message SHALL be generic and the cause only logged. A JVM error is not a failed reply: it SHALL be rethrown, and the stream breaks without a terminal event.
 
 #### Scenario: Failure after some chunks
 - **WHEN** the model streams the chunk "Hel" and then fails with the message "provider exploded"

@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.toList
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.springframework.ai.chat.messages.SystemMessage
+import org.springframework.ai.model.tool.ToolCallingChatOptions
 import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.HttpStatus
@@ -80,6 +81,15 @@ class ChatEndpointTest {
     }
 
     @Test
+    fun `a confirmation request is the last event, with no done or error after it`() {
+        fake.requestTool("issuePayout", """{"claimNumber":4711}""")
+
+        val result = postChat("""{"persona":"ADJUSTER","message":"Pay 4711"}""")
+
+        assertIs<ChatEvent.ConfirmationRequest>(sseEvents(result.responseBody ?: byteArrayOf()).single())
+    }
+
+    @Test
     suspend fun `an Error from the model is rethrown instead of becoming an error event`() {
         // Over HTTP an Error can only break the connection, so the controller's event flow is collected directly. Not a
         // StackOverflowError: Reactor throws JVM-fatal errors on its scheduler thread, and the stream never ends.
@@ -89,12 +99,26 @@ class ChatEndpointTest {
     }
 
     @Test
-    fun `the adjuster persona is answered with one error and no model call`() {
+    fun `a claimant request is answered by the claimant agent, without tools`() {
+        fake.replyChunks("ok")
+
+        postChat(CLAIMANT_HI)
+
+        val prompt = fake.prompts.last()
+        val system = prompt.instructions.filterIsInstance<SystemMessage>().single().text.orEmpty()
+        assertTrue(system.contains("claims desk assistant"), system)
+        assertEquals([], assertIs<ToolCallingChatOptions>(prompt.options).toolCallbacks.orEmpty())
+    }
+
+    @Test
+    fun `an adjuster request is answered by the adjuster agent and ends with a terminal event`() {
+        fake.replyChunks("ok")
+
         val events = sseEvents(postChat("""{"persona":"ADJUSTER","message":"Hi"}""").responseBody ?: byteArrayOf())
 
-        val error = assertIs<ChatEvent.Error>(events.single())
-        assertTrue(error.message.contains("ADJUSTER"), error.message)
-        assertTrue(fake.prompts.isEmpty(), fake.prompts.toString())
+        val system = fake.prompts.last().instructions.filterIsInstance<SystemMessage>().single().text.orEmpty()
+        assertTrue(system.contains("adjuster assistant"), system)
+        assertEquals([ChatEvent.TextDelta("ok"), ChatEvent.Done], events)
     }
 
     @ParameterizedTest

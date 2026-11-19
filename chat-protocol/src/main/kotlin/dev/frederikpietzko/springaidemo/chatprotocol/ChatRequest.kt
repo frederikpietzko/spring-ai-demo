@@ -2,7 +2,7 @@ package dev.frederikpietzko.springaidemo.chatprotocol
 
 import kotlinx.serialization.Serializable
 
-/** Who the user talks to. Only [CLAIMANT] is answered today; [ADJUSTER] is part of the protocol for later waves. */
+/** Who the user talks to: the claimant agent ([CLAIMANT]) or the adjuster agent with the core tools ([ADJUSTER]). */
 @Serializable
 enum class Persona { CLAIMANT, ADJUSTER }
 

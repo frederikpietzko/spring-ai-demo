@@ -2,6 +2,7 @@ package dev.frederikpietzko.springaidemo.desktop.chat
 
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
+import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import dev.frederikpietzko.springaidemo.desktop.fakes.FakeChatApi
 import kotlinx.coroutines.channels.Channel
@@ -122,6 +123,115 @@ class ChatViewModelTest {
         assertEquals([ChatRequest(Persona.ADJUSTER, "Hi")], api.requests)
     }
 
+    @Test
+    suspend fun `a confirmation request is kept as pending under the reply so far and ends sending`() {
+        val paused = ChatViewModel(FakeChatApi { flowOf(ChatEvent.TextDelta("Ready to pay."), PAYOUT_CONFIRMATION) })
+
+        paused.send("Pay claim 4711")
+
+        assertEquals(
+            ChatState(
+                messages = [user("Pay claim 4711"), assistant("Ready to pay.")],
+                pendingConfirmation = PAYOUT_CONFIRMATION,
+            ),
+            paused.state.value,
+        )
+    }
+
+    @Test
+    suspend fun `no new message is sent while a confirmation is pending`() {
+        val api = FakeChatApi { flowOf(PAYOUT_CONFIRMATION) }
+        val paused = ChatViewModel(api)
+        paused.send("Pay claim 4711")
+        val before = paused.state.value
+
+        withTimeout(TIMEOUT) { paused.send("Something else") }
+
+        assertEquals(before, paused.state.value)
+        assertEquals(1, api.requests.size)
+    }
+
+    @Test
+    suspend fun `approving sends one decision and appends the continuation to the same reply`() {
+        val api = FakeChatApi(decisionReply = { flowOf(ChatEvent.TextDelta("Paid"), ChatEvent.Done) }) {
+            flowOf(ChatEvent.TextDelta("Ready to pay. "), PAYOUT_CONFIRMATION)
+        }
+        val paused = ChatViewModel(api)
+        paused.send("Pay claim 4711")
+
+        paused.decide(approved = true)
+
+        assertEquals([ConfirmationDecision("c-1", approved = true)], api.decisions)
+        assertEquals(
+            ChatState(messages = [user("Pay claim 4711"), assistant("Ready to pay. Paid")]),
+            paused.state.value,
+        )
+    }
+
+    @Test
+    suspend fun `denying sends one decision and clears the confirmation`() {
+        val api = FakeChatApi { flowOf(PAYOUT_CONFIRMATION) }
+        val paused = ChatViewModel(api)
+        paused.send("Pay claim 4711")
+
+        paused.decide(approved = false)
+
+        assertEquals([ConfirmationDecision("c-1", approved = false)], api.decisions)
+        assertEquals(null, paused.state.value.pendingConfirmation)
+    }
+
+    @Test
+    suspend fun `a failed decision shows the error under the reply and the conversation is ready again`() {
+        val api = FakeChatApi(decisionReply = { flowOf(ChatEvent.Error("The claims desk is unavailable.")) }) {
+            flowOf(ChatEvent.TextDelta("Ready to pay."), PAYOUT_CONFIRMATION)
+        }
+        val paused = ChatViewModel(api)
+        paused.send("Pay claim 4711")
+
+        paused.decide(approved = true)
+
+        assertEquals(
+            ChatState(
+                messages = [
+                    user("Pay claim 4711"),
+                    assistant("Ready to pay.", error = "The claims desk is unavailable."),
+                ],
+            ),
+            paused.state.value,
+        )
+    }
+
+    @Test
+    suspend fun `a continuation can end in a second confirmation, which is decided like the first`() {
+        val second = ChatEvent.ConfirmationRequest("c-2", "issuePayout", """{"claimNumber":4712}""")
+        val api = FakeChatApi(
+            decisionReply = { decision ->
+                if (decision.confirmationId == "c-1") flowOf(second) else flowOf(ChatEvent.Done)
+            },
+        ) { flowOf(PAYOUT_CONFIRMATION) }
+        val paused = ChatViewModel(api)
+        paused.send("Pay claims 4711 and 4712")
+
+        paused.decide(approved = true)
+        val secondPending = paused.state.value.pendingConfirmation
+        paused.decide(approved = true)
+
+        assertEquals(second, secondPending)
+        assertEquals(
+            [ConfirmationDecision("c-1", approved = true), ConfirmationDecision("c-2", approved = true)],
+            api.decisions,
+        )
+        assertEquals(null, paused.state.value.pendingConfirmation)
+    }
+
+    @Test
+    suspend fun `a decision without a pending confirmation is ignored`() {
+        withTimeout(TIMEOUT) { viewModel.decide(approved = true) }
+
+        assertEquals(ChatState(), viewModel.state.value)
+        assertEquals([], api.decisions)
+    }
+
     private fun user(text: String) = ChatMessage(ChatMessage.Author.USER, text)
 
     private fun assistant(text: String, error: String? = null) =
@@ -133,5 +243,7 @@ class ChatViewModelTest {
     private companion object {
         /** Bounds every wait, so a missing guard fails the test instead of hanging it. */
         val TIMEOUT = 5.seconds
+
+        val PAYOUT_CONFIRMATION = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""")
     }
 }
