@@ -28,6 +28,19 @@ Run started 2026-11-20. Each archived change is one local commit on the run's br
 - **O7 Lighter review loop (owner's instruction, changed during the run, about 04:30).** After `policy-rag` the loop is: one review round only, with four lenient reviewers on smaller models. Two are on sonnet and check that the spec is met and that the architecture and ADRs are kept. One is on haiku and checks for obvious bugs, security problems and untested core behaviour. One is on sonnet and checks idiomatic Kotlin; it never blocks. The orchestrator then confirms which findings are real blockers. Those get one fix round, with no re-review. Docs gaps and test nitpicks become follow-ups. *Why:* the 3-round loop kept finding new documentation and test "majors" on every round, which cost about two hours per change. The rules are in `.claude/commands/ship.md` and `.claude/agents/reviewer.md` (`model: sonnet`). `chat-streaming` and `policy-rag` went through the old loop.
 - **O8 Recovery from API connection errors.** Three agents died from an SSL/API connection error around 04:15: the `policy-rag` archive step, the `core-mcp-claims` plan refresh and its first implementation attempt. The `policy-rag` archive was finished by hand from the recorded data. The partial `core-mcp-claims` work (module skeleton, init script, task 0.1) was set aside, then restored, and implementation continues from it.
 
+- **O9 Parallel tracks (owner's permission, changed during the run).** Waves no longer run strictly one after another.
+  - **Track A** (the run's main worktree) carries the critical MCP chain: `core-mcp-claims`, then `mcp-tools-and-confirmation`.
+  - **Track B** (worktree `roadmap-track-b`, branch `roadmap-track-b`, starting from `08d62e6`) carries changes that only need `chat-streaming`: `session-memory`, then `claim-intake`, then `observability`.
+  - **Fan-out:** once `mcp-tools-and-confirmation` has landed and B has been merged into A, `claims-analytics`, `agentic-rag-fraud`, `agent-todo-and-skills` and `mcp-security` run in parallel worktrees. After that come `subagents`, `injection-guardrails` and `evaluation`.
+  - **Merging:** branches are merged into A by a merge agent that resolves the conflicts. Most of them are in the chat wiring, the protocol events, the desktop chat screen, the synced specs and this file.
+
+  *Why:* most remaining changes depend on `core-mcp-claims` through `mcp-tools-and-confirmation`, so that chain is the critical path, and the other changes run beside it.
+
+  Consequences:
+  - `claim-intake` lands before the MCP client exists, so filing a claim goes through a port, as its roadmap entry allows. It is wired to the MCP `fileClaim` tool after the merge.
+  - `agent-todo-and-skills` waits for the fan-out because it needs the ADJUSTER persona that `mcp-tools-and-confirmation` creates. Building it earlier would mean two competing adjuster wirings.
+  - `observability` comes before the roadmap's "best after wave 4". Spring AI's built-in observations also cover the chat clients, advisors, tools and vector stores added later.
+
 ## Per change
 
 Sections are added in landing order.
