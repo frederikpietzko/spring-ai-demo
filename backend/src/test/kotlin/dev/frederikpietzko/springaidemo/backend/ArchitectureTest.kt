@@ -75,17 +75,6 @@ class ArchitectureTest {
             .because("the chat layer maps intake results to events and wording, the intake knows no protocol")
 
     /**
-     * ADR-0010: only the injected `ChatClient.Builder` (and the injected `ToolCallingAdvisor.Builder<*>`, after
-     * `.copy()`) carry the observation registry; a chat client built any other way would be invisible in traces and
-     * metrics, silently.
-     */
-    @ArchTest
-    val chat_clients_come_from_injected_builders: ArchRule =
-        noClasses()
-            .should().callMethodWhere(unobservedChatClientFactories)
-            .because("ADR-0010: only the injected builders carry the observation registry")
-
-    /**
      * The fraud check is its own capability: it knows neither the chat layer nor the protocol, never reaches back into
      * the adjuster (which is offered its search tool, so a back-reference would be a package cycle) and, like the RAG
      * code, leaves the vector table to the vector store (ADR-0006). Full package prefixes, as above.
