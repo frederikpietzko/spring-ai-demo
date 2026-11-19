@@ -1,0 +1,6 @@
+# Shared detekt configuration. Builds upon the detekt defaults (buildUponDefaultConfig = true);
+# only deviations from the defaults belong here.
+naming:
+  FunctionNaming:
+    # Composable functions are PascalCase by Compose convention.
+    ignoreAnnotated: ['Composable']

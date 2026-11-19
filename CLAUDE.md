@@ -8,7 +8,15 @@ Demonstrate and explore the capabilities of **Spring AI 2.1** (Kotlin, Spring Bo
 
 Development is spec-driven: behavior is specified in OpenSpec (`openspec/`) before it is coded. Architectural decisions are recorded as ADRs in `docs/adr/`.
 
-> Status: project bootstrap. No Gradle build or code yet; the Gradle hooks in `.claude/hooks/hooks.disabled.json` are intentionally disabled until a build with detekt and a `check` task exists.
+> Status: build scaffold in place, no features, tables or tests yet (see `openspec/changes/scaffold-project`). The Gradle hooks in `.claude/hooks/hooks.disabled.json` stay intentionally disabled (the build exposes `:<module>:detekt` and `:<module>:check`, so they can be enabled later).
+
+Modules (one Gradle build, `./gradlew` wrapper):
+
+- `backend` - Spring Boot 4.2 + Spring AI 2.1 (Anthropic, Claude Haiku), Exposed, Flyway, PostgreSQL, Actuator.
+- `desktop` - Compose Multiplatform desktop app with the themed `Demo*`/`D*` components (adapted from oculi2).
+- `build-logic` - included build with the `demo.kotlin-jvm` convention plugin (JDK 25, experimental Kotlin flags, JUnit 6 + power-assert, detekt).
+
+Commands: `./gradlew build`, `./gradlew check`, `docker compose up -d`, `./gradlew :backend:bootRun`, `./gradlew :desktop:run`, `./gradlew :backend:generateMigrations` (Exposed generates SQL, Flyway applies it). Versions live in `gradle/libs.versions.toml`; see `README.md` and `docs/adr/`.
 
 ## Before changing code (mandatory)
 
@@ -70,7 +78,7 @@ Project agents: `planner` (writes OpenSpec artifacts only), `implementer` (test-
 - Narrowest relevant tests run and green; new behavior has a test (test-first).
 - `ide diagnostics` clean on touched files.
 - The corresponding `tasks.md` checkbox is ticked; specs/ADRs/docs you made stale are updated.
-- Once the Gradle build exists: `./gradlew check` green.
+- `./gradlew check` green.
 
 ## Rules
 

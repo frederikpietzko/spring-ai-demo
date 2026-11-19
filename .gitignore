@@ -1,0 +1,17 @@
+# Gradle / Kotlin
+.gradle/
+build/
+.kotlin/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+
+# Secrets (provider keys come from the environment)
+.env
+*.key
+
+# OS
+.DS_Store
+**/__pycache__

@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: spring-ai-demo-backend
+  datasource:
+    # Local-development defaults only; they match compose.yaml. Override with the environment in any other setup.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/demo}
+    username: ${DB_USER:demo}
+    password: ${DB_PASSWORD:demo}
+  exposed:
+    # The schema is created by Flyway migrations only, never by Exposed at startup.
+    generate-ddl: false
+  docker:
+    compose:
+      file: ../compose.yaml
+      lifecycle-management: start_only
+  ai:
+    anthropic:
+      chat:
+        model: claude-haiku-5-5
+      # No api-key here: the Anthropic SDK reads ANTHROPIC_API_KEY from the environment.
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-components: always
