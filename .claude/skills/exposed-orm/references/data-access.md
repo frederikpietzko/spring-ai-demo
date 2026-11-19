@@ -102,10 +102,19 @@ Requires `exposed-dao-r2dbc` + `exposed-r2dbc`. The API is documented as subject
 - Do not combine `exposed-dao` and `exposed-dao-r2dbc` in one source set: shared simple names (`Entity`, `EntityClass`, `EntityCache`) collide.
 - `detach()` was removed from the R2DBC DAO before release (1.6.0); do not rely on it from older snippets.
 - Pending-write caveats from JDBC DAO apply: flush before DSL reads that must see entity writes, and verify persistence in a fresh transaction.
+- Since 1.6.1, `delete()` on an entity whose `INSERT` is still pending **throws immediately** if another pending insert/update references it. Before 1.6.1 it failed later, at flush, with `IllegalStateException: Entity must be inserted`. Delete or re-point the referrers first.
 
 1.6.0 JDBC DAO fixes worth knowing when debugging older behaviour: an entity deleted before its flush is no longer inserted; a cached entity is no longer used when a reference column is declared with `.references()`; and (1.5.0) DAO updates are scheduled independently of the entity cache.
 
 Other 1.5.0/1.6.0 data-access changes: multi-row single-statement `batchInsert` now covers all databases/drivers (1.5.0), `batchInsert` returns only rows actually inserted, column defaults are bound in batch rows that omit them (1.6.0), a nullable column `transform` may now yield a non-null type (1.6.0), and `SELECT` without a `FROM` table is supported (1.6.0). Retest custom batch/transform code after upgrading across these versions.
+
+1.6.1 fixes worth knowing when debugging older behaviour:
+
+- **JSONB:** before 1.6.1, `getOrNull()` and `hasValue()` could return `null`/`false` for a populated JSONB column that needs a cast (seen on SQLite), even though `row[col]` worked. Also, PostgreSQL `groupBy` on a jsonb `extract(...)` failed in 1.5.1 and 1.6.0.
+- **Date/time:** pre-1970 `datetime()` values with fractional seconds were read back one second late.
+- **Multiple databases:** registering/unregistering `Database`s concurrently could throw `IllegalStateException: No context key found for transaction manager`. The JDBC and R2DBC context registry is now thread-safe.
+- `R2dbcDatabase.identifierManager` no longer needs an open connection.
+- **SQL function arguments (1.5.1+):** string arguments of `locate`, `concat`, `groupConcat`, `match`, and JSON `extract`/`exists`/`contains` are bound as parameters (CVE-2026-108474). Pass raw values without escaping them yourself.
 
 ### Relationships and loading
 
@@ -132,7 +141,8 @@ References are lazy. Use `entity.load(Entity::relation)` for an entity and `.wit
 Older releases use `newSuspendedTransaction` in an experimental package; verify the pinned version before replacing imports. Never import the JDBC and R2DBC transaction functions indiscriminately.
 
 - Create/reuse the database handle and pool once, not per query. Explicitly pass `db` in multi-database applications; implicit defaults can target the most recently connected database.
-- Do not run JDBC on an event-loop thread. Merely wrapping it in a suspend function does not change its driver. A Spring thread-bound transaction needs special care when changing coroutine contexts.
+- Do not run JDBC on an event-loop thread. Merely wrapping it in a suspend function does not change its driver.
+- JDBC `suspendTransaction` runs on the **caller's dispatcher**. On a single-threaded dispatcher (a plain `runBlocking {}`, a UI or test main dispatcher), two transactions that wait on each other's row locks (for example `forUpdate()` followed by a suspension) deadlock permanently. This is documented, intended behaviour (1.6.1 docs). Use `withContext(Dispatchers.IO) { suspendTransaction { ... } }`. The deprecated `newSuspendedTransaction(context)` is not a fix. A Spring thread-bound transaction needs special care when changing coroutine contexts.
 - A lazy query or flow escaping a transaction is not a detached result. Read BLOB/text values before closing the transaction; `text(..., eagerLoading = true)` can help with text fields but does not make arbitrary lazy queries safe outside transactions.
 - Nested Exposed transaction blocks share the outer resources by default. `useNestedTransactions = true` uses savepoints, not an independently committed transaction; an outer rollback still rolls everything back. Do not confuse this with Spring `REQUIRES_NEW`.
 - Set isolation, timeouts, and retries deliberately. JDBC isolation constants come from `java.sql.Connection`; R2DBC uses `io.r2dbc.spi.IsolationLevel`. Driver support varies.

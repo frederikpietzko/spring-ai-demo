@@ -54,6 +54,7 @@ Project agents: `planner` (writes OpenSpec artifacts only), `implementer` (test-
 
 | Skill | Reach for it when |
 | --- | --- |
+| `spring-ai` | any Spring AI 2.1 code - ChatClient, advisors, tools, memory/sessions, RAG, MCP, testing with a fake ChatModel, 1.x/2.0 migration |
 | `tdd` | implementing anything - red -> green -> refactor, black-box tests, fakes before mocks |
 | `kotlin-engineer` | writing/reviewing Kotlin (project policy, experimental features) |
 | `kotlin-testing`, `spring-testing`, `mockk` | tests (JUnit 6 + power-assert; one shared Spring context; mockk only as last resort) |

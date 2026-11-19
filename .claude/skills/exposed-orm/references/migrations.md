@@ -2,7 +2,7 @@
 
 The Exposed Gradle/Maven plugins compare **compiled Exposed table definitions** with a database schema and write SQL files. They are not production migration runners and do not apply newly generated files. Flyway owns application/deployment migration history, ordering, checksums, and execution.
 
-Examples below target **plugin 1.6.0**. `tablesPackage` (single package) works in all plugin releases; `tablesPackages` (a collection, for tables spread over several packages) exists from **1.6.0** only. If both are set, the distinct combined values are used. On a plugin older than 1.6.0, use `tablesPackage` alone. Do not copy unreleased configuration from `main` into a pinned released build.
+Examples below target **plugin 1.6.1**. `tablesPackage` (single package) works in all plugin releases; `tablesPackages` (a collection, for tables spread over several packages) exists from **1.6.0** only. If both are set, the distinct combined values are used. On a plugin older than 1.6.0, use `tablesPackage` alone. Do not copy unreleased configuration from `main` into a pinned released build.
 
 ## Choose the comparison baseline
 
@@ -22,7 +22,7 @@ Apply after the existing Kotlin JVM plugin in `build.gradle.kts`; do not add a s
 ```kotlin
 plugins {
     // Existing compatible Kotlin JVM plugin goes first.
-    id("org.jetbrains.exposed.plugin") version "1.6.0"
+    id("org.jetbrains.exposed.plugin") version "1.6.1"
 }
 
 exposed {
@@ -94,7 +94,7 @@ mvn exposed:generate-migrations
 mvn exposed:generate-migrations -Dexposed.migrations.filename=V20260918140000__add_customer_email.sql
 ```
 
-These commands are alternatives, not sequential steps. The goal forks compilation; ensure Kotlin compilation and reactor dependencies are correctly wired. Parameters use `-Dexposed.migrations.<name>`. The correct goal is plural **`generate-migrations`**, and the property prefix is **`exposed`**, despite typos in some documentation examples. A fully qualified invocation is `mvn org.jetbrains.exposed.plugin:exposed-maven-plugin:1.6.0:generate-migrations`.
+These commands are alternatives, not sequential steps. The goal forks compilation; ensure Kotlin compilation and reactor dependencies are correctly wired. Parameters use `-Dexposed.migrations.<name>`. The correct goal is plural **`generate-migrations`**, and the property prefix is **`exposed`**, despite typos in some documentation examples. A fully qualified invocation is `mvn org.jetbrains.exposed.plugin:exposed-maven-plugin:1.6.1:generate-migrations`.
 
 An optional lifecycle binding uses phase `process-classes` and goal `generate-migrations`; prefer explicit invocation so ordinary builds do not unexpectedly require a database or rewrite migration resources.
 
@@ -109,7 +109,7 @@ An optional lifecycle binding uses phase `process-classes` and goal `generate-mi
 | `useUpperCaseDescription` | `true` |
 | `fileExtension` | `.sql` |
 
-Version formats: `TIMESTAMP_ONLY`, `TIMESTAMP_WITHOUT_SECONDS`, `MAJOR_TIMESTAMP`, `MAJOR_TIMESTAMP_WITHOUT_SECONDS`, `MAJOR_MINOR`, `MAJOR_ONLY`. For a Gradle enum setting (import path verified against 1.5.0 sources; recheck on 1.6.0 if the import fails), import `org.jetbrains.exposed.v1.plugin.core.migration.VersionFormat` (not the obsolete Gradle-package import).
+Version formats: `TIMESTAMP_ONLY`, `TIMESTAMP_WITHOUT_SECONDS`, `MAJOR_TIMESTAMP`, `MAJOR_TIMESTAMP_WITHOUT_SECONDS`, `MAJOR_MINOR`, `MAJOR_ONLY`. For a Gradle enum setting (import path verified against 1.6.1 sources), import `org.jetbrains.exposed.v1.plugin.core.migration.VersionFormat` (not the obsolete Gradle-package import).
 
 Keep Flyway-compatible `V<unique-version>__<description>.sql` names. The container replay uses `fileDirectory` as a filesystem location; custom filename conventions are not automatically propagated to its Flyway configuration. Likewise, do not assume application Flyway placeholders, schemas, or custom Java migrations are automatically configured in the plugin's embedded replay. If the bundled replay cannot represent your baseline, prepare it externally and use direct JDBC mode.
 
@@ -130,6 +130,7 @@ Keep Flyway-compatible `V<unique-version>__<description>.sql` names. The contain
 - Generated changes may include destructive `DROP` statements. A rename can look like add-and-drop; a successful schema diff is not evidence of data safety.
 - Documented migration detection is incomplete: column-type changes are supported only for H2 in the reviewed documentation; constraint/default-expression detection has gaps; SQLite has ALTER limitations. Verify each important change manually on the target dialect.
 - Generator fixes in 1.6.0: distinct indices are no longer treated as duplicates (one was being dropped), and child tables referencing an indexed parent no longer emit duplicate `ALTER` statements. If an older plugin produced a missing index or doubled `ALTER`, review the SQL by hand or upgrade the plugin. Also 1.6.0: DDL for column defaults built from `Op` on MariaDB and from `Function` on SQLite.
+- Fix in 1.6.1: on **H2**, `MigrationUtils.statementsRequiredForDatabaseMigration` and `dropUnmappedIndices` no longer propose `DROP INDEX` for the indices H2 creates for every foreign key. Before 1.6.1, one appeared for each table with a `reference()`, even right after `SchemaUtils.create`. MySQL/MariaDB were already excluded. Delete such statements from SQL generated by an older version. Never apply them.
 - No output: check the package name, compilation, runtime classpath, singleton table definitions, selected schema, and whether the baseline was already advanced.
 - Initial-create statements instead of an incremental diff: check the migration input directory, connection/schema, and successful baseline replay.
 - Missing driver/table classes: fix the generator's runtime classpath rather than adding random libraries to application source dependencies.
@@ -148,4 +149,5 @@ Keep Flyway-compatible `V<unique-version>__<description>.sql` names. The contain
 - [1.5.0 scanner, Flyway replay, and SQL writer](https://github.com/JetBrains/Exposed/blob/1.5.0/exposed-plugin-core/src/main/kotlin/org/jetbrains/exposed/v1/plugin/core/migration/MigrationGenerator.kt)
 - [Timestamp collision fix](https://github.com/JetBrains/Exposed/pull/2898)
 - [Multiple table packages (1.6.0)](https://github.com/JetBrains/Exposed/pull/2928)
-- [Changelog 1.6.0](https://github.com/JetBrains/Exposed/blob/main/CHANGELOG.md)
+- [H2 foreign-key index fix (1.6.1)](https://github.com/JetBrains/Exposed/pull/2976)
+- [Changelog 1.6.1](https://github.com/JetBrains/Exposed/blob/main/CHANGELOG.md#161)

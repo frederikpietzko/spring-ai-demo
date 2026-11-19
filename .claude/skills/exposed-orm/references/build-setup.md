@@ -2,7 +2,7 @@
 
 ## Dependency choices
 
-Use Maven Central. All Exposed application artifacts use group `org.jetbrains.exposed`; pin them to one compatible version (examples use the reviewed `1.6.0` release).
+Use Maven Central. All Exposed application artifacts use group `org.jetbrains.exposed`; pin them to one compatible version (examples use the reviewed `1.6.1` release).
 
 | Need | Modules |
 |---|---|
@@ -30,7 +30,7 @@ repositories {
     mavenCentral()
 }
 
-val exposedVersion = "1.6.0"
+val exposedVersion = "1.6.1"
 
 dependencies {
     implementation("org.jetbrains.exposed:exposed-core:$exposedVersion")
@@ -54,7 +54,7 @@ dependencyResolutionManagement {
     }
     versionCatalogs {
         create("exposedLibs") {
-            from("org.jetbrains.exposed:exposed-version-catalog:1.6.0")
+            from("org.jetbrains.exposed:exposed-version-catalog:1.6.1")
         }
     }
 }
@@ -68,7 +68,7 @@ Merge into a project already configured to compile Kotlin; Maven Central is avai
 
 ```xml
 <properties>
-    <exposed.version>1.6.0</exposed.version>
+    <exposed.version>1.6.1</exposed.version>
 </properties>
 
 <dependencies>
@@ -95,11 +95,21 @@ Use the same version property for optional Exposed modules. R2DBC substitution r
 
 ## Generation plugin requirements are separate
 
-For the **1.6.0 migration build plugins**, the official documentation lists Kotlin 2.2+, JVM 11+, and Gradle 8.14+ or Maven 3.9+. These are plugin minima, not a complete compatibility matrix: the selected Gradle runtime, Kotlin release, or Spring Boot version can require a newer JDK. Use the strictest applicable requirement.
+For the **1.6.x migration build plugins** (unchanged in 1.6.1), the official documentation lists Kotlin 2.2+, JVM 11+, and Gradle 8.14+ or Maven 3.9+. These are plugin minima, not a complete compatibility matrix: the selected Gradle runtime, Kotlin release, or Spring Boot version can require a newer JDK. Use the strictest applicable requirement.
 
 The Gradle plugin was introduced in 1.3.0; the Maven plugin in 1.4.0. Keep plugin and Exposed library versions aligned unless the relevant release explicitly documents another supported combination. See [migration plugin configuration](migrations.md), not the application dependency table, for plugin IDs and goals.
 
 There is **no dedicated Kotlin Toolchain migration plugin yet** in the official integrations reviewed. Normal dependency consumption and custom execution are separate questions. For generation, use a small Gradle/Maven helper able to load the compiled table model and driver; do not invent a `module.yaml` migration task or duplicate schema definitions by hand.
+
+## Upgrading within 1.x: version floor and patch notes
+
+| From | To | Why | Check after upgrading |
+|---|---|---|---|
+| < 1.5.1 | ≥ 1.5.1 | **CVE-2026-108474**: SQL injection through string arguments of `locate`, `concat`, `groupConcat`, `match`, and JSON `extract`/`exists`/`contains`. These arguments are now bound parameters | Remove any client-side escaping of those arguments, such as doubled single quotes. It now reaches the database literally. Exceptions inlined as escaped literals: Oracle JSON path for `extract`/`exists`, and the SQL Server `groupConcat` separator |
+| 1.5.1 / 1.6.0 | 1.6.1 | PostgreSQL regression from the CVE fix: `groupBy` on a jsonb `extract(...)` fails with "must appear in the GROUP BY clause". 1.6.1 renders the path as a literal | jsonb grouping queries |
+| ≤ 1.6.0 | 1.6.1 | Pre-1970 `datetime()` values with fractional seconds were read back one second late. This affects `exposed-java-time`, `exposed-kotlin-datetime`, and `exposed-jodatime` | Data written from misread values may be off by 1 s |
+
+1.6.1 has no API changes. The other fixes are listed in [Data access](data-access.md) and [Migrations](migrations.md).
 
 ## Upgrading from pre-1.0 examples
 
@@ -112,8 +122,9 @@ There is **no dedicated Kotlin Toolchain migration plugin yet** in the official 
 ## Sources
 
 - [Adding dependencies](https://www.jetbrains.com/help/exposed/adding-dependencies.html)
-- [Official module list](https://github.com/JetBrains/Exposed/tree/1.6.0)
-- [Published version catalog](https://github.com/JetBrains/Exposed/tree/1.6.0/exposed-version-catalog)
+- [Official module list](https://github.com/JetBrains/Exposed/tree/1.6.1)
+- [Published version catalog](https://github.com/JetBrains/Exposed/tree/1.6.1/exposed-version-catalog)
 - [Gradle plugin requirements](https://www.jetbrains.com/help/exposed/exposed-gradle-plugin.html)
 - [Maven plugin requirements](https://www.jetbrains.com/help/exposed/exposed-maven-plugin.html)
 - [Migration guide to v1](https://www.jetbrains.com/help/exposed/migration-guide-1-0-0.html)
+- [Changelog 1.6.1 / 1.5.1 (security)](https://github.com/JetBrains/Exposed/blob/main/CHANGELOG.md#161), [CVE fix PR #2957](https://github.com/JetBrains/Exposed/pull/2957), [jsonb GROUP BY regression fix PR #2977](https://github.com/JetBrains/Exposed/pull/2977)

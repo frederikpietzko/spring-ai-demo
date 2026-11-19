@@ -13,12 +13,12 @@ All coordinates below use group `org.jetbrains.exposed` and the same pinned Expo
 
 The corresponding manager packages are `org.jetbrains.exposed.v1.spring.transaction.SpringTransactionManager` and `org.jetbrains.exposed.v1.spring7.transaction.SpringTransactionManager`. The starter brings the matching integration and `spring-boot-starter-jdbc`; do not add the other major's module. Inspect resolved dependencies before adding optional DAO/date/JSON modules and align them to the same Exposed version.
 
-The reviewed docs require JDK 17+ and list Kotlin 2.1.x; use the compatibility requirements of the actual Exposed, Boot, Kotlin, and build-tool versions together rather than downgrading a newer project. They also warn that Boot 3 support will be removed in the next major Exposed release; recheck this before upgrading Exposed across majors.
+The reviewed docs require JDK 17+ and list Kotlin 2.1.x; use the compatibility requirements of the actual Exposed, Boot, Kotlin, and build-tool versions together rather than downgrading a newer project. They also warn that Boot 3 support will be removed in the next major Exposed release; recheck this before upgrading Exposed across majors. Neither 1.6.0 nor 1.6.1 changes the Spring modules.
 
 Gradle Kotlin DSL, inside an existing Boot build:
 
 ```kotlin
-val exposedVersion = "1.6.0" // Reviewed documentation baseline; match the project's version.
+val exposedVersion = "1.6.1" // Reviewed documentation baseline; match the project's version.
 
 dependencies {
     implementation("org.jetbrains.exposed:exposed-spring-boot4-starter:$exposedVersion")
