@@ -22,7 +22,7 @@ The fake chat model SHALL report each blocking call as a model observation carry
 
 #### Scenario: The fake still works without a registry
 - **WHEN** the fake chat model is constructed without an observation registry in a plain unit test
-- **THEN** it answers as before and records no observation
+- **THEN** it answers as before
 
 ### Requirement: Tests export no telemetry
 The shared test context SHALL NOT export traces or metrics, whether or not a collector runs on the machine.

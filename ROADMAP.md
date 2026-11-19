@@ -159,6 +159,7 @@ Each ADR is written by the change that first needs it, as part of that change.
 | ADR-0007 | Community libraries | `agent-todo-and-skills` (first user of spring-ai-agent-utils); amended by `mcp-security` | Pinned versions of `spring-ai-agent-utils` (`main` is on 2.1-SNAPSHOT, release line 0.14.x) and `mcp-security`. Depend on them or copy the patterns in. The Spring AI 2.0 fallback for `core-mcp` and `auth-server` |
 | ADR-0008 | Model routing | `subagents` | Default stays `claude-haiku-5-5`. Which agents get a larger model (proposal: adjuster orchestrator on Sonnet, subagents on Haiku). Where the routing is configured |
 | ADR-0009 | Security model | `mcp-security` | Clients per persona (`claimant-agent`, `adjuster-agent`), scopes (`policies:read`, `claims:read`, `claims:write`, `payout:write`, `analytics:read`), grant type (proposal: `client_credentials` per persona, with the claimant id passed in `ToolContext` and checked in `core-mcp`), token propagation, tool-side authorization |
+| ADR-0010 | Observability | `observability` | Export path (Boot's OpenTelemetry starter, OTLP, one OkHttp), sampling and push settings, the local `grafana/otel-lgtm` stack and its dashboard, keeping claimant text out of telemetry (content switches, vector store convention), the injected-builder rule, test seams (recording handler, no export in tests, the fake's model observation) |
 
 ## 7 Waves
 
@@ -325,7 +326,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
   - Scope: an evaluation suite (a separate Gradle source set or tag, not part of `check` because it needs a real model and API key): `RelevancyEvaluator` on a fixed set of coverage questions, and `FactCheckingEvaluator` on fraud verdicts against the bulletins.
   - Out: running in CI without a key.
   - Tests: the suite itself. It is skipped when `ANTHROPIC_API_KEY` is absent.
-- [ ] **`observability`**
+- [x] **`observability`**
   - Scope:
     - Micrometer observations for the chat client, advisors, model, tools and vector store. Token-usage metrics.
     - A local tracing and metrics stack in `compose.yaml` (for example grafana/otel-lgtm).

@@ -1,11 +1,30 @@
 package dev.frederikpietzko.springaidemo.backend
 
+import com.tngtech.archunit.base.DescribedPredicate
+import com.tngtech.archunit.core.domain.JavaMethodCall
 import com.tngtech.archunit.core.importer.ImportOption
 import com.tngtech.archunit.junit.AnalyzeClasses
 import com.tngtech.archunit.junit.ArchTest
 import com.tngtech.archunit.lang.ArchRule
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses
 import org.jetbrains.exposed.v1.core.Table
+import org.springframework.ai.chat.client.ChatClient
+import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor
+
+/**
+ * The static factories that build a chat client or a tool-calling advisor on a no-op observation registry. Every
+ * overload of `ChatClient.builder` and `ChatClient.create` counts, on purpose also those that take a registry: the
+ * injected builder is the one way that needs no thought.
+ */
+private val unobservedChatClientFactories: DescribedPredicate<JavaMethodCall> =
+    DescribedPredicate.describe("ChatClient.builder(..), ChatClient.create(..) or ToolCallingAdvisor.builder()") {
+        val target = it.target
+        when {
+            target.owner.isEquivalentTo(ChatClient::class.java) -> target.name == "builder" || target.name == "create"
+            target.owner.isEquivalentTo(ToolCallingAdvisor::class.java) -> target.name == "builder"
+            else -> false
+        }
+    }
 
 @AnalyzeClasses(packagesOf = [BackendApplication::class], importOptions = [ImportOption.DoNotIncludeTests::class])
 class ArchitectureTest {
@@ -43,4 +62,15 @@ class ArchitectureTest {
                 "dev.frederikpietzko.springaidemo.chatprotocol..",
             )
             .because("the chat layer maps intake results to events and wording, the intake knows no protocol")
+
+    /**
+     * ADR-0010: only the injected `ChatClient.Builder` (and the injected `ToolCallingAdvisor.Builder<*>`, after
+     * `.copy()`) carry the observation registry; a chat client built any other way would be invisible in traces and
+     * metrics, silently.
+     */
+    @ArchTest
+    val chat_clients_come_from_injected_builders: ArchRule =
+        noClasses()
+            .should().callMethodWhere(unobservedChatClientFactories)
+            .because("ADR-0010: only the injected builders carry the observation registry")
 }
