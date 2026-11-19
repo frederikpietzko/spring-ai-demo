@@ -135,7 +135,7 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
             if (it.sending) {
                 it
             } else {
-                it.copy(conversationId = conversation.id, messages = messages, pendingConfirmation = null)
+                it.copy(conversationId = conversation.id, messages = messages)
             }
         }
     }
@@ -145,8 +145,8 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
      * confirmation is pending.
      */
     fun newConversation() {
-        if (state.value.sending) return
-        mutableState.update { it.copy(conversationId = newId(), messages = [], pendingConfirmation = null) }
+        if (state.value.sending || state.value.pendingConfirmation != null) return
+        mutableState.update { it.copy(conversationId = newId(), messages = []) }
     }
 
     private fun updateReply(change: (ChatMessage) -> ChatMessage) {
