@@ -2,7 +2,6 @@ package dev.frederikpietzko.springaidemo.backend
 
 import dev.frederikpietzko.springaidemo.backend.testsupport.IntegrationTest
 import org.flywaydb.core.Flyway
-import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.jdbc.core.JdbcTemplate
 import kotlin.test.Test
@@ -17,7 +16,6 @@ class FlywayStateTest {
     @Autowired
     private lateinit var jdbc: JdbcTemplate
 
-    // Trivial while no migration exists (nothing can be pending or executed); it stays meaningful afterwards.
     @Test
     fun `startup leaves no pending migration and migrating again changes nothing`() {
         val pending = flyway.info().pending()
@@ -29,11 +27,7 @@ class FlywayStateTest {
     }
 
     @Test
-    fun `no application table exists while there are no migrations`() {
-        // Skipped once a migration exists; the change adding the first migration must replace this with a real check
-        // (SchemaAgreementTest covers tables against migrations).
-        assumeTrue(flyway.info().all().isEmpty())
-
+    fun `the only application table is the vector store`() {
         val tables = jdbc.queryForList(
             """
             SELECT table_name FROM information_schema.tables
@@ -42,6 +36,6 @@ class FlywayStateTest {
             String::class.java,
         )
 
-        assertEquals([], tables)
+        assertEquals(["vector_store"], tables)
     }
 }

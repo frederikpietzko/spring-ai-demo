@@ -9,16 +9,39 @@ spring:
   exposed:
     # The schema is created by Flyway migrations only, never by Exposed at startup.
     generate-ddl: false
+  flyway:
+    # db/migration is written by the Exposed generator; db/vector holds the hand-written pgvector DDL (ADR-0006).
+    locations: classpath:db/migration,classpath:db/vector
   docker:
     compose:
       # No `file` here: Spring Boot finds compose.yaml in the working directory. The repo root has the real file and
       # backend/compose.yaml is a symlink to it, so starting from either directory uses the same compose project.
       lifecycle-management: start_only
   ai:
+    model:
+      # Explicit since the Ollama starter also offers a chat model; without this two chat models would exist.
+      chat: anthropic
+      embedding: ollama
+      # The Ollama starter would also add a decision model; nothing uses one yet.
+      decision: none
     anthropic:
       chat:
         model: claude-haiku-5-5
       # No api-key here: the Anthropic SDK reads ANTHROPIC_API_KEY from the environment.
+    ollama:
+      # Override with SPRING_AI_OLLAMA_BASE_URL; Spring AI does not read OLLAMA_HOST.
+      base-url: http://localhost:11434
+      embedding:
+        # 768 dimensions, matching the vector_store column; the library default is mxbai-embed-large (1024).
+        model: nomic-embed-text
+    vectorstore:
+      pgvector:
+        # Flyway owns the DDL (db/vector, ADR-0006); the store only checks the table at startup.
+        initialize-schema: false
+        schema-validation: true
+        dimensions: 768
+        # Readable, stable chunk ids such as policy-wording/exclusions.md#0-0 instead of UUIDs.
+        id-type: text
 
 management:
   endpoints:

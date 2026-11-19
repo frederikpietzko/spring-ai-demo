@@ -21,4 +21,12 @@ class ArchitectureTest {
             .that().resideOutsideOfPackage("${BackendApplication::class.java.packageName}.persistence.tables..")
             .should().beAssignableTo(Table::class.java)
             .because("the migration generator reads only the persistence tables package")
+
+    /** ADR-0006: `PgVectorStore` owns the vector table, so the RAG code never uses Exposed (no table object for it). */
+    @ArchTest
+    val rag_does_not_use_exposed: ArchRule =
+        noClasses()
+            .that().resideInAPackage("${BackendApplication::class.java.packageName}.rag..")
+            .should().dependOnClassesThat().resideInAPackage("org.jetbrains.exposed..")
+            .because("ADR-0006: the vector store owns the vector table, Exposed does not map it")
 }

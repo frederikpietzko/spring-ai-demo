@@ -46,7 +46,9 @@ class ChatController(private val claimantChat: ClaimantChat) {
             .onCompletion { cause -> if (cause == null) emit(ChatEvent.Done) }
             .catch { cause ->
                 // Only exceptions are a failed reply; an Error is rethrown (`catch` rethrows cancellation itself).
-                if (cause !is Exception) throw cause
+                // It is searched in the cause chain: advisors built on BaseAdvisor (the policy wording retrieval)
+                // wrap every stream failure in an IllegalStateException.
+                generateSequence(cause) { it.cause }.firstOrNull { it !is Exception }?.let { throw it }
                 log.warn("Chat stream failed", cause)
                 emit(ChatEvent.Error(GENERIC_ERROR))
             }

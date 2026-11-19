@@ -237,7 +237,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
     - Writes **ADR-0005**, including the protocol module decision.
   - Out: memory (messages are lost on restart), tools, RAG.
   - Tests: SSE endpoint with the fake model (event order, `Done` and `Error` events). Protocol serialization round trip. Desktop view-model test feeding a fake event `Flow`.
-- [ ] **`policy-rag`**
+- [x] **`policy-rag`**
   - Scope:
     - Fictional policy wording as Markdown under `backend/src/main/resources/corpus/policy-wording/`.
     - ETL ingestion (reader, splitter, embeddings, pgvector) and a retrieval advisor answering coverage questions with citations.
@@ -347,8 +347,8 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
 | R1 | `mcp-security` targets Spring AI 2.0.x | Try it on 2.1 first; fall back to 2.0 in `core-mcp` and `auth-server` (decision 4) |
 | R2 | `spring-ai-agent-utils` is a community project tracking 2.1-SNAPSHOT | Pin a version in ADR-0007. If none fits 2.1 GA or RC, copy the tool patterns into `backend` |
 | R3 | Tool confirmation for **MCP** tools: unknown whether `requiresConfirmation` applies to MCP tool callbacks | Spike in `mcp-tools-and-confirmation`. Fallback: a local `@Tool issuePayout` with confirmation that delegates to the MCP tool |
-| R4 | Anthropic has no embedding model | Decide in ADR-0006 (separate embedding provider or a local model). The test embedding model is deterministic either way |
-| R5 | The migration generator rejects the pgvector image (ADR-0002) | Decide in ADR-0006. A hand-written migration for the vector table is the likely answer |
+| R4 | Anthropic has no embedding model | Decided in ADR-0006: Ollama `nomic-embed-text` (768 dimensions) for embeddings, a deterministic fake embedding model in tests |
+| R5 | The migration generator rejects the pgvector image (ADR-0002) | Decided in ADR-0006: a hand-written Flyway migration in `db/vector`, which the generator never reads |
 | R6 | Streaming and tool confirmation in one SSE stream: pausing a streaming tool loop for a human decision | Design in ADR-0005 and `mcp-tools-and-confirmation` (end the stream with `ConfirmationRequest`, resume with a new request, or keep it open) |
 | R7 | Spring AI 2.1 APIs differ from 1.x | Agents check the docs and sources (`spring-ai` skill, Gradle MCP sources, context7), never memory |
 | Q1 | Shared `chat-protocol` module or duplicated DTOs | ADR-0005 |

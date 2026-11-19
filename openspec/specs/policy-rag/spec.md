@@ -1,10 +1,10 @@
-# Spec Delta
+# policy-rag Specification
 
 ## Purpose
 
 Answers coverage questions from the fictional policy wording: the wording is ingested into a vector store at startup, the relevant clauses are retrieved for a question and added to the prompt, and the answer names the clauses it rests on.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Policy wording corpus contains the exclusions
 The backend SHALL ship the policy wording as Markdown documents on its classpath. The wording SHALL describe the coverages (vehicle, building, contents, garden), the claim and deductible rules, and the exclusions, among them the Act of Kaiju exclusion for class 5 kaiju events and the exclusion for provoking the kaiju. Each exclusion SHALL name itself in its own text.
@@ -93,3 +93,14 @@ The claimant chat SHALL use the same retrieval as the coverage service, so that 
 #### Scenario: Coverage question in the claimant chat is grounded
 - **WHEN** a claimant sends a coverage question about a class 5 kaiju event through the chat endpoint
 - **THEN** the prompt the model receives contains the Act of Kaiju exclusion with its label and the streamed answer is the scripted reply
+
+### Requirement: Retrieval does not change what the claimant chat records or promises
+The audit entry of a claimant chat call SHALL hold the claimant's message as typed, not the retrieval template. The claimant instructions SHALL tell the model that it can explain what the policy wording says about coverage when clauses are provided, and SHALL still say that the claimant's own policy and claims cannot be looked up.
+
+#### Scenario: Audit records the claimant's own words
+- **WHEN** a claimant sends a coverage question about a class 5 kaiju event through the chat endpoint and the stream ends
+- **THEN** the audit trail holds an entry whose user message is exactly the question as sent
+
+#### Scenario: Claimant instructions mention the policy wording
+- **WHEN** a claimant request is answered
+- **THEN** the system message received by the model says that the policy wording can be explained and still says that the claimant's own policy and claims cannot be looked up

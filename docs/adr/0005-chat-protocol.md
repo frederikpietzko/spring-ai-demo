@@ -1,6 +1,6 @@
 # ADR-0005: Backend-desktop chat protocol
 
-- Status: accepted
+- Status: accepted; updated by ADR-0006 (vector store and embeddings): the backend terminal-event rule "Only `Exception`s are mapped: any other `Throwable` (a JVM error) is rethrown from the `catch` ..." (the controller also searches the cause chain for a JVM error, as the desktop client does, because `BaseAdvisor` wraps stream failures in `IllegalStateException`)
 - Date: 2026-11-20
 - Change: `chat-streaming`
 - Extends ADR-0001: settles the statement "There is no shared contract module yet; it is decided with the first feature that crosses the boundary" and the consequence "Sharing code between backend and desktop needs a new module and a new ADR".

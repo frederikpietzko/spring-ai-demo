@@ -7,7 +7,7 @@ Defines how the database schema workflow is set up: versioned SQL files are the 
 ## Requirements
 
 ### Requirement: Migrations are versioned SQL files
-The project SHALL keep the database schema history as versioned SQL files in a single migration directory of the backend, and SHALL never create or alter the schema through automatic startup DDL.
+The project SHALL keep the generated schema history as versioned SQL files in the backend migration directory, SHALL keep hand-written pgvector DDL as versioned SQL files in a second backend directory that the generator never reads, and SHALL never create or alter the schema through automatic startup DDL.
 
 #### Scenario: Migration directory exists and is empty
 - **WHEN** the repository is checked out after this change
@@ -16,6 +16,14 @@ The project SHALL keep the database schema history as versioned SQL files in a s
 #### Scenario: Automatic DDL is disabled
 - **WHEN** the backend configuration is inspected
 - **THEN** automatic schema creation by the persistence library is turned off
+
+#### Scenario: Vector DDL lives in its own directory
+- **WHEN** the backend's migration directories are listed after this change
+- **THEN** the vector directory contains one migration that creates the vector extension, the vector store table and its index, and the migration directory written by the generator does not
+
+#### Scenario: Vector store library creates no schema
+- **WHEN** the backend configuration is inspected
+- **THEN** schema initialization by the vector store library is turned off and schema validation is on
 
 ### Requirement: Migration generation is explicit and reviewable
 The project SHALL provide a single documented command that writes migration SQL for the difference between the Kotlin table definitions and the migrated history into the migration directory, and generation SHALL NOT run as part of a normal build or startup.
@@ -55,10 +63,10 @@ After all migrations are applied to an empty database, the migrated schema SHALL
 - **THEN** the comparison reports at least one required statement and the schema agreement check fails
 
 ### Requirement: Applied migrations are immutable and replayable
-The migration history SHALL replay from an empty database without error, and a migration that was applied and later edited SHALL be rejected by validation.
+The migration history of both migration directories SHALL replay from an empty database without error, and a migration that was applied and later edited SHALL be rejected by validation.
 
 #### Scenario: Replay from empty
-- **WHEN** all migrations are applied to an empty schema
+- **WHEN** all migrations of both directories are applied to an empty schema
 - **THEN** every migration succeeds and the history lists each of them
 
 #### Scenario: Edited migration is rejected
@@ -68,3 +76,10 @@ The migration history SHALL replay from an empty database without error, and a m
 #### Scenario: Startup leaves no pending migration
 - **WHEN** the backend has started against an empty database
 - **THEN** no migration is pending and applying migrations again changes nothing
+
+### Requirement: Generation is unaffected by the vector directory
+The migration generation command SHALL read and write only the generated migration directory, so hand-written vector DDL never makes generation fail and never appears in a generated file.
+
+#### Scenario: Generation with the vector migration present
+- **WHEN** the generation command runs while the vector migration exists and there are no table definitions
+- **THEN** it succeeds and no file is written

@@ -8,7 +8,8 @@ plugins {
 val basePackage = providers.gradleProperty("basePackage").get()
 
 // The Exposed generator only accepts images whose name starts with "postgres", so it cannot use the pgvector image
-// from compose.yaml. Plain PostgreSQL 18 is enough for generation while no vector column exists.
+// from compose.yaml. Plain PostgreSQL 18 is enough: the pgvector DDL is hand-written in db/vector, which the generator
+// never reads (ADR-0006).
 val migrationGeneratorImage = "postgres:18"
 
 dependencies {
@@ -22,6 +23,11 @@ dependencies {
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation(libs.exposed.spring.boot.starter)
     implementation("org.springframework.ai:spring-ai-starter-model-anthropic")
+    // Policy RAG (ADR-0006): Ollama embeddings, the pgvector store, the Markdown reader and the RAG advisor.
+    implementation("org.springframework.ai:spring-ai-starter-model-ollama")
+    implementation("org.springframework.ai:spring-ai-starter-vector-store-pgvector")
+    implementation("org.springframework.ai:spring-ai-markdown-document-reader")
+    implementation("org.springframework.ai:spring-ai-rag")
     implementation("tools.jackson.module:jackson-module-kotlin")
     // Lets Spring MVC return a Kotlin Flow (the Flux-to-Flow bridge of the chat endpoint); version from the Boot BOM.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")

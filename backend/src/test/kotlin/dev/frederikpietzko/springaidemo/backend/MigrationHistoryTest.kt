@@ -14,9 +14,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Replays migrations on a scratch schema so the shared schema is never touched. The real `db/migration` is empty
- * today, so its replay is vacuous until the first migration exists; the probe migrations in `db/test-migration`
- * (test resources only, never on Boot's migration path) prove the mechanism.
+ * Replays migrations on a scratch schema so the shared schema is never touched. The real replay uses the locations of
+ * the application's [Flyway] bean (the generated `db/migration` and the hand-written `db/vector`); the probe
+ * migrations in `db/test-migration` (test resources only, never on Boot's migration path) prove the mechanism.
  */
 @IntegrationTest
 class MigrationHistoryTest {
@@ -25,6 +25,9 @@ class MigrationHistoryTest {
 
     @Autowired
     private lateinit var jdbc: JdbcTemplate
+
+    @Autowired
+    private lateinit var applicationFlyway: Flyway
 
     @Test
     fun `migrations replay from an empty schema and the history lists each of them`() = onScratchSchema { schema ->
@@ -48,12 +51,13 @@ class MigrationHistoryTest {
 
     @Test
     fun `the real migrations replay from an empty schema`() = onScratchSchema { schema ->
-        val flyway = flywayFor(schema, "classpath:db/migration")
+        val flyway = flywayFor(schema, *applicationFlyway.configuration.locations.map { it.descriptor }.toTypedArray())
 
         val result = flyway.migrate()
 
         assertTrue(result.success)
         assertEquals(0, flyway.info().pending().size)
+        assertTrue(VECTOR_STORE_VERSION in flyway.info().applied().mapNotNull { it.version?.version })
     }
 
     @Test
@@ -91,8 +95,8 @@ class MigrationHistoryTest {
             schema,
         ) == 1
 
-    private fun flywayFor(schema: String, location: String): Flyway =
-        Flyway.configure().dataSource(dataSource).schemas(schema).locations(location).load()
+    private fun flywayFor(schema: String, vararg locations: String): Flyway =
+        Flyway.configure().dataSource(dataSource).schemas(schema).locations(*locations).load()
 
     /** Runs [block] against a uniquely named schema and always drops it (Flyway `clean` is disabled by default). */
     private fun onScratchSchema(block: (String) -> Unit) {
@@ -102,5 +106,10 @@ class MigrationHistoryTest {
         } finally {
             jdbc.execute("DROP SCHEMA IF EXISTS $schema CASCADE")
         }
+    }
+
+    private companion object {
+        /** The hand-written vector store migration in `db/vector`. */
+        const val VECTOR_STORE_VERSION = "20261120000000"
     }
 }

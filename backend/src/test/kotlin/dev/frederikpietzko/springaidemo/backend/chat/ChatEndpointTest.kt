@@ -117,12 +117,36 @@ class ChatEndpointTest {
     }
 
     @Test
+    fun `the claimant instructions allow explaining the policy wording but not looking up the claimant's policy`() {
+        fake.replyChunks("ok")
+
+        postChat(CLAIMANT_HI)
+
+        val system = fake.prompts.last().instructions.filterIsInstance<SystemMessage>().single().text.orEmpty()
+        assertTrue(system.contains("policy wording"), system)
+        assertTrue(system.contains("cannot look up the claimant's own policy"), system)
+    }
+
+    @Test
     fun `the user text reaches the model unchanged, braces included`() {
         fake.replyChunks("ok")
 
         postChat("""{"persona":"CLAIMANT","message":"see {claimId} and {}"}""")
 
-        assertEquals("see {claimId} and {}", fake.prompts.last().userMessage.text)
+        // Whether policy wording is added around it depends on what the test embedding model retrieves.
+        val userText = fake.prompts.last().userMessage.text.orEmpty()
+        assertTrue(userText.contains("see {claimId} and {}"), userText)
+    }
+
+    @Test
+    fun `the user text with braces survives the retrieval template unchanged`() {
+        fake.replyChunks("ok")
+
+        postChat("""{"persona":"CLAIMANT","message":"{claimId} class 5 kaiju event {}"}""")
+
+        val userText = fake.prompts.last().userMessage.text.orEmpty()
+        assertTrue(userText.contains("{claimId} class 5 kaiju event {}"), userText)
+        assertTrue(userText.contains(ACT_OF_KAIJU_LABEL), userText)
     }
 
     @Test
@@ -152,6 +176,17 @@ class ChatEndpointTest {
     }
 
     @Test
+    fun `the audit records the claimant's own words, not the retrieval template`() {
+        val message = "audit probe class 5 kaiju event coverage"
+        fake.replyChunks("ok")
+
+        postChat(claimantRequest(message))
+
+        assertTrue(auditTrail.entries.any { it.userMessage == message }, auditTrail.entries.toString())
+        assertTrue(auditTrail.entries.none { it.userMessage.contains("[exclusions.md") }, auditTrail.entries.toString())
+    }
+
+    @Test
     fun `a failed stream is audited as a failure`() {
         val message = "audit probe: failed stream"
         fake.replyChunksThenFail("boom", "Hel")
@@ -160,6 +195,18 @@ class ChatEndpointTest {
 
         assertEquals([ChatEvent.TextDelta("Hel"), ChatEvent.Error(GENERIC_ERROR)], events)
         assertEquals(AuditOutcome.FAILURE, auditTrail.entries.single { it.userMessage == message }.outcome)
+    }
+
+    @Test
+    fun `a coverage question is answered from the policy wording`() {
+        fake.replyChunks("Not ", "covered")
+
+        val events = sseEvents(postChat(claimantRequest(CLASS_5_QUESTION)).responseBody ?: byteArrayOf())
+
+        assertEquals([ChatEvent.TextDelta("Not "), ChatEvent.TextDelta("covered"), ChatEvent.Done], events)
+        val userText = fake.prompts.last().userMessage.text.orEmpty()
+        assertTrue(userText.contains("$ACT_OF_KAIJU_LABEL\n$ACT_OF_KAIJU_FIRST_SENTENCE"), userText)
+        assertTrue(userText.contains(CLASS_5_QUESTION), userText)
     }
 
     private fun claimantRequest(message: String) = """{"persona":"CLAIMANT","message":"$message"}"""
@@ -175,5 +222,9 @@ class ChatEndpointTest {
     private companion object {
         const val CLAIMANT_HI = """{"persona":"CLAIMANT","message":"Hi"}"""
         const val GENERIC_ERROR = "The claims desk is unavailable."
+        const val CLASS_5_QUESTION = "Is my car covered after a class 5 kaiju event?"
+        const val ACT_OF_KAIJU_LABEL = "[exclusions.md - Act of Kaiju exclusion]"
+        const val ACT_OF_KAIJU_FIRST_SENTENCE =
+            "The Act of Kaiju exclusion: damage from a class 5 kaiju event is not covered."
     }
 }
