@@ -11,12 +11,18 @@ import dev.frederikpietzko.springaidemo.coremcp.domain.DamageItem
 import dev.frederikpietzko.springaidemo.coremcp.domain.District
 import dev.frederikpietzko.springaidemo.coremcp.domain.FileClaimRequest
 import dev.frederikpietzko.springaidemo.coremcp.domain.FileResult
+import dev.frederikpietzko.springaidemo.coremcp.domain.PayoutResult
+import dev.frederikpietzko.springaidemo.coremcp.domain.PayoutService
 import dev.frederikpietzko.springaidemo.coremcp.domain.StatusUpdate
 
 /** The only policy tests write claims for (deductible 10000, valid 2026-01-01 to 2027-12-31, all categories). */
 const val SANDBOX_POLICY = "KP-9000"
 
-/** A valid claim request on the sandbox policy; override what a test is about. */
+/**
+ * A valid claim request on the sandbox policy in district `NEON_MARKET`; override what a test is about. A test that
+ * files in another district must not use a district of the claims history (`HARBOUR`, `OLD_TOWN`, `HILLTOP`): the
+ * analytics tests assert exact aggregates over them (ADR-0004, module `core-mcp`).
+ */
 fun aClaimRequest(
     policyNumber: String = SANDBOX_POLICY,
     incidentAt: String = "2026-11-19T10:00:00Z",
@@ -56,4 +62,19 @@ fun ClaimService.sandboxClaimIn(status: ClaimStatus, amountsMinor: List<Long> = 
         check(updateStatus(claimNumber, step) is StatusUpdate.Updated) { "claim $claimNumber did not move to $step" }
     }
     return claimNumber
+}
+
+/**
+ * Files a sandbox claim with one damage item of [amountMinor] at [incidentAt], approves and pays it through the
+ * services, and returns the paid amount (the amount minus the sandbox deductible of 10000).
+ */
+fun ClaimService.paidSandboxClaim(payouts: PayoutService, incidentAt: String, amountMinor: Long): Long {
+    val item = DamageItem(DamageCategory.BUILDING, "Damage of $amountMinor", amountMinor)
+    val filed = file(aClaimRequest(incidentAt = incidentAt, damageItems = [item]))
+    val claimNumber = (filed as? FileResult.Filed)?.claim?.claimNumber ?: error("sandbox claim not filed: $filed")
+    PATH_FROM_FILED.getValue(APPROVED).forEach { step ->
+        check(updateStatus(claimNumber, step) is StatusUpdate.Updated) { "claim $claimNumber did not move to $step" }
+    }
+    val paid = payouts.issue(claimNumber)
+    return (paid as? PayoutResult.Issued)?.payout?.amountMinor ?: error("claim $claimNumber was not paid: $paid")
 }

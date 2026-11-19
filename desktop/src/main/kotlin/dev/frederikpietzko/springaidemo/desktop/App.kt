@@ -27,6 +27,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
@@ -183,10 +184,12 @@ private fun MessageBubble(message: ChatMessage, canConfirm: Boolean, onConfirm: 
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            val hasContent = message.claimCard != null || message.analyticsTable != null
             when {
                 message.text.isNotEmpty() -> DText(message.text)
-                message.error == null && message.claimCard == null -> DText("…", color = Demo.colors.inkMuted)
+                message.error == null && !hasContent -> DText("…", color = Demo.colors.inkMuted)
             }
+            message.analyticsTable?.let { AnalyticsTable(it) }
             message.claimCard?.let { ClaimCard(it, canConfirm, onConfirm) }
             message.error?.let { DText(it, style = Demo.typography.caption, color = Demo.colors.danger) }
         }
@@ -226,6 +229,23 @@ private fun ClaimCard(card: ChatEvent.ClaimCard, canConfirm: Boolean, onConfirm:
         card.damageItems.forEach { item -> Fact(item.category, item.description, item.amountMinor.toString()) }
         Fact("Total", card.totalMinor.toString())
         DButton("Confirm", onClick = onConfirm, style = DButtonStyle.PRIMARY, enabled = canConfirm)
+    }
+}
+
+/** A table a tool computed: the title, a header line and one line per row, every cell as text in an equal column. */
+@Composable
+private fun AnalyticsTable(table: ChatEvent.AnalyticsTable) {
+    DCard(Modifier.fillMaxWidth()) {
+        DText(table.title, style = Demo.typography.label)
+        TableRow(table.columns, color = Demo.colors.inkMuted)
+        table.rows.forEach { TableRow(it) }
+    }
+}
+
+@Composable
+private fun TableRow(cells: List<String>, color: Color = Demo.colors.ink) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        cells.forEach { DText(it, color = color, modifier = Modifier.weight(1f)) }
     }
 }
 

@@ -3,7 +3,10 @@ package dev.frederikpietzko.springaidemo.backend.adjuster
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.ProducerScope
+import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.reactive.asFlow
@@ -19,7 +22,13 @@ import org.springframework.ai.model.tool.ToolCallingChatOptions
 import org.springframework.ai.model.tool.ToolCallingManager
 import org.springframework.ai.tool.ToolCallbackProvider
 import org.springframework.beans.factory.annotation.Qualifier
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import tools.jackson.databind.json.JsonMapper
+import java.time.LocalDate
+import java.time.ZoneOffset
+
+private val log = LoggerFactory.getLogger(AdjusterChat::class.java)
 
 /**
  * Who calls the core tools. It travels in the tool context only, never in a message, and is forwarded to `core-mcp`
@@ -34,9 +43,10 @@ private const val DENIED = "The adjuster did not approve this payout."
 private const val NOTHING_WAITING = "Nothing is waiting for this decision."
 
 /**
- * The adjuster agent: answers one adjuster message with the core tools, as a stream of chat events. A reply that
- * calls a tool needing confirmation (`issuePayout`) ends with a [ChatEvent.ConfirmationRequest]; the paused reply
- * waits in [PendingConfirmations] until [decide] runs or skips its tool calls and continues the reply.
+ * The adjuster agent: answers one adjuster message with the core tools, as a stream of chat events: text deltas, an
+ * [ChatEvent.AnalyticsTable] for each successful `payoutStats` call of a turn (not one in a batch [decide] resumes),
+ * and a [ChatEvent.ConfirmationRequest] when the reply calls a tool needing confirmation (`issuePayout`); the paused
+ * reply waits in [PendingConfirmations] until [decide] runs or skips its tool calls and continues the reply.
  */
 @Service
 class AdjusterChat(
@@ -44,6 +54,7 @@ class AdjusterChat(
     @Qualifier("mcpToolCallbacks") private val coreTools: ToolCallbackProvider,
     private val toolCallingManager: ToolCallingManager,
     private val pendingConfirmations: PendingConfirmations,
+    private val json: JsonMapper,
 ) {
     /** Streams the reply to [message]: text deltas, and a confirmation request if the reply pauses. */
     fun stream(message: String): Flow<ChatEvent> {
@@ -88,15 +99,20 @@ class AdjusterChat(
     }
 
     /**
-     * One model turn over [conversation]. The whole request is built inside the `flow`: `.stream()` lists the MCP
-     * tools right away (the first connection to the core) and checks the tool names, and a failure there must reach
-     * the caller as a failed flow, not as an exception of this call. `chatResponse()`, not `content()`: only the
-     * response metadata tells a paused reply apart, and its last chunk carries the tool calls but no text.
+     * One model turn over [conversation], first turn or resumed; the system prompt gets today's date (UTC). The whole
+     * request is built inside the flow: `.stream()` lists the MCP tools right away (the first connection to the core)
+     * and checks the tool names, and a failure there must reach the caller as a failed flow, not as an exception of
+     * this call. `chatResponse()`, not `content()`: only the response metadata tells a paused reply apart, and its last
+     * chunk carries the tool calls but no text. A `channelFlow`, because a `payoutStats` result arrives from the tool's
+     * thread ([coreToolsWithTables]); the tool runs before the next model round streams, so its table comes before the
+     * text the model writes after the call.
      */
     private fun turn(conversation: List<Message>): Flow<ChatEvent> =
-        flow {
+        channelFlow {
             adjusterChatClient.prompt()
+                .system { it.param("today", LocalDate.now(ZoneOffset.UTC).toString()) }
                 .messages(conversation)
+                .tools(coreToolsWithTables())
                 .toolContext(ADJUSTER_IDENTITY)
                 .stream()
                 .chatResponse()
@@ -104,11 +120,34 @@ class AdjusterChat(
                 .collect { response ->
                     val text = response.result?.output?.text
                     when {
-                        ToolCallDecisions.isAwaitingDecision(response) -> emit(pause(conversation, response))
-                        !text.isNullOrEmpty() -> emit(ChatEvent.TextDelta(text))
+                        ToolCallDecisions.isAwaitingDecision(response) -> send(pause(conversation, response))
+                        !text.isNullOrEmpty() -> send(ChatEvent.TextDelta(text))
                     }
                 }
         }
+
+    /**
+     * The core tools for one request, with `payoutStats` wrapped so that its result also becomes an analytics table of
+     * this reply. A provider lambda, so the MCP tools are still listed only when the request is sent.
+     */
+    private fun ProducerScope<ChatEvent>.coreToolsWithTables(): ToolCallbackProvider =
+        ToolCallbackProvider {
+            coreTools.toolCallbacks
+                .map { tool ->
+                    if (tool.toolDefinition.name() == PAYOUT_STATS) TableCapture(tool) { sendTable(it) } else tool
+                }
+                .toTypedArray()
+        }
+
+    /** Sends the table of a `payoutStats` [result] to this reply; an unexpected result gives no table. */
+    private fun ProducerScope<ChatEvent>.sendTable(result: String) {
+        val table = payoutStatsTable(json, result)
+        if (table == null) {
+            log.warn("No analytics table: unexpected {} result", PAYOUT_STATS)
+            return
+        }
+        trySend(table).onFailure { log.warn("The analytics table did not reach the reply", it) }
+    }
 
     /** Keeps the paused [reply] and names the first tool call that waits for a decision. */
     private fun pause(conversation: List<Message>, reply: ChatResponse): ChatEvent.ConfirmationRequest {

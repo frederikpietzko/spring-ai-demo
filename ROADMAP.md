@@ -273,7 +273,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
 
 ### Wave 3
 
-- [ ] **`claims-analytics`**
+- [x] **`claims-analytics`**
   - Scope:
     - Structured-data querying: typed MCP tools in `core-mcp` (`countClaims(filter)`, `payoutStats(filter, groupBy)`). The filter covers district, kaiju class, status and period.
     - No free SQL from the model.

@@ -8,14 +8,15 @@ import org.springframework.ai.tool.ToolCallbackProvider
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.ApplicationContext
+import tools.jackson.databind.json.JsonMapper
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * The fake core tools of the shared context. The two isolation tests each start clean and then leave a recorded call
- * and both failures behind, so whichever runs second would fail if [FakeCoreTools] were not reset between tests.
+ * The fake core tools of the shared context. The two isolation tests each start clean and then leave recorded calls
+ * and all three failures behind, so whichever runs second would fail if [FakeCoreTools] were not reset between tests.
  */
 @IntegrationTest
 class FakeCoreToolsTest {
@@ -35,12 +36,14 @@ class FakeCoreToolsTest {
     @Autowired
     private lateinit var builder: ChatClient.Builder
 
+    private val json = JsonMapper.builder().build()
+
     @Test
     fun `the shared context has no MCP client and the core tool provider is the fake`() {
         assertTrue(context.getBeansOfType(McpSyncClient::class.java).isEmpty())
         assertFalse(context.containsBean("mcpSyncClients"))
         assertFalse(mcpToolCallbacks is SyncMcpToolCallbackProvider)
-        val coreToolNames: Set<String> = ["getClaim", "issuePayout"]
+        val coreToolNames: Set<String> = ["getClaim", "issuePayout", "countClaims", "payoutStats"]
         assertEquals(coreToolNames, mcpToolCallbacks.toolCallbacks.map { it.toolDefinition.name() }.toSet())
     }
 
@@ -52,15 +55,54 @@ class FakeCoreToolsTest {
     }
 
     @Test
-    fun `first test starts clean and leaves a call and both failures behind`() = startsCleanThenLeavesState()
+    fun `the fake payoutStats answers in the MCP wire shape and is recorded`() {
+        val payoutStats = mcpToolCallbacks.toolCallbacks.single { it.toolDefinition.name() == "payoutStats" }
+
+        val result = payoutStats.call(
+            """{"filter":{"district":"HARBOUR"},"groupBy":"KAIJU_CLASS"}""",
+            ToolContext(mapOf("actor" to "test")),
+        )
+
+        val content = json.readTree(result)
+        assertEquals(1, content.size())
+        val coreJson = json.readTree(content[0]["text"].stringValue())
+        assertEquals("KAIJU_CLASS", coreJson["groupBy"].stringValue())
+        assertEquals(["2", "4"], coreJson["groups"].values().map { it["group"].stringValue() })
+        assertEquals(
+            [
+                FakeCoreTools.AnalyticsCall(
+                    tool = "payoutStats",
+                    arguments = mapOf("filter" to mapOf("district" to "HARBOUR"), "groupBy" to "KAIJU_CLASS"),
+                    toolContext = mapOf("actor" to "test"),
+                ),
+            ],
+            coreTools.analyticsCalls,
+        )
+    }
 
     @Test
-    fun `second test starts clean and leaves a call and both failures behind`() = startsCleanThenLeavesState()
+    fun `the fake countClaims answers a count in the MCP wire shape`() {
+        val countClaims = mcpToolCallbacks.toolCallbacks.single { it.toolDefinition.name() == "countClaims" }
+
+        val result = countClaims.call("""{"filter":{}}""", ToolContext(mapOf("actor" to "test")))
+
+        val coreJson = json.readTree(json.readTree(result)[0]["text"].stringValue())
+        assertTrue(coreJson["count"].isIntegralNumber, result)
+    }
+
+    @Test
+    fun `first test starts clean and leaves calls and all failures behind`() = startsCleanThenLeavesState()
+
+    @Test
+    fun `second test starts clean and leaves calls and all failures behind`() = startsCleanThenLeavesState()
 
     private fun startsCleanThenLeavesState() {
         assertEquals([], coreTools.calls)
+        assertEquals([], coreTools.analyticsCalls)
         val payout = mcpToolCallbacks.toolCallbacks.single { it.toolDefinition.name() == "issuePayout" }
+        val countClaims = mcpToolCallbacks.toolCallbacks.single { it.toolDefinition.name() == "countClaims" }
         payout.call("""{"claimNumber":4711}""", ToolContext(mapOf("actor" to "test")))
+        countClaims.call("""{"filter":{}}""", ToolContext(mapOf("actor" to "test")))
         fake.requestTool("getClaim", """{"claimNumber":4711}""")
         fake.reply("Claim 4711 is filed.")
 
@@ -77,7 +119,9 @@ class FakeCoreToolsTest {
             ],
             coreTools.calls,
         )
+        assertEquals(1, coreTools.analyticsCalls.size)
         coreTools.payoutFailure = IllegalStateException("left behind")
+        coreTools.analyticsFailure = IllegalStateException("left behind")
         coreTools.listingFailure = IllegalStateException("left behind")
     }
 }

@@ -5,14 +5,15 @@ import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 
 /**
- * One message of the conversation; an assistant message may carry an [error] under its (partial) text and a
- * [claimCard] to confirm.
+ * One message of the conversation; an assistant message may carry an [error] under its (partial) text, a [claimCard]
+ * to confirm and an [analyticsTable] to read.
  */
 data class ChatMessage(
     val author: Author,
     val text: String,
     val error: String? = null,
     val claimCard: ChatEvent.ClaimCard? = null,
+    val analyticsTable: ChatEvent.AnalyticsTable? = null,
 ) {
     /** Who wrote the message. */
     enum class Author { USER, ASSISTANT }

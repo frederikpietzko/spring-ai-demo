@@ -17,7 +17,8 @@ private val VALID_TO = LocalDate.parse("2027-12-31")
 
 /**
  * The scenario fixtures of the seed migration, read with plain SQL. Exact counts only over rows no test writes: tests
- * file, approve and pay claims on the sandbox policy `KP-9000` in no guaranteed order.
+ * file, approve and pay claims on the sandbox policy `KP-9000` in no guaranteed order. The claims history (customers
+ * 101-103) is a separate seed, checked by [SeedHistoryTest].
  */
 @CoreMcpIntegrationTest
 class SeedFixturesTest {
@@ -25,22 +26,26 @@ class SeedFixturesTest {
     private lateinit var jdbc: JdbcTemplate
 
     @Test
-    fun `the seed holds exactly five customers and five policies, all valid from 2026 to 2027`() {
-        val customers = jdbc.queryForList<String>("SELECT name FROM customers ORDER BY id")
-        val validity = jdbc.queryForList<String>("SELECT DISTINCT valid_from || '..' || valid_to FROM policies")
-        val policies = jdbc.queryForObject<Int>("SELECT count(*) FROM policies")
+    fun `the fixture customers 1 to 5 and the fixture policies are seeded, all valid from 2026 to 2027`() {
+        val customers = jdbc.queryForList<String>("SELECT name FROM customers WHERE id BETWEEN 1 AND 5 ORDER BY id")
+        val policies = jdbc.queryForList<String>(
+            "SELECT policy_number FROM policies WHERE customer_id BETWEEN 1 AND 5 ORDER BY policy_number",
+        )
+        val validity = jdbc.queryForList<String>(
+            "SELECT DISTINCT valid_from || '..' || valid_to FROM policies WHERE customer_id BETWEEN 1 AND 5",
+        )
 
         assertEquals(["Mara Okafor", "Jonas Reef", "Lena Hartmann", "Sandbox Customer", "Theo Marsh"], customers)
-        assertEquals(5, policies)
+        assertEquals(["KP-1001", "KP-1002", "KP-1003", "KP-1004", "KP-9000"], policies)
         assertEquals(["$VALID_FROM..$VALID_TO"], validity)
     }
 
     @Test
-    fun `only claims 4711 to 4713 are on fixture policies and none of them has a payout`() {
+    fun `only claims 4711 to 4713 are on the fixture policies KP-1001 to KP-1004 and none of them has a payout`() {
         val claims = jdbc.queryForList<Long>(
             """
             SELECT c.id FROM claims c JOIN policies p ON p.id = c.policy_id
-            WHERE p.policy_number <> 'KP-9000' ORDER BY c.id
+            WHERE p.policy_number IN ('KP-1001', 'KP-1002', 'KP-1003', 'KP-1004') ORDER BY c.id
             """.trimIndent(),
         )
         val payouts = jdbc.queryForObject<Int>("SELECT count(*) FROM payouts WHERE claim_id IN (4711, 4712, 4713)")

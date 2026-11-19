@@ -55,6 +55,27 @@ class ChatEventTest {
     }
 
     @Test
+    fun `analytics table is encoded with its type, title, columns and rows of strings`() {
+        val json = HARBOUR_TABLE.toJson()
+
+        assertEquals(
+            """{"type":"analytics-table","title":"Payouts by district","columns":["District","Payouts"],""" +
+                """"rows":[["HARBOUR","3"]]}""",
+            json,
+        )
+    }
+
+    @Test
+    fun `analytics table is decoded from its JSON`() {
+        val json = """{"type":"analytics-table","title":"Payouts by district","columns":["District","Payouts"],""" +
+            """"rows":[["HARBOUR","3"]]}"""
+
+        val event = chatEventFromJson(json)
+
+        assertEquals(HARBOUR_TABLE, event)
+    }
+
+    @Test
     fun `the total of a claim card is the sum of its items and not on the wire`() {
         val card = CAR_ROOF_CARD.copy(
             damageItems = [
@@ -96,6 +117,12 @@ class ChatEventTest {
             damageItems = [ClaimCardItem("VEHICLE", "Car roof", 800000)],
         )
 
+        val HARBOUR_TABLE = ChatEvent.AnalyticsTable(
+            title = "Payouts by district",
+            columns = ["District", "Payouts"],
+            rows = [["HARBOUR", "3"]],
+        )
+
         @JvmStatic
         fun events(): List<ChatEvent> = [
             ChatEvent.TextDelta("Größe 🦖 \"quoted\""),
@@ -103,12 +130,14 @@ class ChatEventTest {
             ChatEvent.Error("Größe 🦖 \"quoted\""),
             ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711,"note":"Größe 🦖"}"""),
             CAR_ROOF_CARD.copy(description = "Größe 🦖 \"quoted\""),
+            HARBOUR_TABLE.copy(title = "Größe 🦖 \"quoted\""),
         ]
 
         @JvmStatic
         fun terminality(): List<Arguments> = [
             Arguments.of(ChatEvent.TextDelta("Hel"), false),
             Arguments.of(CAR_ROOF_CARD, false),
+            Arguments.of(HARBOUR_TABLE, false),
             Arguments.of(ChatEvent.Done, true),
             Arguments.of(ChatEvent.Error("boom"), true),
             Arguments.of(ChatEvent.ConfirmationRequest("c-1", "issuePayout", "{}"), true),

@@ -99,6 +99,7 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
                     when (event) {
                         is ChatEvent.TextDelta -> updateReply { it.copy(text = it.text + event.text) }
                         is ChatEvent.ClaimCard -> updateReply { it.copy(claimCard = event) }
+                        is ChatEvent.AnalyticsTable -> updateReply { it.copy(analyticsTable = event) }
                         ChatEvent.Done -> terminated = true
                         is ChatEvent.ConfirmationRequest -> {
                             terminated = true

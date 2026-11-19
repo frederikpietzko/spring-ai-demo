@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: A payout statistics result is streamed as a table
-When the model calls `payoutStats` and the call succeeds, the backend SHALL emit one `AnalyticsTable` event built from the tool's result as the MCP client delivers it, before the text the model writes after the tool call; the model still receives the result. The title is `Payouts`, plus ` by district` or ` by kaiju class` when grouped; the columns are the grouping name (else `Group`), `Payouts`, `Total paid`, `Average paid`. Other tools, failed calls and unexpected result shapes give no table.
+When a `payoutStats` call of the model succeeds, the backend SHALL emit one `AnalyticsTable` event, built from the MCP client's result, before the text the model writes after the call; the model still receives the result. Title: `Payouts`, plus ` by district` or ` by kaiju class` when grouped; columns: the grouping name (else `Group`), `Payouts`, `Total paid`, `Average paid`. Other tools, failed calls, unexpected result shapes and calls in a batch resumed after a confirmation give no table.
 
 #### Scenario: The stream carries the table before the answer
 - **WHEN** the model first requests `payoutStats` with `{"filter":{"district":"HARBOUR"},"groupBy":"KAIJU_CLASS"}` and then replies with the chunk "Harbour paid out 1120000", and a client posts an adjuster request

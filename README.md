@@ -46,7 +46,8 @@ Health check: `curl localhost:8080/actuator/health`.
 
 `core-mcp` serves MCP over Streamable HTTP at `http://localhost:8081/mcp` (server name `core-mcp`). The endpoints have no security yet (`mcp-security` adds it); every caller may call every tool.
 
-- Tools: `findPolicy`, `getClaim`, `listClaimsForCustomer` (read-only), `fileClaim`, `updateClaimStatus`, `issuePayout`. A refused domain operation (unknown claim, illegal status change, payout not allowed, invalid input) is a tool result marked as an error that names the offending value, never a protocol error.
+- Tools: `findPolicy`, `getClaim`, `listClaimsForCustomer`, `countClaims`, `payoutStats` (read-only), `fileClaim`, `updateClaimStatus`, `issuePayout`. A refused domain operation (unknown claim, illegal status change, payout not allowed, invalid input) is a tool result marked as an error that names the offending value, never a protocol error.
+- Analytics: `countClaims(filter)` answers `{"count":n}`; `payoutStats(filter, groupBy)` answers `{"groupBy":...,"groups":[{"group":...,"payouts":n,"totalPaidMinor":...,"averagePaidMinor":...}]}` for the paid claims, one group per `DISTRICT` or `KAIJU_CLASS`, or one `ALL` group without `groupBy` (the average is rounded half up). The filter is typed, every field optional: `district`, `kaijuClass`, `status`, and the incident period `from`/`to` (inclusive ISO dates, UTC days); `{}` means all claims. No SQL comes from the model; an invalid value (a date like `last week`, `from` after `to`, a class outside 1 to 5) is a tool error naming it.
 - Resources: `claim://{claimNumber}` (the claim as JSON) and `policy://{policyNumber}/summary` (Markdown). An unknown id is an MCP error whose message says "not found".
 - Rules: status flow `FILED` -> `UNDER_REVIEW` or `REJECTED`, `UNDER_REVIEW` -> `APPROVED` or `REJECTED`; `PAID` only through `issuePayout`, which pays an approved claim its total minus the policy deductible, once. All amounts are whole minor units of one fictional currency.
 
@@ -68,6 +69,8 @@ The seed migration holds the scenario fixtures, which later changes rely on and 
 | Policy `KP-9000` (sandbox) | customer 4 (Sandbox Customer), all four categories, deductible 10000; the only policy tests write to |
 
 Every policy is valid from 2026-01-01 to 2027-12-31. New claims get numbers above 4713.
+
+A second seed migration adds a claims history for the analytics tools: customers 101 to 103, policies `KP-2001` (deductible 20000), `KP-2002` (50000) and `KP-2003` (10000), and claims 4601 to 4612 in the districts `HARBOUR`, `OLD_TOWN` and `HILLTOP`, each with one damage item, seven of them `PAID` (payout = damage minus deductible). For example, `HARBOUR` has four class-4 claims, two of them paid with 980000 in total. The dates are fixed in October and November 2026, so the tests are deterministic and the aggregates never drift; when the demo runs later, ask for "November 2026" instead of "this month". Tests never file claims in these three districts.
 
 ## Chat endpoint
 
@@ -127,11 +130,19 @@ curl -N -X POST localhost:8080/chat/decisions -H 'Content-Type: application/json
 
 Approve runs the paused tool calls once; deny runs none, gives the model the text "The adjuster did not approve this payout." as their result and streams its closing reply. A second decision on the same id (or an unknown id) answers one `error` event. The resumed reply sees only the original message, the paused tool call and its result, not the tool rounds before the pause.
 
+Questions about numbers go to the analytics tools `countClaims` and `payoutStats`; the adjuster prompt carries today's date (UTC), so "this month" becomes a period. Try "How many class 4 claims did the harbour district have in November 2026?" (4) or "What did we pay out per district?". A successful `payoutStats` result also reaches the client as an `analytics-table` event before the text the model writes after the tool call (the backend captures it, because Spring AI's tool loop never streams tool results):
+
+```text
+data: {"type":"analytics-table","title":"Payouts by district","columns":["District","Payouts","Total paid","Average paid"],"rows":[["HARBOUR","3","1120000","373333"],["HILLTOP","2","120000","60000"],["OLD_TOWN","2","790000","395000"]]}
+data: {"type":"text-delta","text":"..."}
+data: {"type":"done"}
+```
+
 Demo flow with claim 4711, which the seed files as `FILED`: ask the adjuster to review it (`updateClaimStatus` to `UNDER_REVIEW`), to approve it (`APPROVED`), then to pay it out; only an `APPROVED` claim can be paid, and the payout (800000 + 4500 minus the deductible 50000) waits for the confirmation. A payout for a claim in another state comes back from the core as an error text the model explains. Tests that change data use the sandbox policy `KP-9000`.
 
 ## Desktop chat
 
-Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch selects `Claimant` (default) or `Adjuster`. When the adjuster's reply asks for a payout, a confirmation panel shows the tool and its arguments with **Approve** and **Deny**; while it is open no new message can be sent, and the decision's continuation is appended to the same reply. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key.
+Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch selects `Claimant` (default) or `Adjuster`. An adjuster reply with payout statistics shows them as a table (title, column headers, one line per group) under the reply text. When the adjuster's reply asks for a payout, a confirmation panel shows the tool and its arguments with **Approve** and **Deny**; while it is open no new message can be sent, and the decision's continuation is appended to the same reply. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key.
 
 The column on the left lists the stored conversations, loaded at start and after every answer. Click one to see its transcript and continue it; **New conversation** clears the screen and starts a new one. The desktop gives every conversation its own id, so the backend remembers it across desktop and backend restarts. Without a backend the list stays empty.
 

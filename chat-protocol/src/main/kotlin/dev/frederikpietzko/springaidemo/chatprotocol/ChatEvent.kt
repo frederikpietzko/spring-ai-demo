@@ -9,14 +9,15 @@ val ChatJson: Json = Json
 
 /**
  * One event of a chat stream. The JSON field `type` names the event (kotlinx's default class discriminator), for
- * example `{"type":"text-delta","text":"Hel"}`. The events are [TextDelta], [ClaimCard], [Done], [Error] and
- * [ConfirmationRequest]; a stream ends with exactly one terminal event ([isTerminal]): [Done], [Error] or
+ * example `{"type":"text-delta","text":"Hel"}`. The events are [TextDelta], [ClaimCard], [AnalyticsTable], [Done],
+ * [Error] and [ConfirmationRequest]; a stream ends with exactly one terminal event ([isTerminal]): [Done], [Error] or
  * [ConfirmationRequest]. After a confirmation request the client answers with a [ConfirmationDecision], whose reply is
  * a new stream with the same rules.
  *
  * Extension rule (ADR-0005): the change that first emits a new event adds its subclass here with a `@SerialName`
- * (`claim-intake` added [ClaimCard]) and decides in [isTerminal] whether it ends the stream; new fields get defaults.
- * Both sides compile against this sealed type, so an unhandled event is a compile error.
+ * (`claim-intake` added [ClaimCard], `claims-analytics` added [AnalyticsTable]) and decides in [isTerminal] whether
+ * it ends the stream; new fields get defaults. Both sides compile against this sealed type, so an unhandled event is a
+ * compile error.
  *
  * Gotchas:
  * - No event may have a property called `type`: it would clash with the class discriminator.
@@ -49,6 +50,14 @@ sealed interface ChatEvent {
         val totalMinor: Long get() = damageItems.sumOf { it.amountMinor }
     }
 
+    /**
+     * A table of numbers a tool computed (the adjuster's payout statistics); not terminal, the model's text and a
+     * [Done] follow. Every cell is a string, so a client needs no domain knowledge; amounts are minor units as digits.
+     */
+    @Serializable
+    @SerialName("analytics-table")
+    data class AnalyticsTable(val title: String, val columns: List<String>, val rows: List<List<String>>) : ChatEvent
+
     /** Terminal event: the reply is complete. */
     @Serializable
     @SerialName("done")
@@ -79,7 +88,7 @@ data class ClaimCardItem(val category: String, val description: String, val amou
  */
 val ChatEvent.isTerminal: Boolean
     get() = when (this) {
-        is ChatEvent.TextDelta, is ChatEvent.ClaimCard -> false
+        is ChatEvent.TextDelta, is ChatEvent.ClaimCard, is ChatEvent.AnalyticsTable -> false
         ChatEvent.Done, is ChatEvent.Error, is ChatEvent.ConfirmationRequest -> true
     }
 

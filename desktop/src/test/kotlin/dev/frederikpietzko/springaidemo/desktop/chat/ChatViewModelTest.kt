@@ -119,6 +119,40 @@ class ChatViewModelTest {
     }
 
     @Test
+    suspend fun `an analytics table is kept on the reply next to the text and done ends it`() {
+        val tabled = ChatViewModel(
+            FakeChatApi { flowOf(TABLE, ChatEvent.TextDelta("Harbour leads"), ChatEvent.Done) },
+            scriptedIds(),
+        )
+
+        tabled.send("Payouts per district?")
+
+        assertEquals(
+            ChatState(
+                conversationId = "c-1",
+                messages = [
+                    user("Payouts per district?"),
+                    ChatMessage(ChatMessage.Author.ASSISTANT, "Harbour leads", analyticsTable = TABLE),
+                ],
+            ),
+            tabled.state.value,
+        )
+    }
+
+    @Test
+    suspend fun `a reply of only an analytics table ends at done without an error`() {
+        val tabled = ChatViewModel(FakeChatApi { flowOf(TABLE, ChatEvent.Done) }, scriptedIds())
+
+        tabled.send("Payouts per district?")
+
+        assertEquals(
+            [user("Payouts per district?"), ChatMessage(ChatMessage.Author.ASSISTANT, "", analyticsTable = TABLE)],
+            tabled.state.value.messages,
+        )
+        assertEquals(false, tabled.state.value.sending)
+    }
+
+    @Test
     suspend fun `text before a claim card stays on the reply next to the card`() {
         val carded = ChatViewModel(
             FakeChatApi { flowOf(ChatEvent.TextDelta("Here is your claim"), CARD, ChatEvent.Done) },
@@ -532,6 +566,8 @@ class ChatViewModelTest {
 
         val PAYOUT_CONFIRMATION = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""")
         const val GNOME_TEXT = "my garden gnome is gone"
+        val TABLE = ChatEvent.AnalyticsTable("Payouts by district", ["District", "Payouts"], [["HARBOUR", "3"]])
+
         val CARD = ChatEvent.ClaimCard(
             policyNumber = "KP-1001",
             district = "HARBOUR",

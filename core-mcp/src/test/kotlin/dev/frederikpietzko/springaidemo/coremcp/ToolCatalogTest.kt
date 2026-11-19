@@ -10,7 +10,13 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-private val READ_TOOLS: Set<String> = ["findPolicy", "getClaim", "listClaimsForCustomer"]
+private val READ_TOOLS: Set<String> = [
+    "findPolicy",
+    "getClaim",
+    "listClaimsForCustomer",
+    "countClaims",
+    "payoutStats",
+]
 private val WRITE_TOOLS: Set<String> = ["fileClaim", "updateClaimStatus", "issuePayout"]
 
 /** The tool catalogue is the model-facing contract that the wave-2 agent builds on. */
@@ -23,11 +29,11 @@ class ToolCatalogTest {
     private lateinit var json: JsonMapper
 
     @Test
-    fun `exactly the six tools are listed, each with a description`() {
+    fun `exactly the eight tools are listed, each with a description`() {
         val tools = mcp.listTools()
 
         assertEquals(READ_TOOLS + WRITE_TOOLS, tools.map { it.name() }.toSet())
-        assertEquals(6, tools.size)
+        assertEquals(8, tools.size)
         assertEquals([], tools.filter { it.description().isNullOrBlank() }.map { it.name() })
     }
 

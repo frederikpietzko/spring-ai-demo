@@ -1,8 +1,6 @@
 package dev.frederikpietzko.springaidemo.backend.adjuster
 
 import org.springframework.ai.chat.client.ChatClient
-import org.springframework.ai.tool.ToolCallbackProvider
-import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -12,17 +10,15 @@ import org.springframework.core.io.Resource
 @Configuration(proxyBeanMethods = false)
 class AdjusterConfiguration {
     /**
-     * The adjuster instructions as the system prompt and the core tools of `core-mcp`. MCP tools are not registered
-     * on a chat client automatically, so they are added here explicitly; the provider lists them on every request,
-     * which is when the MCP client connects for the first time.
+     * The adjuster instructions as the system prompt. The core tools of `core-mcp` are no default tools here:
+     * `AdjusterChat` passes them with every request, because it wraps `payoutStats` per request to capture its result
+     * as a table.
      */
     @Bean
     fun adjusterChatClient(
         builder: ChatClient.Builder,
         @Value("classpath:prompts/adjuster-system.md") adjusterSystemPrompt: Resource,
-        @Qualifier("mcpToolCallbacks") coreTools: ToolCallbackProvider,
     ): ChatClient = builder
         .defaultSystem(adjusterSystemPrompt, Charsets.UTF_8)
-        .defaultTools(coreTools)
         .build()
 }

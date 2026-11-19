@@ -248,6 +248,36 @@ class AppSemanticsTest {
         onAllNodesWithText("Confirm")[1].assertIsNotEnabled()
     }
 
+    @Test
+    fun `an analytics table shows its title, headers and cells under the reply text`() = runDesktopComposeUiTest {
+        setContent { App(FakeChatApi { flowOf(TABLE, ChatEvent.TextDelta("Harbour leads"), ChatEvent.Done) }) }
+        waitForIdle()
+        onNode(hasSetTextAction()).performTextInput("Payouts per district?")
+
+        onNodeWithText("Send").performClick()
+        waitForIdle()
+
+        onNodeWithText("Harbour leads").assertIsDisplayed()
+        onNodeWithText("Payouts by district").assertIsDisplayed()
+        onNodeWithText("District").assertIsDisplayed()
+        onNodeWithText("Payouts").assertIsDisplayed()
+        onNodeWithText("HARBOUR").assertIsDisplayed()
+        onNodeWithText("3").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a reply of only an analytics table shows no placeholder`() = runDesktopComposeUiTest {
+        setContent { App(FakeChatApi { flowOf(TABLE, ChatEvent.Done) }) }
+        waitForIdle()
+        onNode(hasSetTextAction()).performTextInput("Payouts per district?")
+
+        onNodeWithText("Send").performClick()
+        waitForIdle()
+
+        onNodeWithText("HARBOUR").assertIsDisplayed()
+        onNodeWithText("…").assertDoesNotExist()
+    }
+
     private val isPersonaSwitch = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.DropdownList)
 
     private val hasNoText = SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString(""))
@@ -280,6 +310,8 @@ class AppSemanticsTest {
                 ClaimCardItem("GARDEN", "Garden gnome", 25000),
             ],
         )
+        val TABLE = ChatEvent.AnalyticsTable("Payouts by district", ["District", "Payouts"], [["HARBOUR", "3"]])
+
         val PAYOUT_CONFIRMATION = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""")
     }
 }
