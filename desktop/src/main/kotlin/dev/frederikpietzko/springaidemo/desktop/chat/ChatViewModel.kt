@@ -77,15 +77,15 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
         streamReply(api.decide(ConfirmationDecision(pending.confirmationId, approved)))
     }
 
-    /** Selects the persona for the next message. */
+    /** Selects the persona for the next message and clears the todo list, which belongs to the other persona. */
     fun selectPersona(persona: Persona) {
-        mutableState.update { it.copy(persona = persona) }
+        mutableState.update { it.copy(persona = persona, todos = []) }
     }
 
     /**
-     * Appends [events] to the last (assistant) message until a terminal event arrives. A confirmation request is kept
-     * as pending; an error event, or a stream that ends without a terminal event, is shown under the (partial) reply;
-     * `sending` is reset in any case.
+     * Appends [events] to the last (assistant) message until a terminal event arrives. A todo update replaces the todo
+     * list; a confirmation request is kept as pending; an error event, or a stream that ends without a terminal event,
+     * is shown under the (partial) reply; `sending` is reset in any case.
      */
     private suspend fun streamReply(events: Flow<ChatEvent>) {
         try {
@@ -101,6 +101,7 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
                         is ChatEvent.TextDelta -> updateReply { it.copy(text = it.text + event.text) }
                         is ChatEvent.ClaimCard -> updateReply { it.copy(claimCard = event) }
                         is ChatEvent.AnalyticsTable -> updateReply { it.copy(analyticsTable = event) }
+                        is ChatEvent.TodoUpdate -> mutableState.update { it.copy(todos = event.todos) }
                         ChatEvent.Done -> terminated = true
                         is ChatEvent.ConfirmationRequest -> {
                             terminated = true
@@ -128,23 +129,28 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
 
     /**
      * Shows the transcript of [conversation] and continues it: later messages carry its id. A transcript that cannot
-     * be loaded shows no messages. Ignored while an answer is streaming or a confirmation is pending.
+     * be loaded shows no messages. The todo list is cleared: it belonged to the conversation shown before. Ignored
+     * while an answer is streaming or a confirmation is pending.
      */
     suspend fun open(conversation: ConversationSummary) {
         if (state.value.sending || state.value.pendingConfirmation != null) return
         val messages = api.messages(conversation.id).map { it.toChatMessage() }
         mutableState.update {
-            if (it.sending) it else it.copy(conversationId = conversation.id, messages = messages)
+            if (it.sending) {
+                it
+            } else {
+                it.copy(conversationId = conversation.id, messages = messages, todos = [])
+            }
         }
     }
 
     /**
-     * Clears the conversation and starts a new one with a new id; ignored while an answer is streaming or a
-     * confirmation is pending.
+     * Clears the conversation and its todo list and starts a new one with a new id; ignored while an answer is
+     * streaming or a confirmation is pending.
      */
     fun newConversation() {
         if (state.value.sending || state.value.pendingConfirmation != null) return
-        mutableState.update { it.copy(conversationId = newId(), messages = []) }
+        mutableState.update { it.copy(conversationId = newId(), messages = [], todos = []) }
     }
 
     private fun updateReply(change: (ChatMessage) -> ChatMessage) {

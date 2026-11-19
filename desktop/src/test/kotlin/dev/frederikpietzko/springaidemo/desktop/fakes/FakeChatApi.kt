@@ -18,25 +18,25 @@ import java.util.concurrent.CopyOnWriteArrayList
  * last so existing tests can pass it as a trailing lambda.
  */
 class FakeChatApi(
-    private val decisionReply: (ConfirmationDecision) -> Flow<ChatEvent> = { flowOf(ChatEvent.Done) },
     private val conversations: suspend () -> List<ConversationSummary> = { [] },
     private val messages: suspend (String) -> List<ConversationMessage> = { [] },
+    private val decisionReply: (ConfirmationDecision) -> Flow<ChatEvent> = { flowOf(ChatEvent.Done) },
     private val reply: (ChatRequest) -> Flow<ChatEvent> = {
         flowOf(ChatEvent.TextDelta("Hel"), ChatEvent.TextDelta("lo"), ChatEvent.Done)
     },
 ) : ChatApi {
     private val received = CopyOnWriteArrayList<ChatRequest>()
-    private val receivedDecisions = CopyOnWriteArrayList<ConfirmationDecision>()
     private val opened = CopyOnWriteArrayList<String>()
+    private val receivedDecisions = CopyOnWriteArrayList<ConfirmationDecision>()
 
     /** Every request sent so far, in order. */
     val requests: List<ChatRequest> get() = received.toList()
 
-    /** Every decision sent so far, in order. */
-    val decisions: List<ConfirmationDecision> get() = receivedDecisions.toList()
-
     /** Every conversation id whose transcript was requested, in order. */
     val openedIds: List<String> get() = opened.toList()
+
+    /** Every decision sent so far, in order. */
+    val decisions: List<ConfirmationDecision> get() = receivedDecisions.toList()
 
     override fun send(request: ChatRequest): Flow<ChatEvent> {
         received.add(request)

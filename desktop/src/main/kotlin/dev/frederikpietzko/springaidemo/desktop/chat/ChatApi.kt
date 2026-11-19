@@ -15,12 +15,12 @@ interface ChatApi {
     /** Sends [request] and emits the reply's events. */
     fun send(request: ChatRequest): Flow<ChatEvent>
 
-    /** Sends the [decision] on a pending confirmation and emits the events of the continued reply. */
-    fun decide(decision: ConfirmationDecision): Flow<ChatEvent>
-
     /** The stored conversations, newest first; empty when the backend cannot be read. */
     suspend fun conversations(): List<ConversationSummary>
 
     /** The transcript of conversation [id]; empty when the backend cannot be read. */
     suspend fun messages(id: String): List<ConversationMessage>
+
+    /** Sends the [decision] on a pending confirmation and emits the events of the continued reply. */
+    fun decide(decision: ConfirmationDecision): Flow<ChatEvent>
 }

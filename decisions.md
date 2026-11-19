@@ -369,6 +369,37 @@ Binding text: `openspec/changes/archive/2026-11-20-mcp-tools-and-confirmation/de
 - **After the merge with track B:** the adjuster client should adopt the observability advisors; session advisors stay claimant-only.
 - **`CredentialIsolationTest`** now also guards a non-credential (`CORE_MCP_URL`); its name could say "environment isolation".
 
+### Wave 3 - `agent-todo-and-skills`
+
+Review: clean (no confirmed blockers).
+
+Binding text: `openspec/changes/archive/2026-11-20-agent-todo-and-skills/design.md` (D1-D8) and `docs/adr/0007-community-libraries.md`. The addendum of `docs/adr/0005-chat-protocol.md` carries the todo event and the corrected deny rule. This section is the index.
+
+**Decisions**
+
+- **Library dependency, not a copy (ADR-0007):** depend on `org.springaicommunity:spring-ai-agent-utils:0.13.0` with an explicit version in `libs.versions.toml`, exclude `com.vladsch.flexmark`, and use only `TodoWriteTool` and `SkillsTool`. *Why:* 0.13.0 is the newest release (0.14.0 exists only as a SNAPSHOT on Spring AI 2.1.0-SNAPSHOT); the two classes are identical there, every Spring AI call they make exists in 2.1.0-RC2, and the jar adds no auto-configuration. The Spring AI BOM does not manage it. The fallback (copy one class into `backend`) was not needed.
+- **Todo writes reach the stream through a per-request tool:** one `TodoWriteTool` per request, added with `.tools(todoWrite)`; its event handler does `trySend(TodoUpdate)` into a `channelFlow` with an unlimited buffer, in `turn` and in `decide`. *Why:* the handler gets no tool context or conversation id and tool-call chunks are filtered out of `chatResponse()`; a tool-context sink would also be forwarded to the core as MCP `_meta`.
+- **Wire form (ADR-0005 extension rule):** non-terminal `ChatEvent.TodoUpdate` (`todo-update`) carries the whole list as `TodoItem(content, status, activeForm)`, `TodoStatus` = `PENDING`, `IN_PROGRESS`, `COMPLETED` (upper case like the other enums). *Why:* the library sends the full list on every call, so the event means "replace"; no deltas.
+- **Controller Done rule:** `withTerminalEvent` adds `Done` whenever the last event is not terminal, instead of only after text or nothing. *Why:* a reply that ends in a `TodoUpdate` without final text would otherwise get no terminal event.
+- **Deny stops only the calls that wait for a decision (changes the deny rule of `adjuster-tools`):** approve and deny apply to the keys of `ToolCallDecisions.awaitingDecision`; every other call of the paused reply (`TodoWrite`, `getClaim`, `Skill`) runs normally. `decide` is a `channelFlow` that registers the core tools, a per-decision `TodoWrite` and the `Skill` callback. `FakeChatModel.requestTools(vararg)` scripts a mixed batch. *Why:* otherwise a paused batch with `TodoWrite` throws on approve and hands the payout denial text to the todo call on deny; Claude does issue parallel tool calls. Specs (`adjuster-tools` MODIFIED), ADR-0005 and the `decide` KDoc were kept consistent.
+- **Skills:** `kaiju-classification` and `damage-estimation` under `backend/src/main/resources/skills/`, single-line frontmatter (`name`, `description`). The callback is one qualified bean `adjusterSkills` built from `@Value("classpath:skills")`, a default tool of `adjusterChatClient` and part of the resume options; the claimant is not offered `Skill` or `TodoWrite`. *Why:* the library's frontmatter parser has no multi-line YAML; a bean not offered to the model is not resolved (`DEFAULT_RESOLUTION_FALLBACK_ENABLED = false`). Test fixture skills must not live under `skills/` on the test classpath.
+- **Desktop todo panel:** `ChatState.todos` is replaced on each `TodoUpdate` and cleared on new conversation, opening one from the history, and persona selection. A 260 dp `TodoPanel` titled "Todo list" sits right of the conversation, only while the list is not empty; it shows `activeForm` for the in-progress item, `content` for the others, with a text marker per status. *Why:* smallest demo-sized UI; render tests stay unchanged when the list is empty.
+- **Docs:** ADR-0007 (community libraries, with an empty Amendments section for `mcp-security`), ADR-0005 addendum and status line, README section on the todo list and skills, prompt line "Plan work of three or more steps with `TodoWrite` ... load it with `Skill` first".
+- **Test boundary:** `SkillsTest` calls the production bean method `adjusterSkills(ClassPathResource("skills"))` with the real library; `AdjusterTodoTest` and `AdjusterSkillsTest` run the real library classes through the streaming and the resume loop with the fake model.
+
+**Descoped / deviations from the roadmap entry**
+
+- **Skill names and descriptions are in the `Skill` tool definition, not the system prompt:** the library puts the `<available_skills>` block into the tool description; rendering our own list would duplicate it. The model sees the same information up front, the body arrives only as the tool result. The ROADMAP test line was reworded accordingly and ADR-0007 states the reason.
+- **Accepted gaps (recorded in ADR-0007):** a `TodoUpdate` may overtake buffered text of the same round; the model forgets its todo list across a payout decision (stateless resume), the panel keeps the last list; the long `TodoWrite` description costs about 2-3k tokens per adjuster request; the skill result carries "Base directory for this skill: <path>".
+
+**Follow-ups**
+
+- **Manual check with a real key:** ask the adjuster to review claim 4711 and watch the todo panel (not run, no provider key available).
+- **Persona switch mid-stream:** `selectPersona` clears the todos while an adjuster stream may still deliver `TodoUpdate`s, which repopulate the panel under the claimant persona.
+- **Upgrade path:** move `spring-ai-agent-utils` to the first 0.14.x release once it exists and Spring AI 2.1 is final; the backend tests are the compatibility check.
+- **Todo list across a payout decision:** the resume is stateless, so session memory for the adjuster would also keep the list.
+- **Duplicate test:** the claimant tool-list assertion in `AdjusterTodoTest` repeats an older `AdjusterChatTest` test; one could go.
+
 ### Wave 3 - `claims-analytics`
 
 Review: 1 confirmed blocker(s), fixed in one round.
@@ -402,3 +433,13 @@ Binding text: `openspec/changes/archive/2026-11-20-claims-analytics/design.md` a
 - **History drifts:** the seed dates (Oct/Nov 2026) move away from "this month"; demo scripts should say "November 2026".
 - **Convention unenforced:** an ArchUnit or test-time check could guard "sandbox claims never in the history districts".
 - **Scopes:** `analytics:read` on `AnalyticsTools` is left to `mcp-security`.
+
+## Merges
+
+The tracks' sync merges had resolved the same conflicts (mcp-tools-and-confirmation against session-memory and claim-intake) in slightly different ways. Integrating every track into `roadmap-track-c` kept one behaviour per point, the one every archived and main spec allows, and the simpler one where both did:
+
+- **One terminal rule in `ChatController`:** every reply (claimant message, claim actions, adjuster message and decision) goes through one `withTerminalEvent()` that adds `Done` after a completed reply whose last event is not terminal (`ChatEvent.isTerminal`), plus one `catch`. *Rejected:* the split `terminated()`/`onCompletion` rule for the claimant next to an adjuster rule of "text or nothing" (bridge, track D), which gives no `Done` after a reply ending in a table or todo update.
+- **Claim actions of the adjuster:** `PREPARE_CLAIM`/`CONFIRM_CLAIM` for `ADJUSTER` answer one error event naming the persona and make no model call, as the `claim-intake` main spec says; the test "an adjuster prepare request gets one error and no model call" is kept. *Rejected:* track B/D's merge adaptation that let the adjuster agent answer and ignore the action (it contradicted their own main spec).
+- **Pending confirmation in the desktop:** `newConversation` and `open` are ignored while a confirmation is pending (bridge, track B fix), and Confirm on a claim card is disabled then as well (`canConfirm = canSend`). **Prepare claim** stays enabled whenever Send is (tracks B, C, D); the bridge's extra "claimant only" switch was dropped, because the backend already answers an adjuster prepare with an error and no spec asks for it.
+- **Adjuster tools after claims-analytics and agent-todo-and-skills:** the `Skill` callback is the one default tool of `adjusterChatClient`; `AdjusterChat` passes the core tools (with the `payoutStats` table capture) and the per-request `TodoWrite` tool with every request; the resume carries the core tools, `TodoWrite` and `Skill`. The tool-list tests now pin exactly `Skill`, `TodoWrite`, `countClaims`, `getClaim`, `issuePayout`, `payoutStats`.
+- **Order of docs:** ADR-0005 addenda and decisions.md sections follow commit time; the merge narratives of the tracks' own sync merges were folded into this section.

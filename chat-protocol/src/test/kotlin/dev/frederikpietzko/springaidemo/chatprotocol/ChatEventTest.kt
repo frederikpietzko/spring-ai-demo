@@ -32,6 +32,18 @@ class ChatEventTest {
     }
 
     @Test
+    fun `claim card is encoded with its type and fields`() {
+        val json = CAR_ROOF_CARD.toJson()
+
+        assertEquals(
+            """{"type":"claim-card","policyNumber":"KP-1001","district":"HARBOUR",""" +
+                """"incidentAt":"2026-11-19T15:00:00Z","kaijuClass":3,"description":"Kaiju stepped on the car",""" +
+                """"damageItems":[{"category":"VEHICLE","description":"Car roof","amountMinor":800000}]}""",
+            json,
+        )
+    }
+
+    @Test
     fun `confirmation request is encoded with its type, id, tool name and arguments`() {
         val json = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""").toJson()
 
@@ -43,13 +55,14 @@ class ChatEventTest {
     }
 
     @Test
-    fun `claim card is encoded with its type and fields`() {
-        val json = CAR_ROOF_CARD.toJson()
+    fun `todo update is encoded with its type and todos`() {
+        val json = ChatEvent.TodoUpdate(
+            [TodoItem("Check coverage", TodoStatus.IN_PROGRESS, "Checking coverage")],
+        ).toJson()
 
         assertEquals(
-            """{"type":"claim-card","policyNumber":"KP-1001","district":"HARBOUR",""" +
-                """"incidentAt":"2026-11-19T15:00:00Z","kaijuClass":3,"description":"Kaiju stepped on the car",""" +
-                """"damageItems":[{"category":"VEHICLE","description":"Car roof","amountMinor":800000}]}""",
+            """{"type":"todo-update","todos":[{"content":"Check coverage","status":"IN_PROGRESS",""" +
+                """"activeForm":"Checking coverage"}]}""",
             json,
         )
     }
@@ -104,7 +117,7 @@ class ChatEventTest {
 
     @Test
     fun `an unknown event type is rejected`() {
-        assertFailsWith<SerializationException> { chatEventFromJson("""{"type":"todo-update"}""") }
+        assertFailsWith<SerializationException> { chatEventFromJson("""{"type":"mystery"}""") }
     }
 
     private companion object {
@@ -128,9 +141,17 @@ class ChatEventTest {
             ChatEvent.TextDelta("Größe 🦖 \"quoted\""),
             ChatEvent.Done,
             ChatEvent.Error("Größe 🦖 \"quoted\""),
-            ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711,"note":"Größe 🦖"}"""),
             CAR_ROOF_CARD.copy(description = "Größe 🦖 \"quoted\""),
             HARBOUR_TABLE.copy(title = "Größe 🦖 \"quoted\""),
+            ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711,"note":"Größe 🦖"}"""),
+            ChatEvent.TodoUpdate([]),
+            ChatEvent.TodoUpdate(
+                [
+                    TodoItem("Verify the policy", TodoStatus.COMPLETED, "Verifying the policy"),
+                    TodoItem("Check coverage \"Größe\"", TodoStatus.IN_PROGRESS, "Checking coverage"),
+                    TodoItem("Pay out", TodoStatus.PENDING, "Paying out"),
+                ],
+            ),
         ]
 
         @JvmStatic
@@ -141,6 +162,7 @@ class ChatEventTest {
             Arguments.of(ChatEvent.Done, true),
             Arguments.of(ChatEvent.Error("boom"), true),
             Arguments.of(ChatEvent.ConfirmationRequest("c-1", "issuePayout", "{}"), true),
+            Arguments.of(ChatEvent.TodoUpdate([TodoItem("Check", TodoStatus.PENDING, "Checking")]), false),
         ]
     }
 }

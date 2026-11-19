@@ -9,6 +9,8 @@ import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.MessageRole
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
+import dev.frederikpietzko.springaidemo.chatprotocol.TodoItem
+import dev.frederikpietzko.springaidemo.chatprotocol.TodoStatus
 import dev.frederikpietzko.springaidemo.desktop.fakes.FakeChatApi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
@@ -482,7 +484,10 @@ class ChatViewModelTest {
 
         assertEquals([ConfirmationDecision("c-1", approved = true)], api.decisions)
         assertEquals(
-            ChatState(conversationId = "c-1", messages = [user("Pay claim 4711"), assistant("Ready to pay. Paid")]),
+            ChatState(
+                conversationId = "c-1",
+                messages = [user("Pay claim 4711"), assistant("Ready to pay. Paid")],
+            ),
             paused.state.value,
         )
     }
@@ -566,6 +571,71 @@ class ChatViewModelTest {
         assertEquals([], api.openedIds)
     }
 
+    @Test
+    suspend fun `todo updates fill the todo list and neither end nor change the reply`() {
+        val chat = ChatViewModel(
+            FakeChatApi { flowOf(ChatEvent.TodoUpdate(PLAN), ChatEvent.TextDelta("Working."), ChatEvent.Done) },
+            scriptedIds(),
+        )
+
+        chat.send("Review claim 4711")
+
+        val state = chat.state.value
+        assertEquals(PLAN, state.todos)
+        assertEquals([user("Review claim 4711"), assistant("Working.")], state.messages)
+        assertEquals(false, state.sending)
+    }
+
+    @Test
+    suspend fun `a later todo update replaces the list`() {
+        val chat = ChatViewModel(
+            FakeChatApi { flowOf(ChatEvent.TodoUpdate(PLAN), ChatEvent.TodoUpdate(PROGRESS), ChatEvent.Done) },
+            scriptedIds(),
+        )
+
+        chat.send("Review claim 4711")
+
+        assertEquals(PROGRESS, chat.state.value.todos)
+    }
+
+    @Test
+    suspend fun `a new conversation clears the todo list`() {
+        val chat = planningChat()
+        chat.send("Review claim 4711")
+
+        chat.newConversation()
+
+        assertEquals([], chat.state.value.todos)
+    }
+
+    @Test
+    suspend fun `selecting another persona clears the todo list`() {
+        val chat = planningChat()
+        chat.selectPersona(Persona.ADJUSTER)
+        chat.send("Review claim 4711")
+
+        chat.selectPersona(Persona.CLAIMANT)
+
+        assertEquals([], chat.state.value.todos)
+    }
+
+    @Test
+    suspend fun `opening a conversation clears the todo list and shows the transcript`() {
+        val chat = planningChat(messages = { [ConversationMessage(MessageRole.USER, GNOME_TEXT)] })
+        chat.send("Review claim 4711")
+
+        chat.open(GNOME)
+
+        assertEquals([], chat.state.value.todos)
+        assertEquals([user(GNOME_TEXT)], chat.state.value.messages)
+    }
+
+    /** A chat whose every reply is one todo update of [PLAN] and done. */
+    private fun planningChat(messages: suspend (String) -> List<ConversationMessage> = { [] }) = ChatViewModel(
+        FakeChatApi(messages = messages) { flowOf(ChatEvent.TodoUpdate(PLAN), ChatEvent.Done) },
+        scriptedIds(),
+    )
+
     private fun user(text: String) = ChatMessage(ChatMessage.Author.USER, text)
 
     private fun assistant(text: String, error: String? = null) =
@@ -578,7 +648,6 @@ class ChatViewModelTest {
         /** Bounds every wait, so a missing guard fails the test instead of hanging it. */
         val TIMEOUT = 5.seconds
 
-        val PAYOUT_CONFIRMATION = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""")
         const val GNOME_TEXT = "my garden gnome is gone"
         val TABLE = ChatEvent.AnalyticsTable("Payouts by district", ["District", "Payouts"], [["HARBOUR", "3"]])
 
@@ -592,5 +661,14 @@ class ChatViewModelTest {
         )
         val SHED = ConversationSummary("c-3", "Shed", "2026-11-20T10:00:00Z")
         val GNOME = ConversationSummary("c-7", "Gnome", "2026-11-20T09:00:00Z")
+        val PAYOUT_CONFIRMATION = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""")
+        val PLAN: List<TodoItem> = [
+            TodoItem("Verify the policy", TodoStatus.IN_PROGRESS, "Verifying the policy"),
+            TodoItem("Check coverage", TodoStatus.PENDING, "Checking coverage"),
+        ]
+        val PROGRESS: List<TodoItem> = [
+            TodoItem("Verify the policy", TodoStatus.COMPLETED, "Verifying the policy"),
+            TodoItem("Check coverage", TodoStatus.IN_PROGRESS, "Checking coverage"),
+        ]
     }
 }

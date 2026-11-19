@@ -190,3 +190,10 @@ The backend test context SHALL NOT create an MCP client and SHALL provide a fake
 #### Scenario: The fake analytics tools answer in the MCP wire shape
 - **WHEN** the fake `payoutStats` callback is called with a filter
 - **THEN** its result is a JSON list with one object whose `text` is a JSON string holding `groupBy` and `groups`, and the call is recorded with its arguments and tool context
+
+### Requirement: Fake chat model can request several tool calls in one reply
+The fake chat model SHALL be able to script one reply that requests several tool calls at once, in the given order, for streamed and blocking calls, so a test can cover a batch of parallel calls.
+
+#### Scenario: One reply with two tool calls
+- **WHEN** a test scripts one reply requesting the registered tools `first` and `second`, then a final text reply, and a chat client prompt is sent
+- **THEN** both tools ran once, the second recorded prompt contains both tool responses, and the chat client returns the final text

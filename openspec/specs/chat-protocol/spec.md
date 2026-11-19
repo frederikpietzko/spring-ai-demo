@@ -7,7 +7,7 @@ Defines the types that backend and desktop exchange for a chat: the request, the
 ## Requirements
 
 ### Requirement: Chat events have a stable JSON form
-The protocol SHALL define the chat events `TextDelta`, `Done`, `Error`, `ConfirmationRequest` and `ClaimCard`, each serialized as a JSON object whose `type` field names the event: `text-delta` with a `text` field, `done` with no further field, `error` with a `message` field, `confirmation-request` with the fields `confirmationId`, `toolName` and `arguments`, `claim-card` with the fields of its own requirement. Decoding SHALL accept exactly these types and give back the same event.
+The protocol SHALL define the chat events `TextDelta`, `Done`, `Error`, `ClaimCard`, `ConfirmationRequest`, `AnalyticsTable` and `TodoUpdate`, each serialized as a JSON object whose `type` field names the event: `text-delta` with a `text` field, `done` with no further field, `error` with a `message` field, `claim-card` and `analytics-table` with the fields of their own requirements, `confirmation-request` with its own fields, `todo-update` with a `todos` array. Decoding SHALL accept exactly these types and give back the same event.
 
 #### Scenario: Text delta wire form
 - **WHEN** a text delta carrying "Hel" is encoded
@@ -25,12 +25,16 @@ The protocol SHALL define the chat events `TextDelta`, `Done`, `Error`, `Confirm
 - **WHEN** a confirmation request with id "c-1", tool name "issuePayout" and arguments `{"claimNumber":4711}` is encoded
 - **THEN** the JSON is `{"type":"confirmation-request","confirmationId":"c-1","toolName":"issuePayout","arguments":"{\"claimNumber\":4711}"}`
 
+#### Scenario: Todo update wire form
+- **WHEN** a todo update with the single item "Check coverage", status in progress and active form "Checking coverage" is encoded
+- **THEN** the JSON is `{"type":"todo-update","todos":[{"content":"Check coverage","status":"IN_PROGRESS","activeForm":"Checking coverage"}]}`
+
 #### Scenario: Round trip
 - **WHEN** each event is encoded and the JSON is decoded as a chat event
-- **THEN** the decoded event equals the original, including text with non-ASCII characters and quotes
+- **THEN** the decoded event equals the original, including text with non-ASCII characters and quotes and a todo update with an empty list and with items of every status
 
 #### Scenario: Unknown event type is rejected
-- **WHEN** the JSON `{"type":"todo-update"}` is decoded as a chat event
+- **WHEN** the JSON `{"type":"mystery"}` is decoded as a chat event
 - **THEN** decoding fails instead of producing an event
 
 ### Requirement: Chat request carries persona and message
@@ -54,17 +58,6 @@ The protocol module SHALL NOT depend on the web framework, the AI framework, the
 #### Scenario: The protocol module declares only the serialization library
 - **WHEN** the declared dependencies of the protocol module are inspected
 - **THEN** the only library it declares is kotlinx-serialization-json, and the Spring, Compose and Ktor libraries are not among its dependencies
-
-### Requirement: Confirmation decision carries the id and the choice
-The protocol SHALL define the confirmation decision as a JSON object with a `confirmationId` field and an `approved` field (a boolean). It SHALL carry nothing else: the paused tool calls are never sent by the client.
-
-#### Scenario: Decision wire form
-- **WHEN** a decision for id "c-1" that approves is encoded
-- **THEN** the JSON is `{"confirmationId":"c-1","approved":true}` and decoding it gives the same decision
-
-#### Scenario: Missing choice is rejected
-- **WHEN** the JSON `{"confirmationId":"c-1"}` is decoded as a decision
-- **THEN** decoding fails
 
 ### Requirement: Conversation summaries and messages have a stable JSON form
 The protocol SHALL define a conversation summary (`id`, `title`, `startedAt` as an ISO-8601 instant text) and a conversation message (`role`, `USER` or `ASSISTANT`, and `text`), each serialized as a JSON object with exactly those fields, so that backend and desktop agree on the conversation list and the transcript.
@@ -108,11 +101,11 @@ The chat request SHALL have an `action` field with the values `MESSAGE`, `PREPAR
 - **THEN** decoding fails
 
 ### Requirement: Events say whether they end the stream
-The protocol SHALL tell for every chat event whether it is terminal: `Done`, `Error` and `ConfirmationRequest` are terminal, `TextDelta`, `ClaimCard` and `AnalyticsTable` are not. The answer SHALL come from an exhaustive match, so a new event cannot be added without deciding it.
+The protocol SHALL tell for every chat event whether it is terminal: `Done`, `Error` and `ConfirmationRequest` are terminal, `TextDelta`, `ClaimCard`, `AnalyticsTable` and `TodoUpdate` are not. The answer SHALL come from an exhaustive match, so a new event cannot be added without deciding it.
 
 #### Scenario: Terminal and non-terminal events
 - **WHEN** the terminal-ness of each event is asked
-- **THEN** `Done`, `Error` and `ConfirmationRequest` are terminal and `TextDelta`, `ClaimCard` and `AnalyticsTable` are not
+- **THEN** `Done`, `Error` and `ConfirmationRequest` are terminal and `TextDelta`, `ClaimCard`, `AnalyticsTable` and `TodoUpdate` are not
 
 ### Requirement: Analytics tables have a stable JSON form
 The protocol SHALL have the event `AnalyticsTable(title, columns, rows)` with the JSON type `analytics-table`: a title, the column headers and the rows, every cell a string (amounts are whole minor units written as digits). No property of the event is called `type`, and a decoded event equals the encoded one.
@@ -124,3 +117,14 @@ The protocol SHALL have the event `AnalyticsTable(title, columns, rows)` with th
 #### Scenario: Decode
 - **WHEN** that JSON is decoded as a chat event
 - **THEN** the result equals the original event
+
+### Requirement: Confirmation decision carries the id and the choice
+The protocol SHALL define the confirmation decision as a JSON object with a `confirmationId` field and an `approved` field (a boolean). It SHALL carry nothing else: the paused tool calls are never sent by the client.
+
+#### Scenario: Decision wire form
+- **WHEN** a decision for id "c-1" that approves is encoded
+- **THEN** the JSON is `{"confirmationId":"c-1","approved":true}` and decoding it gives the same decision
+
+#### Scenario: Missing choice is rejected
+- **WHEN** the JSON `{"confirmationId":"c-1"}` is decoded as a decision
+- **THEN** decoding fails

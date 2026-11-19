@@ -9,15 +9,15 @@ val ChatJson: Json = Json
 
 /**
  * One event of a chat stream. The JSON field `type` names the event (kotlinx's default class discriminator), for
- * example `{"type":"text-delta","text":"Hel"}`. The events are [TextDelta], [ClaimCard], [AnalyticsTable], [Done],
- * [Error] and [ConfirmationRequest]; a stream ends with exactly one terminal event ([isTerminal]): [Done], [Error] or
- * [ConfirmationRequest]. After a confirmation request the client answers with a [ConfirmationDecision], whose reply is
- * a new stream with the same rules.
+ * example `{"type":"text-delta","text":"Hel"}`. The events are [TextDelta], [ClaimCard], [AnalyticsTable],
+ * [TodoUpdate], [Done], [Error] and [ConfirmationRequest]; a stream ends with exactly one terminal event
+ * ([isTerminal]): [Done], [Error] or [ConfirmationRequest]. After a confirmation request the client answers with a
+ * [ConfirmationDecision], whose reply is a new stream with the same rules.
  *
  * Extension rule (ADR-0005): the change that first emits a new event adds its subclass here with a `@SerialName`
- * (`claim-intake` added [ClaimCard], `claims-analytics` added [AnalyticsTable]) and decides in [isTerminal] whether
- * it ends the stream; new fields get defaults. Both sides compile against this sealed type, so an unhandled event is a
- * compile error.
+ * (`claim-intake` added [ClaimCard], `claims-analytics` added [AnalyticsTable], `agent-todo-and-skills` added
+ * [TodoUpdate]) and decides in [isTerminal] whether it ends the stream; new fields get defaults. Both sides compile
+ * against this sealed type, so an unhandled event is a compile error.
  *
  * Gotchas:
  * - No event may have a property called `type`: it would clash with the class discriminator.
@@ -76,7 +76,23 @@ sealed interface ChatEvent {
     @Serializable
     @SerialName("confirmation-request")
     data class ConfirmationRequest(val confirmationId: String, val toolName: String, val arguments: String) : ChatEvent
+
+    /**
+     * The adjuster agent's whole todo list after one of its todo writes; not terminal. Every update replaces the list
+     * shown before, in the order of [todos].
+     */
+    @Serializable
+    @SerialName("todo-update")
+    data class TodoUpdate(val todos: List<TodoItem>) : ChatEvent
 }
+
+/** One item of a [ChatEvent.TodoUpdate]: what to do ([content]), its [status] and the text shown while it is done. */
+@Serializable
+data class TodoItem(val content: String, val status: TodoStatus, val activeForm: String)
+
+/** The status of a [TodoItem]; at most one item of a list is [IN_PROGRESS]. */
+@Serializable
+enum class TodoStatus { PENDING, IN_PROGRESS, COMPLETED }
 
 /** One damage item of a [ChatEvent.ClaimCard]: its category, a description and the estimated amount in minor units. */
 @Serializable
@@ -88,7 +104,7 @@ data class ClaimCardItem(val category: String, val description: String, val amou
  */
 val ChatEvent.isTerminal: Boolean
     get() = when (this) {
-        is ChatEvent.TextDelta, is ChatEvent.ClaimCard, is ChatEvent.AnalyticsTable -> false
+        is ChatEvent.TextDelta, is ChatEvent.ClaimCard, is ChatEvent.AnalyticsTable, is ChatEvent.TodoUpdate -> false
         ChatEvent.Done, is ChatEvent.Error, is ChatEvent.ConfirmationRequest -> true
     }
 

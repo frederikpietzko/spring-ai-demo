@@ -18,7 +18,7 @@ The backend SHALL accept `POST /chat` with a JSON chat request and SHALL answer 
 - **THEN** the text delta event decodes to the same text
 
 ### Requirement: A stream ends with exactly one terminal event
-Every chat stream that starts SHALL end with exactly one terminal event: done when the model reply completed, error when it failed with an exception, confirmation-request when the reply is waiting for a human decision (see `adjuster-tools`). Done SHALL NOT follow an error or a confirmation-request. The error message SHALL be generic and the cause only logged. A JVM error is not a failed reply: it SHALL be rethrown, and the stream breaks without a terminal event.
+Every chat stream that starts SHALL end with exactly one terminal event: done when the model reply completed, error when it failed with an exception, confirmation-request when the reply is waiting for a human decision (see `adjuster-tools`). Done SHALL follow every completed reply whose last event is not itself terminal. Done SHALL NOT follow an error or a confirmation-request. The error message SHALL be generic and the cause only logged. A JVM error SHALL be rethrown without a terminal event.
 
 #### Scenario: Failure after some chunks
 - **WHEN** the model streams the chunk "Hel" and then fails with the message "provider exploded"
@@ -35,6 +35,10 @@ Every chat stream that starts SHALL end with exactly one terminal event: done wh
 #### Scenario: A confirmation request is terminal
 - **WHEN** an adjuster reply pauses for a payout confirmation
 - **THEN** the last event is the confirmation-request event and no done or error event follows it
+
+#### Scenario: A todo update is not terminal
+- **WHEN** an adjuster reply ends after a todo update without any text
+- **THEN** the last event is done, and it follows the todo update
 
 ### Requirement: Claimant instructions frame the conversation
 The claimant agent SHALL send the model a system message with the claims-desk instructions for a claimant and a user message that carries the claimant's text exactly as typed. The claimant's text SHALL NOT itself be template-processed. When policy wording is retrieved for the message, the claimant's text SHALL reach the model verbatim inside the retrieval template of the user message; when nothing is retrieved, the user message SHALL be the claimant's text alone.

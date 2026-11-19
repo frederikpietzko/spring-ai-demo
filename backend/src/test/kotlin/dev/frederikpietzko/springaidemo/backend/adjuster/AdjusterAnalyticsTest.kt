@@ -86,14 +86,14 @@ class AdjusterAnalyticsTest {
     }
 
     @Test
-    fun `the core tools are offered once`() {
+    fun `the core tools are offered once, next to the skill and todo tools`() {
         fake.replyChunks("ok")
 
         postAdjuster("Hello")
 
         val options = assertIs<ToolCallingChatOptions>(fake.prompts.single().options)
         assertEquals(
-            ["countClaims", "getClaim", "issuePayout", "payoutStats"],
+            ["Skill", "TodoWrite", "countClaims", "getClaim", "issuePayout", "payoutStats"],
             options.toolCallbacks.orEmpty().map { it.toolDefinition.name() }.sorted(),
         )
     }

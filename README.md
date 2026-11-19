@@ -83,7 +83,7 @@ curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Acce
 - With `ANTHROPIC_API_KEY` set, the reply arrives incrementally as `data: {"type":"text-delta","text":"..."}` events and ends with `data: {"type":"done"}`.
 - Without a key (or on any other failure) the stream is a single `data: {"type":"error","message":"The claims desk is unavailable."}`; the cause is in the backend log.
 - `"persona":"ADJUSTER"` is answered by the adjuster agent, which works with the core tools of `core-mcp` (see "Adjuster agent" below). A malformed body or an unknown persona is a `400`.
-- A request may carry a `conversationId` (`{"persona":"CLAIMANT","message":"Hi","conversationId":"c-1"}`): requests with the same id form one conversation, and the model sees its earlier turns. Without an id (or with a blank one) the request starts a fresh conversation of its own. Conversations are stored in the backend database and survive restarts; after more than ten turns the prompt keeps only the five most recent ones, and the model can still find older messages with its `conversation_search` tool.
+- A request may carry a `conversationId` (`{"persona":"CLAIMANT","message":"Hi","conversationId":"c-1"}`): requests with the same id form one conversation, and the model sees its earlier turns. The adjuster does not remember earlier messages and ignores the id. Without an id (or with a blank one) the request starts a fresh conversation of its own. Conversations are stored in the backend database and survive restarts; after more than ten turns the prompt keeps only the five most recent ones, and the model can still find older messages with its `conversation_search` tool.
 - Each claimant message is grounded in the fictional policy wording (`backend/src/main/resources/corpus/policy-wording`): the closest clauses are added to the prompt, labelled `[source - title]`, and the model is asked to cite those labels when the message asks about coverage (ADR-0006).
 
 ### Preparing and confirming a claim
@@ -99,6 +99,39 @@ curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Acce
 - A complete report is answered with a claim card, then `done`: `data: {"type":"claim-card","policyNumber":"KP-1001","district":"HARBOUR","incidentAt":"2026-11-19T15:00:00Z","kaijuClass":3,"description":"...","damageItems":[{"category":"VEHICLE","description":"Car roof","amountMinor":800000}]}`. The backend keeps it as the conversation's prepared claim (in memory, lost on restart).
 - A report that lacks details (policy number, district, incident time, kaiju class 1 to 5, description, damage items with an amount above zero) is answered with one text delta naming them; nothing is prepared. A reply the backend cannot read asks the claimant to describe the incident again.
 - The confirm answers with the new claim number (from 4714 upwards), or with the reason it was not filed: no prepared claim, or a refused policy (a policy number ending in `-0000`). The claim is filed by a local in-memory stand-in until the backend calls the `fileClaim` MCP tool of `core-mcp`.
+
+## Adjuster agent
+
+The persona `ADJUSTER` talks to the adjuster agent. It reads and changes claims through the core tools of `core-mcp` (`getClaim`, `updateClaimStatus`, `issuePayout`, ...), which the backend reaches with the Spring AI MCP client at `CORE_MCP_URL` (default `http://localhost:8081`, endpoint `/mcp`). `core-mcp` and its database `core` must be running for the adjuster only: the backend starts without them, and the MCP client connects on the first adjuster request. If the core is down, an adjuster request ends with the generic `error` event; claimant chat is not affected. The adjuster's tool calls carry a fixed caller identity (`actor=adjuster-agent`) in the tool context, which reaches `core-mcp` as MCP `_meta` and never the model.
+
+A payout needs a human decision. When the model calls `issuePayout`, the tool does not run: the stream ends with a `confirmation-request` event instead of `done`, and the paused reply waits in the backend (in memory, so a restart forgets it). The decision goes to `POST /chat/decisions` and streams the continued reply:
+
+```bash
+curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Accept: text/event-stream' -d '{"persona":"ADJUSTER","message":"Pay out claim 4711"}'
+# ... data: {"type":"confirmation-request","confirmationId":"<id>","toolName":"issuePayout","arguments":"{\"claimNumber\":4711}"}
+curl -N -X POST localhost:8080/chat/decisions -H 'Content-Type: application/json' -H 'Accept: text/event-stream' -d '{"confirmationId":"<id>","approved":true}'
+```
+
+Approve runs the paused tool calls once; deny runs none of the calls that wait for the decision, gives the model the text "The adjuster did not approve this payout." as their result, runs the other calls of the same reply (a todo write, a claim lookup) normally and streams its closing reply. A second decision on the same id (or an unknown id) answers one `error` event. The resumed reply sees only the original message, the paused tool call and its result, not the tool rounds before the pause.
+
+Questions about numbers go to the analytics tools `countClaims` and `payoutStats`; the adjuster prompt carries today's date (UTC), so "this month" becomes a period. Try "How many class 4 claims did the harbour district have in November 2026?" (4) or "What did we pay out per district?". A successful `payoutStats` result also reaches the client as an `analytics-table` event before the text the model writes after the tool call (the backend captures it, because Spring AI's tool loop never streams tool results):
+
+```text
+data: {"type":"analytics-table","title":"Payouts by district","columns":["District","Payouts","Total paid","Average paid"],"rows":[["HARBOUR","3","1120000","373333"],["HILLTOP","2","120000","60000"],["OLD_TOWN","2","790000","395000"]]}
+data: {"type":"text-delta","text":"..."}
+data: {"type":"done"}
+```
+
+Demo flow with claim 4711, which the seed files as `FILED`: ask the adjuster to review it (`updateClaimStatus` to `UNDER_REVIEW`), to approve it (`APPROVED`), then to pay it out; only an `APPROVED` claim can be paid, and the payout (800000 + 4500 minus the deductible 50000) waits for the confirmation. A payout for a claim in another state comes back from the core as an error text the model explains. Tests that change data use the sandbox policy `KP-9000`.
+
+### Todo list and skills
+
+The adjuster plans multi-step work with a todo list and loads task know-how on demand, with two tools of the community library `spring-ai-agent-utils` (ADR-0007):
+
+- **Todo list.** Every valid `TodoWrite` call of the model sends the whole list as one event on the same stream, before the text that follows: `data: {"type":"todo-update","todos":[{"content":"Check coverage","status":"IN_PROGRESS","activeForm":"Checking coverage"}]}`. A later update replaces the list. An invalid list (two items in progress, an empty text) is rejected to the model and sends no event. A reply that ends with a todo write still ends with `done`.
+- **Skills.** `kaiju-classification` (the class 1-5 scale) and `damage-estimation` (categories, districts, how to check an estimate) live in `backend/src/main/resources/skills/<name>/SKILL.md`. The model sees only their names and descriptions, in the description of the `Skill` tool; the text of a skill reaches it only when it calls `Skill` with that name. To add a skill, create another folder with a `SKILL.md` that starts with single-line `name:` and `description:` frontmatter between `---` lines, and restart the backend.
+
+Neither tool is offered to the claimant.
 
 ## Conversation endpoints
 
@@ -116,33 +149,9 @@ curl localhost:8080/conversations/c-1/messages
 
 The title is the beginning of the first message (at most 60 characters).
 
-## Adjuster agent
-
-The persona `ADJUSTER` talks to the adjuster agent. It reads and changes claims through the core tools of `core-mcp` (`getClaim`, `updateClaimStatus`, `issuePayout`, ...), which the backend reaches with the Spring AI MCP client at `CORE_MCP_URL` (default `http://localhost:8081`, endpoint `/mcp`). `core-mcp` and its database `core` must be running for the adjuster only: the backend starts without them, and the MCP client connects on the first adjuster request. If the core is down, an adjuster request ends with the generic `error` event; claimant chat is not affected. The adjuster's tool calls carry a fixed caller identity (`actor=adjuster-agent`) in the tool context, which reaches `core-mcp` as MCP `_meta` and never the model.
-
-A payout needs a human decision. When the model calls `issuePayout`, the tool does not run: the stream ends with a `confirmation-request` event instead of `done`, and the paused reply waits in the backend (in memory, so a restart forgets it). The decision goes to `POST /chat/decisions` and streams the continued reply:
-
-```bash
-curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Accept: text/event-stream' -d '{"persona":"ADJUSTER","message":"Pay out claim 4711"}'
-# ... data: {"type":"confirmation-request","confirmationId":"<id>","toolName":"issuePayout","arguments":"{\"claimNumber\":4711}"}
-curl -N -X POST localhost:8080/chat/decisions -H 'Content-Type: application/json' -H 'Accept: text/event-stream' -d '{"confirmationId":"<id>","approved":true}'
-```
-
-Approve runs the paused tool calls once; deny runs none, gives the model the text "The adjuster did not approve this payout." as their result and streams its closing reply. A second decision on the same id (or an unknown id) answers one `error` event. The resumed reply sees only the original message, the paused tool call and its result, not the tool rounds before the pause.
-
-Questions about numbers go to the analytics tools `countClaims` and `payoutStats`; the adjuster prompt carries today's date (UTC), so "this month" becomes a period. Try "How many class 4 claims did the harbour district have in November 2026?" (4) or "What did we pay out per district?". A successful `payoutStats` result also reaches the client as an `analytics-table` event before the text the model writes after the tool call (the backend captures it, because Spring AI's tool loop never streams tool results):
-
-```text
-data: {"type":"analytics-table","title":"Payouts by district","columns":["District","Payouts","Total paid","Average paid"],"rows":[["HARBOUR","3","1120000","373333"],["HILLTOP","2","120000","60000"],["OLD_TOWN","2","790000","395000"]]}
-data: {"type":"text-delta","text":"..."}
-data: {"type":"done"}
-```
-
-Demo flow with claim 4711, which the seed files as `FILED`: ask the adjuster to review it (`updateClaimStatus` to `UNDER_REVIEW`), to approve it (`APPROVED`), then to pay it out; only an `APPROVED` claim can be paid, and the payout (800000 + 4500 minus the deductible 50000) waits for the confirmation. A payout for a claim in another state comes back from the core as an error text the model explains. Tests that change data use the sandbox policy `KP-9000`.
-
 ## Desktop chat
 
-Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch selects `Claimant` (default) or `Adjuster`. An adjuster reply with payout statistics shows them as a table (title, column headers, one line per group) under the reply text. When the adjuster's reply asks for a payout, a confirmation panel shows the tool and its arguments with **Approve** and **Deny**; while it is open no new message can be sent, and the decision's continuation is appended to the same reply. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key.
+Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch selects `Claimant` (default) or `Adjuster`. Stored conversations and claim cards belong to the claimant. An adjuster reply with payout statistics shows them as a table (title, column headers, one line per group) under the reply text. When the adjuster's reply asks for a payout, a confirmation panel shows the tool and its arguments with **Approve** and **Deny**; while it is open no new message can be sent, and the decision's continuation is appended to the same reply. While the adjuster works through a todo list, a **Todo list** panel on the right shows its latest version: `[ ]` pending, `[>]` in progress (with its "-ing" text), `[x]` done. A new conversation, an opened conversation or a persona switch clears it. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key.
 
 The column on the left lists the stored conversations, loaded at start and after every answer. Click one to see its transcript and continue it; **New conversation** clears the screen and starts a new one. The desktop gives every conversation its own id, so the backend remembers it across desktop and backend restarts. Without a backend the list stays empty.
 

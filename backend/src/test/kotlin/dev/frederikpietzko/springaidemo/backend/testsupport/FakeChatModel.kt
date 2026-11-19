@@ -44,9 +44,14 @@ class FakeChatModel(private val observationRegistry: ObservationRegistry = Obser
     }
 
     /** Queues an answer that asks for one tool execution (arguments as a JSON string). */
-    fun requestTool(name: String, argumentsJson: String) {
-        val call = AssistantMessage.ToolCall("call-${toolCallIds.incrementAndGet()}", "function", name, argumentsJson)
-        script.add(Step(AssistantMessage.builder().toolCalls([call]).build(), []))
+    fun requestTool(name: String, argumentsJson: String) = requestTools(name to argumentsJson)
+
+    /** Queues one answer that asks for several tool executions at once, in order (tool name to JSON arguments). */
+    fun requestTools(vararg calls: Pair<String, String>) {
+        val toolCalls = calls.map { (val name = first, val argumentsJson = second) ->
+            AssistantMessage.ToolCall("call-${toolCallIds.incrementAndGet()}", "function", name, argumentsJson)
+        }
+        script.add(Step(AssistantMessage.builder().toolCalls(toolCalls).build(), []))
     }
 
     /** Queues one text reply that is delivered as several chunks when streamed and joined when called. */

@@ -74,7 +74,7 @@ A model reply that requests the tool `issuePayout` SHALL NOT run any tool call o
 - **THEN** the manager refuses the `issuePayout` reply because it needs a confirmation and runs the `getClaim` call
 
 ### Requirement: Approving runs the payout exactly once and continues the answer
-A decision request that approves a pending confirmation SHALL run the paused tool calls once, hand the result to the model and stream its answer, ending with done. The pending confirmation SHALL be consumed by the decision, so the same id cannot run the tools again.
+A decision request that approves a pending confirmation SHALL run the paused tool calls once (the calls that wait for the decision on its approval, every other call of the paused reply as it would run without a pause), hand the results to the model and stream its answer, ending with done. The pending confirmation SHALL be consumed by the decision, so the same id cannot run the tools again.
 
 #### Scenario: Approve runs the payout once
 - **WHEN** a payout confirmation is pending, the model is scripted to reply with the chunks "Paid " and "out" and a client posts a decision with that id and approved true
@@ -97,11 +97,15 @@ A decision request that approves a pending confirmation SHALL run the paused too
 - **THEN** the prompt of the continuation contains the failure message as the tool result and the events are the text delta "Payout failed." and done
 
 ### Requirement: Denying runs no payout and tells the model
-A decision request that denies a pending confirmation SHALL NOT run any paused tool call. The model SHALL receive a denial text as the tool result and its closing answer SHALL be streamed, ending with done.
+A decision request that denies a pending confirmation SHALL NOT run any call that waits for a decision. The model SHALL receive the denial text as the tool result of each of those calls, and every other call of the paused reply SHALL run normally and give the model its own result. The model's closing answer SHALL be streamed, ending with done.
 
 #### Scenario: Deny leads to no payout
 - **WHEN** a payout confirmation is pending, the model is scripted to reply "Understood, no payout." and a client posts a decision with that id and approved false
 - **THEN** `issuePayout` ran zero times, the last prompt received by the model contains a tool response with the denial text, and the events are the text delta "Understood, no payout." and done
+
+#### Scenario: Deny leaves the other calls of the reply alone
+- **WHEN** the model requests `getClaim` for claim 4711 and `issuePayout` for claim 4711 in one reply, the request pauses, a client posts a decision with that id and approved false and the model is scripted to reply "No payout."
+- **THEN** `getClaim` ran once, `issuePayout` ran zero times, the tool response of `getClaim` in the last prompt received by the model is its result and not the denial text, the tool response of `issuePayout` is the denial text, and the events are the text delta "No payout." and done
 
 ### Requirement: A payout statistics result is streamed as a table
 When a `payoutStats` call of the model succeeds, the backend SHALL emit one `AnalyticsTable` event, built from the MCP client's result, before the text the model writes after the call; the model still receives the result. Title: `Payouts`, plus ` by district` or ` by kaiju class` when grouped; columns: the grouping name (else `Group`), `Payouts`, `Total paid`, `Average paid`. Other tools, failed calls, unexpected result shapes and calls in a batch resumed after a confirmation give no table.
@@ -128,7 +132,7 @@ When a `payoutStats` call of the model succeeds, the backend SHALL emit one `Ana
 
 #### Scenario: Core tools are offered once
 - **WHEN** an adjuster request is answered
-- **THEN** the tool callbacks in the options of the prompt received by the model are named exactly `getClaim`, `issuePayout`, `countClaims` and `payoutStats`, each once
+- **THEN** the tool callbacks in the options of the prompt received by the model are named exactly `getClaim`, `issuePayout`, `countClaims`, `payoutStats`, `Skill` and `TodoWrite`, each once
 
 ### Requirement: The adjuster knows today's date and takes numbers from the analytics tools
 The adjuster system prompt SHALL state today's date (UTC, ISO format) on every request, so "this month" and "yesterday" can be turned into a period, and SHALL tell the model to answer questions about counts, payouts and statistics with `countClaims` and `payoutStats` and never to compute or estimate them itself.
