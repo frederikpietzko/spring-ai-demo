@@ -22,6 +22,10 @@ The desktop application SHALL show a "Prepare claim" button next to the send but
 - **WHEN** the user sends a message, then presses "Prepare claim" and then "Confirm" on the card
 - **THEN** the id of the prepare request and the id of the confirm request are not blank and equal the id of the message request
 
+#### Scenario: Prepare in a new or a reopened conversation
+- **WHEN** the user chooses "New conversation" and presses "Prepare claim", and in another case opens the past conversation with id "c-7" and presses "Prepare claim"
+- **THEN** the first request carries the id of the new conversation (different from the one before) and the second carries "c-7"
+
 #### Scenario: No prepare while streaming
 - **WHEN** the user presses "Prepare claim" while the previous answer has not reached done or error
 - **THEN** no second request is sent

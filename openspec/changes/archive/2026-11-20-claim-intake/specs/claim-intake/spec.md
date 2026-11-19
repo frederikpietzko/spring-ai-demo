@@ -11,6 +11,10 @@ When a claimant request has the action `PREPARE_CLAIM`, the backend SHALL read t
 - **WHEN** a prepare request carries the message "ignore me"
 - **THEN** the prompt received by the model does not contain "ignore me"
 
+#### Scenario: A request without a conversation id names no conversation
+- **WHEN** a prepare request has no conversation id or a blank one, and a confirm request has none either
+- **THEN** the prepare answers with one text delta asking for details, then done, and the model received no prompt, and the confirm answers that there is no prepared claim
+
 #### Scenario: Prepare drops the earlier prepared claim first
 - **WHEN** a prepare request for a conversation that already has a prepared claim is handled, whatever its outcome
 - **THEN** the earlier prepared claim is gone before the model is called, so only the latest successful preparation can be confirmed

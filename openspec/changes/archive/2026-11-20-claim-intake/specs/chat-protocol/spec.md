@@ -44,8 +44,8 @@ The chat request SHALL have an `action` field with the values `MESSAGE`, `PREPAR
 - **THEN** the JSON is `{"persona":"CLAIMANT","message":"Hi"}` and decoding a request without `action` gives action `MESSAGE`
 
 #### Scenario: Prepare action wire form
-- **WHEN** a request for persona `CLAIMANT`, message "" and action `PREPARE_CLAIM` is encoded
-- **THEN** the JSON is `{"persona":"CLAIMANT","message":"","action":"PREPARE_CLAIM"}` and decoding it gives the same request
+- **WHEN** a request for persona `CLAIMANT`, message "", conversation id "c-1" and action `PREPARE_CLAIM` is encoded
+- **THEN** the JSON is `{"persona":"CLAIMANT","message":"","conversationId":"c-1","action":"PREPARE_CLAIM"}` and decoding it gives the same request
 
 #### Scenario: Unknown action is rejected
 - **WHEN** the JSON `{"persona":"CLAIMANT","message":"Hi","action":"PAY"}` is decoded as a chat request
