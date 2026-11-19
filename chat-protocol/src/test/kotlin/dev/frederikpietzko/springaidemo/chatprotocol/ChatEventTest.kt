@@ -29,6 +29,17 @@ class ChatEventTest {
         assertEquals("""{"type":"error","message":"boom"}""", json)
     }
 
+    @Test
+    fun `confirmation request is encoded with its type, id, tool name and arguments`() {
+        val json = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""").toJson()
+
+        assertEquals(
+            """{"type":"confirmation-request","confirmationId":"c-1","toolName":"issuePayout",""" +
+                """"arguments":"{\"claimNumber\":4711}"}""",
+            json,
+        )
+    }
+
     @ParameterizedTest
     @MethodSource("events")
     fun `every event survives a round trip`(event: ChatEvent) {
@@ -48,6 +59,7 @@ class ChatEventTest {
             ChatEvent.TextDelta("Größe 🦖 \"quoted\""),
             ChatEvent.Done,
             ChatEvent.Error("Größe 🦖 \"quoted\""),
+            ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711,"note":"Größe 🦖"}"""),
         ]
     }
 }

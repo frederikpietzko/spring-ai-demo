@@ -79,13 +79,29 @@ curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Acce
 
 - With `ANTHROPIC_API_KEY` set, the reply arrives incrementally as `data: {"type":"text-delta","text":"..."}` events and ends with `data: {"type":"done"}`.
 - Without a key (or on any other failure) the stream is a single `data: {"type":"error","message":"The claims desk is unavailable."}`; the cause is in the backend log.
-- `"persona":"ADJUSTER"` is part of the protocol but not available yet: it answers with one `error` event. A malformed body or an unknown persona is a `400`.
+- `"persona":"ADJUSTER"` is answered by the adjuster agent, which works with the core tools of `core-mcp` (see "Adjuster agent" below). A malformed body or an unknown persona is a `400`.
 - Every chat request stands alone: the backend does not remember earlier messages yet.
 - Each claimant message is grounded in the fictional policy wording (`backend/src/main/resources/corpus/policy-wording`): the closest clauses are added to the prompt, labelled `[source - title]`, and the model is asked to cite those labels when the message asks about coverage (ADR-0006).
 
+## Adjuster agent
+
+The persona `ADJUSTER` talks to the adjuster agent. It reads and changes claims through the core tools of `core-mcp` (`getClaim`, `updateClaimStatus`, `issuePayout`, ...), which the backend reaches with the Spring AI MCP client at `CORE_MCP_URL` (default `http://localhost:8081`, endpoint `/mcp`). `core-mcp` and its database `core` must be running for the adjuster only: the backend starts without them, and the MCP client connects on the first adjuster request. If the core is down, an adjuster request ends with the generic `error` event; claimant chat is not affected. The adjuster's tool calls carry a fixed caller identity (`actor=adjuster-agent`) in the tool context, which reaches `core-mcp` as MCP `_meta` and never the model.
+
+A payout needs a human decision. When the model calls `issuePayout`, the tool does not run: the stream ends with a `confirmation-request` event instead of `done`, and the paused reply waits in the backend (in memory, so a restart forgets it). The decision goes to `POST /chat/decisions` and streams the continued reply:
+
+```bash
+curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Accept: text/event-stream' -d '{"persona":"ADJUSTER","message":"Pay out claim 4711"}'
+# ... data: {"type":"confirmation-request","confirmationId":"<id>","toolName":"issuePayout","arguments":"{\"claimNumber\":4711}"}
+curl -N -X POST localhost:8080/chat/decisions -H 'Content-Type: application/json' -H 'Accept: text/event-stream' -d '{"confirmationId":"<id>","approved":true}'
+```
+
+Approve runs the paused tool calls once; deny runs none, gives the model the text "The adjuster did not approve this payout." as their result and streams its closing reply. A second decision on the same id (or an unknown id) answers one `error` event. The resumed reply sees only the original message, the paused tool call and its result, not the tool rounds before the pause.
+
+Demo flow with claim 4711, which the seed files as `FILED`: ask the adjuster to review it (`updateClaimStatus` to `UNDER_REVIEW`), to approve it (`APPROVED`), then to pay it out; only an `APPROVED` claim can be paid, and the payout (800000 + 4500 minus the deductible 50000) waits for the confirmation. A payout for a claim in another state comes back from the core as an error text the model explains. Tests that change data use the sandbox policy `KP-9000`.
+
 ## Desktop chat
 
-Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch shows `Claimant`; `Adjuster` is listed but not selectable yet. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key. Messages are not remembered across restarts.
+Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch selects `Claimant` (default) or `Adjuster`. When the adjuster's reply asks for a payout, a confirmation panel shows the tool and its arguments with **Approve** and **Deny**; while it is open no new message can be sent, and the decision's continuation is appended to the same reply. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key. Messages are not remembered across restarts.
 
 ## Observability
 
@@ -115,6 +131,7 @@ The backend exports traces and metrics over OTLP (ADR-0010). Spring AI observes 
 | `ANTHROPIC_API_KEY` | none | Anthropic API key, required for any real model call |
 | `SPRING_AI_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama used for embeddings (Spring AI does not read `OLLAMA_HOST`) |
 | `BACKEND_URL` | `http://localhost:8080` | Backend base URL used by the desktop app |
+| `CORE_MCP_URL` | `http://localhost:8081` | Base URL of `core-mcp` for the adjuster's MCP client (endpoint `/mcp`) |
 
 The defaults match `compose.yaml` (databases `backend` and `core`, user and password `demo`) and are for local development only.
 
@@ -149,7 +166,7 @@ On a fresh volume, start the database with `docker compose up -d` from the repos
 ```
 
 - **One shared backend context.** Every backend integration test carries the single `@IntegrationTest` annotation, which starts the application once on a random port with a real PostgreSQL (`pgvector/pgvector:pg18`, started by Testcontainers) and reuses that context for all test classes. Tests do not customise the context (no `@DirtiesContext`, mock beans, profiles or extra properties); an architecture test enforces this. Tests share one database and run sequentially, so tests that write data use unique keys and clean up after themselves.
-- **No real model in tests.** The context runs with `spring.ai.model.chat=none` and a scripted `FakeChatModel`: a test scripts text, JSON, tool-call requests or streamed chunks, then reads the prompts the model received. It fails loudly when its script is exhausted. Embeddings come from a deterministic `FakeEmbeddingModel` (a hashed bag of words, 768 dimensions) with `spring.ai.model.embedding=none`, so no test reaches Ollama. No API key is needed, and `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` and all `SPRING_AI_*` variables are removed from the test JVM.
+- **No real model in tests.** The context runs with `spring.ai.model.chat=none` and a scripted `FakeChatModel`: a test scripts text, JSON, tool-call requests or streamed chunks, then reads the prompts the model received. It fails loudly when its script is exhausted. Embeddings come from a deterministic `FakeEmbeddingModel` (a hashed bag of words, 768 dimensions) with `spring.ai.model.embedding=none`, so no test reaches Ollama. The MCP client is switched off too (`spring.ai.mcp.client.enabled=false`): fake core tools (`FakeCoreTools`: `getClaim` and `issuePayout`, recording every call) stand in under the real provider's bean name `mcpToolCallbacks`, so no test contacts `core-mcp`; the committed MCP client wiring is checked by `McpClientWiringTest` outside the shared context. No API key is needed, and `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `CORE_MCP_URL` and all `SPRING_AI_*` variables are removed from the test JVM.
 - **`secretsScan`.** `:backend:check` (and so root `check`) also scans the text files of the working tree (tracked or not; not build output, `.git`, `.idea`, `.claude/worktrees`, binaries or the local `.env`, `*.key` and `.claude/settings.local.json`) for provider keys, tokens, private keys, credentials in URLs and non-placeholder passwords (non-source files check quoted and bare values, yaml, yml, properties and env files also whole-line values, source files only quoted string literals, typed declarations included; plain URLs, numbers and durations next to non-secret names and placeholder defaults that are harmless are not flagged). The documented local `demo` database defaults are the only allowed values. The task tracks no inputs and runs on every build (about a second).
 - **core-mcp tests** follow the same pattern without a model: one shared context through `@CoreMcpIntegrationTest` (real port, real PostgreSQL from Testcontainers), MCP tools and resources tested end to end through the MCP SDK client over Streamable HTTP, the business rules tested on the domain services against the real database. Tests that write data use only the sandbox policy `KP-9000` and the claims they create, with no cleanup (the container is fresh on every run); exact counts are asserted only over rows no test writes. An architecture test forbids context annotations (`@SpringBootTest`, `@TestPropertySource`, `@Import`, ...) on test classes.
 - **Desktop tests** cover the theme logic, the chat view model and the chat screen's semantics against a fake `ChatApi`, the Ktor client against a local JDK HTTP server, and off-screen renders of the screen and all components in both themes. Rendering uses skiko natives; on Linux the runner needs fontconfig and freetype.

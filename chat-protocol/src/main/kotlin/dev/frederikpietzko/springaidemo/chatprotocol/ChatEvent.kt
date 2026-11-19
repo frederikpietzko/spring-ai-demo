@@ -9,7 +9,9 @@ val ChatJson: Json = Json
 
 /**
  * One event of a chat stream. The JSON field `type` names the event (kotlinx's default class discriminator), for
- * example `{"type":"text-delta","text":"Hel"}`. A stream ends with exactly one terminal event, today [Done] or [Error].
+ * example `{"type":"text-delta","text":"Hel"}`. A stream ends with exactly one terminal event: [Done], [Error] or
+ * [ConfirmationRequest]. After a confirmation request the client answers with a [ConfirmationDecision], whose reply is
+ * a new stream with the same rules.
  *
  * Extension rule (ADR-0005): the change that first emits a new event adds its subclass here with a `@SerialName`; new
  * fields get defaults. Both sides compile against this sealed type, so an unhandled event is a compile error.
@@ -36,6 +38,15 @@ sealed interface ChatEvent {
     @Serializable
     @SerialName("error")
     data class Error(val message: String) : ChatEvent
+
+    /**
+     * Terminal event: the reply waits for a human decision on the tool [toolName] with the JSON [arguments], for
+     * example a payout. The client answers with a [ConfirmationDecision] carrying [confirmationId]; the paused tool
+     * calls stay on the server.
+     */
+    @Serializable
+    @SerialName("confirmation-request")
+    data class ConfirmationRequest(val confirmationId: String, val toolName: String, val arguments: String) : ChatEvent
 }
 
 /** Encodes this event through the sealed base serializer, so the JSON always carries `type`. */

@@ -7,7 +7,7 @@ Defines the types that backend and desktop exchange for a chat: the request, the
 ## Requirements
 
 ### Requirement: Chat events have a stable JSON form
-The protocol SHALL define the chat events `TextDelta`, `Done` and `Error`, each serialized as a JSON object whose `type` field names the event: `text-delta` with a `text` field, `done` with no further field, `error` with a `message` field. Decoding SHALL accept exactly these types and give back the same event.
+The protocol SHALL define the chat events `TextDelta`, `Done`, `Error` and `ConfirmationRequest`, each serialized as a JSON object whose `type` field names the event: `text-delta` with a `text` field, `done` with no further field, `error` with a `message` field, `confirmation-request` with the fields `confirmationId`, `toolName` and `arguments`. Decoding SHALL accept exactly these types and give back the same event.
 
 #### Scenario: Text delta wire form
 - **WHEN** a text delta carrying "Hel" is encoded
@@ -20,6 +20,10 @@ The protocol SHALL define the chat events `TextDelta`, `Done` and `Error`, each 
 #### Scenario: Error wire form
 - **WHEN** an error event carrying "boom" is encoded
 - **THEN** the JSON is `{"type":"error","message":"boom"}`
+
+#### Scenario: Confirmation request wire form
+- **WHEN** a confirmation request with id "c-1", tool name "issuePayout" and arguments `{"claimNumber":4711}` is encoded
+- **THEN** the JSON is `{"type":"confirmation-request","confirmationId":"c-1","toolName":"issuePayout","arguments":"{\"claimNumber\":4711}"}`
 
 #### Scenario: Round trip
 - **WHEN** each event is encoded and the JSON is decoded as a chat event
@@ -46,3 +50,14 @@ The protocol module SHALL NOT depend on the web framework, the AI framework, the
 #### Scenario: The protocol module declares only the serialization library
 - **WHEN** the declared dependencies of the protocol module are inspected
 - **THEN** the only library it declares is kotlinx-serialization-json, and the Spring, Compose and Ktor libraries are not among its dependencies
+
+### Requirement: Confirmation decision carries the id and the choice
+The protocol SHALL define the confirmation decision as a JSON object with a `confirmationId` field and an `approved` field (a boolean). It SHALL carry nothing else: the paused tool calls are never sent by the client.
+
+#### Scenario: Decision wire form
+- **WHEN** a decision for id "c-1" that approves is encoded
+- **THEN** the JSON is `{"confirmationId":"c-1","approved":true}` and decoding it gives the same decision
+
+#### Scenario: Missing choice is rejected
+- **WHEN** the JSON `{"confirmationId":"c-1"}` is decoded as a decision
+- **THEN** decoding fails

@@ -59,25 +59,15 @@ spring:
       observations:
         # The one switch that adds tool arguments and results to the spans as attributes.
         include-content: false
-
-management:
-  tracing:
-    sampling:
-      # The default is 0.1: most demo traces would be missing.
-      probability: 1.0
-  otlp:
-    metrics:
-      export:
-        # The default is 1m: the dashboard would feel dead.
-        step: 10s
-  endpoints:
-    web:
-      exposure:
-        include: health
-  endpoint:
-    health:
-      show-components: always
-  opentelemetry:
-    otlp:
-      # Fallback for a started jar; in bootRun Docker Compose support points the exporters at the lgtm container.
-      endpoint: http://localhost:4318
+      confirmation:
+        # A payout waits for a human decision. By name, because MCP tools carry no requiresConfirmation flag.
+        tools: issuePayout
+    mcp:
+      client:
+        # Connect on the first adjuster request instead of at startup, so the backend starts without core-mcp.
+        initialized: false
+        streamable-http:
+          connections:
+            core:
+              # The insurer core system (core-mcp, ADR-0003 port 8081); the default endpoint /mcp matches it.
+              url: ${CORE_MCP_URL:http://localhost:8081}

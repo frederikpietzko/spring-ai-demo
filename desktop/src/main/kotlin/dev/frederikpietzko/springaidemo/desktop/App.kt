@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatApi
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatMessage
@@ -42,14 +43,15 @@ import dev.frederikpietzko.springaidemo.desktop.theme.DemoTheme
 import dev.frederikpietzko.springaidemo.desktop.theme.ThemeMode
 import kotlinx.coroutines.launch
 
-/** Both personas are listed; the adjuster arrives in a later wave. */
+/** Both personas can be chosen; each is answered by its own agent. */
 private val personaOptions: List<SelectOption<Persona>> = [
     SelectOption(Persona.CLAIMANT, "Claimant"),
-    SelectOption(Persona.ADJUSTER, "Adjuster", enabled = false, hint = "later"),
+    SelectOption(Persona.ADJUSTER, "Adjuster"),
 ]
 
 /**
- * The chat screen: a header with the application name and the persona switch, the conversation, and an input row.
+ * The chat screen: a header with the application name and the persona switch, the conversation, the pending
+ * confirmation (if any) and an input row.
  * [chatApi] talks to the backend (a fake in tests); [themeOverride] forces the light or dark appearance, `null`
  * follows the system.
  */
@@ -62,7 +64,13 @@ fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null) {
         Column(Modifier.fillMaxSize().background(Demo.colors.background)) {
             Header(persona = state.persona, onPersona = viewModel::selectPersona)
             Conversation(state.messages, Modifier.weight(1f).fillMaxWidth())
-            InputRow(sending = state.sending, onSend = { text -> scope.launch { viewModel.send(text) } })
+            state.pendingConfirmation?.let { pending ->
+                ConfirmationPanel(pending, onDecide = { approved -> scope.launch { viewModel.decide(approved) } })
+            }
+            InputRow(
+                canSend = !state.sending && state.pendingConfirmation == null,
+                onSend = { text -> scope.launch { viewModel.send(text) } },
+            )
         }
     }
 }
@@ -129,9 +137,29 @@ private fun MessageBubble(message: ChatMessage) {
     }
 }
 
+/** A tool call that waits for the user: the tool, its arguments and the two choices. */
+@Composable
+private fun ConfirmationPanel(pending: ChatEvent.ConfirmationRequest, onDecide: (Boolean) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .background(Demo.colors.surfaceRaised, Demo.shapes.medium)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        DText("Confirm ${pending.toolName}", style = Demo.typography.title)
+        DText(pending.arguments, style = Demo.typography.caption, color = Demo.colors.inkMuted)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DButton("Approve", onClick = { onDecide(true) }, style = DButtonStyle.PRIMARY)
+            DButton("Deny", onClick = { onDecide(false) })
+        }
+    }
+}
+
 /** Keeps a 16 dp transparent margin, so the window background shows around it (see the render tests). */
 @Composable
-private fun InputRow(sending: Boolean, onSend: (String) -> Unit) {
+private fun InputRow(canSend: Boolean, onSend: (String) -> Unit) {
     var input by remember { mutableStateOf("") }
     Row(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -151,7 +179,7 @@ private fun InputRow(sending: Boolean, onSend: (String) -> Unit) {
                 input = ""
             },
             style = DButtonStyle.PRIMARY,
-            enabled = !sending,
+            enabled = canSend,
         )
     }
 }

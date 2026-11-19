@@ -13,7 +13,8 @@ import org.junit.jupiter.api.extension.ExtendWith
  * A real server port is used (not MockMvc) so streaming responses are tested over a real socket. The properties keep
  * tests offline: the real chat model is switched off in favour of [FakeChatModel] and the real embedding model in
  * favour of [FakeEmbeddingModel]; a placeholder key plus unreachable base URLs guard against a call to either provider
- * should that ever change.
+ * should that ever change. The MCP client is switched off too (no client, transport or provider bean): the core tools
+ * are [FakeCoreTools] under the real provider's bean name `mcpToolCallbacks`.
  *
  * Tests must run sequentially (the shared context holds one fake chat model and one database), and [SingleContextGuard]
  * fails a class that ends up in a different context than the first one.
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.extension.ExtendWith
         "spring.ai.anthropic.base-url=http://localhost:1",
         "spring.ai.model.embedding=none",
         "spring.ai.ollama.base-url=http://localhost:1",
+        "spring.ai.mcp.client.enabled=false",
         // Redundant today (docker-compose support is developmentOnly); cheap insurance against a test starting compose.
         "spring.docker.compose.enabled=false",
     ],

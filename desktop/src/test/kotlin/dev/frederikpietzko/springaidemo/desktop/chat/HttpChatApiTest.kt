@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpServer
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatJson
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
+import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -78,6 +79,31 @@ class HttpChatApiTest {
     }
 
     @Test
+    suspend fun `posts the decision as JSON to the decisions path and decodes the streamed continuation`() {
+        val seen = CopyOnWriteArrayList<String>()
+        val events = withServer({ exchange ->
+            seen.add("${exchange.requestMethod} ${exchange.requestURI.path}")
+            seen.add(exchange.requestHeaders.getFirst("Content-Type").orEmpty())
+            seen.add(exchange.requestBody.readAllBytes().toString(Charsets.UTF_8))
+            exchange.respondWithEvents("""{"type":"text-delta","text":"Paid"}""", """{"type":"done"}""")
+        }) { baseUrl -> decideThrough(baseUrl) }
+
+        assertEquals([ChatEvent.TextDelta("Paid"), ChatEvent.Done], events)
+        assertEquals("POST /chat/decisions", seen[0])
+        assertEquals("application/json", seen[1].substringBefore(";"))
+        assertEquals("""{"confirmationId":"c-1","approved":true}""", seen[2])
+    }
+
+    @Test
+    suspend fun `an unreachable backend answers a decision with one error event saying so`() {
+        val closedPort = withServer({ it.close() }) { baseUrl -> baseUrl }
+
+        val events = decideThrough(closedPort)
+
+        assertEquals([ChatEvent.Error("Backend not reachable")], events)
+    }
+
+    @Test
     suspend fun `a fatal JVM error is rethrown instead of becoming an error event`() {
         // Ktor wraps every failure of the call, JVM errors included, in its own exception.
         val failingClient = HttpClient(CIO) {
@@ -94,6 +120,9 @@ class HttpChatApiTest {
 
     private suspend fun sendThrough(baseUrl: String): List<ChatEvent> =
         HttpChatApi(baseUrl).use { api -> api.send(request).toList() }
+
+    private suspend fun decideThrough(baseUrl: String): List<ChatEvent> =
+        HttpChatApi(baseUrl).use { api -> api.decide(ConfirmationDecision("c-1", approved = true)).toList() }
 
     private fun HttpExchange.respondWithEvents(vararg data: String) {
         responseHeaders.add("Content-Type", "text/event-stream")

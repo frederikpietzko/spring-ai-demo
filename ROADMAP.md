@@ -249,7 +249,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
 
 ### Wave 2
 
-- [ ] **`mcp-tools-and-confirmation`**
+- [x] **`mcp-tools-and-confirmation`**
   - Scope:
     - Backend MCP client connected to `core-mcp`.
     - `ADJUSTER` persona with the core tools through `ToolCallingAdvisor`.

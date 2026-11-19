@@ -28,6 +28,8 @@ dependencies {
     implementation("org.springframework.ai:spring-ai-starter-vector-store-pgvector")
     implementation("org.springframework.ai:spring-ai-markdown-document-reader")
     implementation("org.springframework.ai:spring-ai-rag")
+    // The adjuster's MCP client for the core tools of core-mcp (JDK HttpClient transport, no WebFlux stack).
+    implementation("org.springframework.ai:spring-ai-starter-mcp-client")
     implementation("tools.jackson.module:jackson-module-kotlin")
     // Lets Spring MVC return a Kotlin Flow (the Flux-to-Flow bridge of the chat endpoint); version from the Boot BOM.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")
@@ -72,6 +74,8 @@ exposed {
 // A developer's provider credentials must never reach a test JVM (Spring AI and the SDK read them as fallbacks).
 tasks.withType<Test>().configureEach {
     listOf("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL").forEach { environment.remove(it) }
+    // Not a credential: removed so the MCP wiring test sees the committed default URL of the core system.
+    environment.remove("CORE_MCP_URL")
     // Spring relaxed binding maps SPRING_AI_ANTHROPIC_API_KEY and friends onto spring.ai.anthropic.*
     environment.keys.filter { it.startsWith("SPRING_AI_") }.forEach { environment.remove(it) }
     // Boot maps OTEL_* variables (endpoint, sampler, OTEL_SDK_DISABLED) onto management.* properties.
