@@ -16,7 +16,11 @@ const val POLICY_WORDING_CORPUS = "policy-wording"
 
 private const val TOP_K = 4
 
-/** After the memory advisors, before the tool-calling advisor: retrieval runs once per user turn. */
+/**
+ * After the session turn advisor (`HIGHEST_PRECEDENCE + 200`), before the tool-calling advisor (`+ 300`): retrieval
+ * runs once per user turn. The session memory advisor sits inside the tool loop (`+ 1000`), after retrieval, so it
+ * stores the user message as retrieval left it.
+ */
 private const val RAG_ORDER = Advisor.DEFAULT_CHAT_MEMORY_PRECEDENCE_ORDER + 50
 
 private const val CITE_LABELS = "cite the [labels] of the clauses you rely on"

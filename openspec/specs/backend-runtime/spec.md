@@ -22,15 +22,15 @@ The backend SHALL start when a PostgreSQL database is reachable with the configu
 - **THEN** startup fails with an error that comes from the policy wording ingestion
 
 ### Requirement: Flyway runs at startup
-The backend SHALL run Flyway against its database at startup, reading versioned SQL files from the migration directory written by the schema workflow, which may be empty, and from the vector directory that holds the hand-written vector store DDL.
+The backend SHALL run Flyway against its database at startup, reading versioned SQL files from the migration directory written by the schema workflow, which may be empty, from the vector directory that holds the hand-written vector store DDL, and from the session directory that holds the hand-written conversation store DDL.
 
 #### Scenario: Empty migration directory
 - **WHEN** the backend starts against an empty database and the migration directory contains no migration
-- **THEN** startup succeeds, the vector directory's migration is applied and the startup log reports it
+- **THEN** startup succeeds, the vector and session directories' migrations are applied and the startup log reports them
 
 #### Scenario: No application tables without migrations
 - **WHEN** the backend has started against an empty database
-- **THEN** the only application table in the database is the vector store table, so the application created nothing itself
+- **THEN** the only application tables in the database are the vector store table and the three conversation store tables, so the application created nothing itself
 
 ### Requirement: Health endpoint reports database status
 The backend SHALL expose an HTTP health endpoint that reports the overall status and the database status.
@@ -54,8 +54,8 @@ The backend SHALL configure an Anthropic chat model with Claude Haiku (`claude-h
 - **WHEN** the backend runs and its beans are inspected
 - **THEN** a chat client builder bean is registered
 
-### Requirement: Only operational and chat endpoints are served
-The backend SHALL serve HTTP endpoints only for the health endpoint, the error page, the chat endpoint (`POST /chat`) and the chat decision endpoint (`POST /chat/decisions`). A request to the chat path or to the chat decision path with another method SHALL be answered with status 405, and the root path SHALL NOT be served.
+### Requirement: Only operational, chat and conversation endpoints are served
+The backend SHALL serve HTTP endpoints only for the health endpoint, the error page, the chat endpoint (`POST /chat`), the chat decision endpoint (`POST /chat/decisions`) and the conversation endpoints (`GET /conversations` and `GET /conversations/{id}/messages`). A request to the chat path or to the chat decision path with another method SHALL be answered with status 405, and the root path SHALL NOT be served.
 
 #### Scenario: Root path is not served
 - **WHEN** a client requests `GET /`
@@ -71,7 +71,7 @@ The backend SHALL serve HTTP endpoints only for the health endpoint, the error p
 
 #### Scenario: No other endpoint is mapped
 - **WHEN** the request mappings of the running backend are listed
-- **THEN** every mapping is an actuator path, the error path, `/chat` or `/chat/decisions`
+- **THEN** every mapping is an actuator path, the error path, `/chat`, `/chat/decisions` or a conversation path
 
 ### Requirement: Starts without an Anthropic API key
 The backend SHALL start and report healthy when no Anthropic API key is configured. The key SHALL be read only from the `ANTHROPIC_API_KEY` environment variable and SHALL never appear in committed files. A chat call without a key fails when it is made, not at startup.

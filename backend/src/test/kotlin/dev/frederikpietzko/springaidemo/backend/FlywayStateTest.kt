@@ -27,7 +27,7 @@ class FlywayStateTest {
     }
 
     @Test
-    fun `the only application table is the vector store`() {
+    fun `the only application tables are the vector store and the session store`() {
         val tables = jdbc.queryForList(
             """
             SELECT table_name FROM information_schema.tables
@@ -36,6 +36,6 @@ class FlywayStateTest {
             String::class.java,
         )
 
-        assertEquals(["vector_store"], tables)
+        assertEquals(setOf("ai_session", "ai_session_event", "ai_session_index", "vector_store"), tables.toSet())
     }
 }

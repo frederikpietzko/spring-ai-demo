@@ -81,11 +81,11 @@ A coverage question SHALL be answered by the chat model with the retrieved claus
 - **THEN** the model is still called with the original question unchanged, the answer is returned, and its citations are empty
 
 ### Requirement: Retrieval sits between memory and tools
-The retrieval advisor SHALL be ordered after the conversation memory advisors and before the tool-calling advisor, so that retrieval runs once for a user turn, outside the tool loop, and not again for each tool iteration.
+The retrieval advisor SHALL be ordered after the session turn advisor and before the tool-calling advisor, so that retrieval runs once for a user turn, outside the tool loop, and not again for each tool iteration. The session memory advisor runs inside the tool loop, after retrieval, and therefore stores the user message as the retrieval advisor left it.
 
 #### Scenario: Advisor order lies between memory and tools
 - **WHEN** the order of the policy wording advisor is read
-- **THEN** it lies strictly between the conversation memory advisor precedence order and the default order of the tool-calling advisor
+- **THEN** it lies strictly between the order of the session turn advisor and the default order of the tool-calling advisor
 
 ### Requirement: Claimant chat answers from the policy wording
 The claimant chat SHALL use the same retrieval as the coverage service, so that a coverage question sent through the chat endpoint is answered from the policy wording.

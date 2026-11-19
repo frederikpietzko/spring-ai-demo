@@ -107,7 +107,10 @@ class ChatEndpointTest {
         val prompt = fake.prompts.last()
         val system = prompt.instructions.filterIsInstance<SystemMessage>().single().text.orEmpty()
         assertTrue(system.contains("claims desk assistant"), system)
-        assertEquals([], assertIs<ToolCallingChatOptions>(prompt.options).toolCallbacks.orEmpty())
+        // Only the claimant's own recall tool, none of the core tools.
+        val toolNames = assertIs<ToolCallingChatOptions>(prompt.options).toolCallbacks.orEmpty()
+            .map { it.toolDefinition.name() }
+        assertEquals(["conversation_search"], toolNames)
     }
 
     @Test
@@ -152,6 +155,28 @@ class ChatEndpointTest {
     }
 
     @Test
+    fun `the claimant instructions point to the Prepare claim button`() {
+        fake.replyChunks("ok")
+
+        postChat(CLAIMANT_HI)
+
+        val system = fake.prompts.last().instructions.filterIsInstance<SystemMessage>().single().text.orEmpty()
+        assertTrue(system.contains("Prepare claim"), system)
+        assertTrue(system.contains("cannot look up the claimant's own policy"), system)
+    }
+
+    @Test
+    fun `the claimant instructions describe the memory and the recall tool`() {
+        fake.replyChunks("ok")
+
+        postChat(CLAIMANT_HI)
+
+        val system = fake.prompts.last().instructions.filterIsInstance<SystemMessage>().single().text.orEmpty()
+        assertTrue(system.contains("conversation_search"), system)
+        assertTrue(!system.contains("only see the current message"), system)
+    }
+
+    @Test
     fun `the user text reaches the model unchanged, braces included`() {
         fake.replyChunks("ok")
 
@@ -174,7 +199,7 @@ class ChatEndpointTest {
     }
 
     @Test
-    fun `a second request does not see the first message`() {
+    fun `a second request does not see the first message without a conversation id`() {
         fake.replyChunks("one")
         fake.replyChunks("two")
 
