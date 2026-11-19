@@ -307,13 +307,13 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
     - Writes **ADR-0009** and amends **ADR-0007**. Apply the Spring AI 2.0 fallback only if 2.1 breaks.
   - Out: end-user login in the desktop (the persona switch stands in for login).
   - Tests: a call without a token gets 401. A claimant token calling `issuePayout` gets 403 and no payout. A claimant reading another customer's claim is denied. An adjuster token works. These run against a real `auth-server` in the test.
-- [ ] **`subagents`**
+- [x] **`subagents`**
   - Scope:
     - `TaskTools` with Markdown agent definitions: `fraud-investigator` (Haiku, read-only tools plus the sightings retrieval tool) and `damage-assessor` (the `damage-estimation` skill).
-    - The adjuster orchestrator delegates. Subagent progress shows in the todo panel.
+    - The adjuster orchestrator delegates; the orchestrator records each delegation in its todo list.
     - Writes **ADR-0008**.
   - Out: background or async tasks beyond what the library gives, A2A.
-  - Tests: the orchestrator delegates (fake models per agent). A subagent cannot call tools outside its allow-list. The subagent result reaches the main agent as structured output.
+  - Tests: the orchestrator delegates (one scripted fake model serves the orchestrator and the subagents, told apart by system text, model and tools). A subagent cannot call tools outside its allow-list. The subagent result reaches the main agent as structured output.
 
 ### Wave 5
 

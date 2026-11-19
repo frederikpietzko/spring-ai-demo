@@ -37,9 +37,10 @@ private val log = LoggerFactory.getLogger(AdjusterChat::class.java)
 
 /**
  * Who calls the core tools. It travels in the tool context only, never in a message, and is forwarded to `core-mcp`
- * as MCP `_meta` ([identityMeta]). The adjuster connection's token proves the persona to the core (ADR-0009).
+ * as MCP `_meta` ([identityMeta]). The adjuster connection's token proves the persona to the core (ADR-0009). The
+ * adjuster's subagents ([AdjusterSubagents]) call the core tools with the same identity.
  */
-private val ADJUSTER_IDENTITY: Map<String, Any> = mapOf("actor" to "adjuster-agent")
+val ADJUSTER_IDENTITY: Map<String, Any> = mapOf("actor" to "adjuster-agent")
 
 /** What the model receives as the result of a payout the adjuster denied. */
 private const val DENIED = "The adjuster did not approve this payout."
@@ -48,17 +49,19 @@ private const val DENIED = "The adjuster did not approve this payout."
 private const val NOTHING_WAITING = "Nothing is waiting for this decision."
 
 /**
- * The adjuster agent: answers one adjuster message with the core tools, the sighting bulletin search, its skills and
- * its own todo list, as a stream of chat events: text deltas, a [ChatEvent.TodoUpdate] for every todo write, an
- * [ChatEvent.AnalyticsTable] for each successful `payoutStats` call of a turn (not one in a batch [decide] resumes),
- * and a [ChatEvent.ConfirmationRequest] when the reply calls a tool needing confirmation (`issuePayout`); the paused
- * reply waits in [PendingConfirmations] until [decide] runs or skips its tool calls and continues the reply.
+ * The adjuster agent: answers one adjuster message with the core tools, the sighting bulletin search, its skills, the
+ * `Task` tool that delegates to its subagents and its own todo list, as a stream of chat events: text deltas, a
+ * [ChatEvent.TodoUpdate] for every todo write, an [ChatEvent.AnalyticsTable] for each successful `payoutStats` call of
+ * a turn (not one in a batch [decide] resumes), and a [ChatEvent.ConfirmationRequest] when the reply calls a tool
+ * needing confirmation (`issuePayout`); the paused reply waits in [PendingConfirmations] until [decide] runs or skips
+ * its tool calls and continues the reply.
  */
 @Service
 class AdjusterChat(
     @Qualifier("adjusterChatClient") private val adjusterChatClient: ChatClient,
     @Qualifier("adjusterCoreTools") private val coreTools: ToolCallbackProvider,
     @Qualifier("adjusterSkills") private val adjusterSkills: ToolCallback,
+    @Qualifier("adjusterTask") private val adjusterTask: ToolCallback,
     private val toolCallingManager: ToolCallingManager,
     private val pendingConfirmations: PendingConfirmations,
     private val sightingBulletinSearch: SightingBulletinSearch,
@@ -93,8 +96,8 @@ class AdjusterChat(
     /**
      * Runs the tool calls of the [paused] reply and returns the conversation with their results: the calls that wait
      * for a decision run only when [approved], every other call runs as it would have without the pause. The loop
-     * keeps no state, so the prompt carries every adjuster tool (the core tools, [todoWrite], the skills and the
-     * bulletin search) and the tool context again: a tool missing here fails with "No ToolCallback found".
+     * keeps no state, so the prompt carries every adjuster tool (the core tools, [todoWrite], the skills, the
+     * bulletin search and `Task`) and the tool context again: a tool missing here fails with "No ToolCallback found".
      */
     private fun runToolCalls(paused: PausedTurn, approved: Boolean, todoWrite: TodoWriteTool): List<Message> {
         val keys = ToolCallDecisions.toolCallKeys(checkNotNull(paused.reply.result) { "paused reply" }.output)
@@ -107,6 +110,7 @@ class AdjusterChat(
                 *coreTools.toolCallbacks,
                 *ToolCallbacks.from(todoWrite, sightingBulletinSearch),
                 adjusterSkills,
+                adjusterTask,
             )
             .toolContext(ADJUSTER_IDENTITY)
             .build()
@@ -124,8 +128,8 @@ class AdjusterChat(
      * own todo tool sends each todo update, and the wrapped `payoutStats` ([coreToolsWithTables]) its table, into the
      * channel from the thread the tool runs on (the unlimited buffer means `trySend` never has to wait). The tool runs
      * before the next model round streams, so its table comes before the text the model writes after the call. The
-     * skills and the bulletin search are default tools of the client; the core tools and the todo tool come with each
-     * request.
+     * skills, the bulletin search and `Task` are default tools of the client; the core tools and the todo tool come
+     * with each request.
      */
     private fun turn(conversation: List<Message>): Flow<ChatEvent> =
         channelFlow {

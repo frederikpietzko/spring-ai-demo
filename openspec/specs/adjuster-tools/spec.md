@@ -151,7 +151,7 @@ When a `payoutStats` call of the model succeeds, the backend SHALL emit one `Ana
 
 #### Scenario: Core tools are offered once
 - **WHEN** an adjuster request is answered
-- **THEN** the tool callbacks in the options of the prompt received by the model are named exactly `getClaim`, `issuePayout`, `countClaims`, `payoutStats`, `searchSightingBulletins`, `Skill` and `TodoWrite`, each once
+- **THEN** the tool callbacks in the options of the prompt received by the model are named exactly `getClaim`, `issuePayout`, `countClaims`, `payoutStats`, `searchSightingBulletins`, `Skill`, `TodoWrite` and `Task`, each once
 
 ### Requirement: The adjuster knows today's date and takes numbers from the analytics tools
 The adjuster system prompt SHALL state today's date (UTC, ISO format) on every request, so "this month" and "yesterday" can be turned into a period, and SHALL tell the model to answer questions about counts, payouts and statistics with `countClaims` and `payoutStats` and never to compute or estimate them itself.

@@ -73,13 +73,16 @@ class AdjusterTodoTest {
     }
 
     @Test
-    fun `the adjuster is offered the todo and skill tools next to the core tools`() {
+    fun `the adjuster is offered the todo, skill and task tools next to the core tools`() {
         fake.replyChunks("ok")
 
         postAdjuster()
 
         assertEquals(
-            ["Skill", "TodoWrite", "countClaims", "getClaim", "issuePayout", "payoutStats", "searchSightingBulletins"],
+            [
+                "Skill", "Task", "TodoWrite", "countClaims", "getClaim", "issuePayout", "payoutStats",
+                "searchSightingBulletins",
+            ],
             toolNames(0).sorted(),
         )
     }
