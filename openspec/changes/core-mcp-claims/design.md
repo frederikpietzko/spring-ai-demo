@@ -1,0 +1,192 @@
+# Design
+
+## Context
+
+- State: today two modules (`backend`, `desktop`); once `chat-streaming` has landed three (`backend`, `desktop`, `chat-protocol`); this change adds the fourth, `core-mcp`. One migration directory (`backend`; `policy-rag` may have filled it), ADR-0001 to ADR-0004 accepted. ADR-0003 fixes the module name `core-mcp`, package `coremcp`, port 8081, database `core` in the same PostgreSQL, and that `backend` never reads `core`. ADR-0004 is the test strategy of `backend`; `core-mcp` copies its pattern without a chat model. Motivation and scope: `proposal.md`; behaviour: the delta specs `core-claims-mcp`, `core-mcp-test-harness`, `build-and-quality`, `schema-migrations`.
+- Wave 1 lands `chat-streaming` -> `policy-rag` -> `core-mcp-claims`. This change needs no code of either, touches no backend code, and touches only `settings.gradle.kts`, `compose.yaml`, `gradle/libs.versions.toml`, README, `CLAUDE.md`, ADRs and ROADMAP among shared files. It is not independent at spec level: its `build-and-quality` delta restates three requirements that the `chat-streaming` delta also restates ('Multi-module build from one wrapper', 'Check gate runs static analysis and tests', 'Test tooling is declared and used'; D14), so it must be written against the post-`chat-streaming` text, including the scenario 'The protocol module contains tests'. The merged backend code (a chat endpoint, the policy corpus and vector store) is not used here. Refresh the plan against the merged tree before implementing: in particular the README sections, the `libs.versions.toml` and `ArchitectureTest` in `backend` may have moved. The role-based integration points are in D14.
+- API facts (checked against the sources of Spring AI 2.1.0-RC2, MCP Java SDK 2.2.0-M2, Boot 4.2.0-RC2, Exposed 1.6.1; the implementer re-checks anything not listed in `tasks.md` as an early red test):
+  - Starter `org.springframework.ai:spring-ai-starter-mcp-server-webmvc`; `@McpTool`, `@McpToolParam`, `@McpResource` are in `org.springframework.ai.mcp.annotation`. Any bean with annotated methods is registered.
+  - The transport is chosen by `spring.ai.mcp.server.protocol`. Without it the auto-configuration picks the deprecated SSE transport. It must be `STREAMABLE`.
+  - Tool parameter names come from `java.lang.reflect.Parameter.getName()`. Kotlin needs `-java-parameters`, which the Spring Boot Gradle plugin turns on, so the module applies that plugin.
+  - Default values of Kotlin parameters are not used; a missing argument is `null`. Kotlin nullable parameters are optional in the schema.
+  - A tool method may return a `CallToolResult` (passed through), a `String` (one text content) or any object (one text content with its JSON). A thrown `RuntimeException` becomes an error result with the exception message.
+  - A resource method may return `String`, `List<String>`, `ResourceContents` or `ReadResourceResult`, and URI-variable parameters must be `String`. A throwing resource method does NOT reach the client as `RESOURCE_NOT_FOUND`: `SyncMcpResourceMethodCallback` (`spring-ai-mcp-annotations` 2.1.0-RC2, `method/resource/SyncMcpResourceMethodCallback.java`, lines 133-149) calls `Method.invoke`, so any exception arrives wrapped in `InvocationTargetException`, the `e instanceof McpError` check fails, and the callback throws `McpError` with code `INVALID_PARAMS` (-32602) and the message `Error invoking resource method: <method> in <bean>. /nCause: <root cause message>` (also in `data`). The not-found text therefore has to be the message of the exception the method throws (D3, D15).
+  - On a servlet stack tools run on the request thread, so Spring `@Transactional` works on the services.
+  - The MCP SDK client (`McpClient.sync(HttpClientStreamableHttpTransport.builder(url).build())`) is on the classpath through the starter; no extra test dependency.
+  - Boot's Docker Compose support would take the JDBC URL from the compose service (`POSTGRES_DB=backend`) and override `spring.datasource.url`, so `core-mcp` does not add it (D7).
+- Constraints: ROADMAP section 10 (glossary terms, domain errors are sealed results, one obvious class per concept, fixtures stay stable), ADR-0002 (Exposed generates, Flyway applies, no startup DDL), secrets scan (`SecretScanner` allows the literal `demo` only as the default of `DB_USER`, `DB_PASSWORD`, `POSTGRES_USER` and `POSTGRES_PASSWORD`), skills `kotlin-engineer`, `spring-testing`, `tdd`, `archunit`, `exposed-orm`, `spring-ai`.
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- A small, readable claims core that a slide can show in pieces: a table object, a sealed result, a service method, a tool method.
+- Stable tool and resource contracts (names, parameter names, result shapes), because `mcp-tools-and-confirmation`, `claims-analytics` and `mcp-security` build on them.
+- A harness that tests the real server through a real MCP client against a real PostgreSQL.
+
+**Non-Goals:**
+
+- Security, coverage and exclusion logic, analytics, tool confirmation, a backend client, drafts, coverage limits (see `proposal.md`).
+- A second implementation of the persistence layer (in-memory ports) for tests.
+
+## Decisions
+
+### D1. Module layout and build
+
+New `core-mcp/` module. `core-mcp/build.gradle.kts` mirrors `backend/build.gradle.kts`:
+
+- Settings: add `":core-mcp"` to the existing `include(...)` call (after `chat-streaming` it already lists `:backend`, `:desktop` and `:chat-protocol`).
+- Plugins: `demo.kotlin-jvm`, `libs.plugins.kotlinSpring`, `libs.plugins.springBoot` (needed for `-java-parameters`, D3), `libs.plugins.exposed`.
+- Dependencies: the Boot and Spring AI platforms; `spring-boot-starter-webmvc`; `spring-ai-starter-mcp-server-webmvc`; `spring-boot-starter-flyway` and `flyway-database-postgresql`; `libs.exposed.spring.boot.starter`; a new catalog entry `exposed-java-time` (`org.jetbrains.exposed:exposed-java-time`, version `exposed`); `tools.jackson.module:jackson-module-kotlin`; `runtimeOnly` PostgreSQL driver. Test: `spring-boot-starter-webmvc-test` (RANDOM_PORT; the MCP client is a plain HTTP client, but it keeps the server test support the backend uses), `spring-boot-testcontainers`, `testcontainers-postgresql`, `libs.archunit.junit6`, `libs.exposed.migration.jdbc`.
+- Not included: actuator, `spring-boot-docker-compose`, any Spring AI model starter, `secretsScan` (root `check` already runs `:backend:secretsScan` over the whole tree, which includes `core-mcp`).
+- `exposed { migrations { tablesPackage = "$basePackage.coremcp.persistence.tables"; testContainersImageName = "postgres:18"; fileDirectory = core-mcp/src/main/resources/db/migration } }`.
+
+Package layout under `dev.frederikpietzko.springaidemo.coremcp`, one obvious class per concept:
+
+| Package | Contents |
+| --- | --- |
+| `coremcp` | `CoreMcpApplication` (same `@ImportAutoConfiguration(ExposedAutoConfiguration, exclude DataSourceTransactionManagerAutoConfiguration)` as the backend) |
+| `coremcp.persistence.tables` | `Customers`, `Policies`, `Coverages`, `Claims`, `DamageItems`, `Payouts` (Exposed table objects) |
+| `coremcp.domain` | data classes `Policy`, `Claim`, `ClaimSummary`, `DamageItem`, `Payout`; enums `ClaimStatus`, `District`, `DamageCategory`; sealed results (D5); `PolicyService`, `ClaimService`, `PayoutService` |
+| `coremcp.mcp` | `PolicyTools`, `ClaimTools`, `PayoutTools`, `CoreResources`, `ToolResults` (the mapping from sealed results to `CallToolResult`) |
+
+`application.yaml`: `server.port: 8081`; `spring.application.name: core-mcp`; datasource `url: ${CORE_DB_URL:jdbc:postgresql://localhost:5432/core}`, `username: ${DB_USER:demo}`, `password: ${DB_PASSWORD:demo}` (the same variable names and defaults as the backend, so the secrets scan stays green); `spring.exposed.generate-ddl: false`; `spring.ai.mcp.server` with `protocol: STREAMABLE`, `name: core-mcp`, `version: 1.0.0`, `type: SYNC` and a one-line `instructions`.
+
+### D2. Data model and the fixtures
+
+| Table | Columns |
+| --- | --- |
+| `customers` | `id` (bigint, generated), `name` |
+| `policies` | `id`, `policy_number` (unique), `customer_id` -> customers, `valid_from`, `valid_to` (date), `deductible_minor` (bigint) |
+| `coverages` | `id`, `policy_id` -> policies, `category` (varchar, enum by name); unique (`policy_id`, `category`) |
+| `claims` | `id` (the claim number, bigint, generated), `policy_id` -> policies, `status` (varchar), `district` (varchar), `incident_at` (timestamp with time zone), `kaiju_class` (int), `description`, `filed_at` |
+| `damage_items` | `id`, `claim_id` -> claims, `category`, `description`, `estimated_amount_minor` (bigint) |
+| `payouts` | `id`, `claim_id` -> claims (**unique**), `amount_minor` (bigint), `issued_at` |
+
+- Enums use `enumerationByName` (varchar): `ClaimStatus` (`DRAFT`, `FILED`, `UNDER_REVIEW`, `APPROVED`, `REJECTED`, `PAID`), `District` (`HARBOUR`, `OLD_TOWN`, `NEON_MARKET`, `RIVERSIDE`, `HILLTOP`; the neighbouring town is not a claim district), `DamageCategory` (`VEHICLE`, `BUILDING`, `CONTENTS`, `GARDEN`; used for both coverage and damage items). The glossary names are used as the constants.
+- The claim number is `claims.id`. The seed inserts ids 4711 to 4713 explicitly and its last statement advances the sequence (`SELECT setval(pg_get_serial_sequence('claims','id'), (SELECT max(id) FROM claims))`, and likewise for the other tables), which works for serial and identity columns.
+- Timestamps use `timestampWithTimeZone` (an `OffsetDateTime`), the seed writes `+00`, and the domain exposes `Instant`. A plain `timestamp` would depend on the JVM time zone.
+- Fixture values are in the fixture scenarios of the `core-claims-mcp` delta spec ("Claim 4711, the alibi scenario" and its siblings, "Policy without claims", "Sandbox policy for writing tests"); all five policies are valid from 2026-01-01 to 2027-12-31, so every fixture incident and every test incident on `KP-9000` falls inside its policy and out-of-validity incidents are built from those dates (for example `2025-12-31T23:00:00Z` and `2028-01-01T00:00:00Z`). Customer 5 (Theo Marsh, policy `KP-1004`, `VEHICLE`, deductible 20000) is a fifth fixture that never gets a claim, so the empty-list case is asserted exactly. `4711` is the alibi claim: the neighbouring-town bulletin that contradicts it is written by `agentic-rag-fraud` against `HARBOUR` and `2026-11-18T15:00:00Z`. `4712` (class 5) carries no logic in `core-mcp`: the Act of Kaiju exclusion is a policy-wording question for the agent. `KP-9000` is a sandbox policy so that tests that file, approve and pay claims never change a fixture and never disturb the exact assertions on customers 1 to 3 and 5.
+- Migrations: tables are generated with `:core-mcp:generateMigrations` (file `V<timestamp>__<description>.sql`), reviewed and committed; the seed is hand-written as `V<later timestamp>__seed_scenario_fixtures.sql`. Seed as a migration (not a startup runner) so that it is replayable, visible as SQL on a slide and covered by the schema checks.
+
+### D3. MCP boundary: plain types in, `CallToolResult` out
+
+- Tool and resource methods use only `Long`, `String`, `Int`, enums and one data class (`DamageItemInput`, with `@field:McpToolParam` descriptions) in their signatures. No value classes and no `internal` functions (Kotlin mangles their JVM names, which would change the tool name and schema). Nothing is optional, so no nullable or default-valued parameter is needed.
+- Return type is `CallToolResult`. `ToolResults` has two functions: `ok(json: JsonMapper, value)` (one text content with the JSON) and `error(message)` (`isError = true`). The services return sealed results, and each tool method is a `when` over them (so the compiler forces every case). A sealed Kotlin object would serialize as `{}`, which is why results are not returned directly. Text content (not `structuredContent`) is kept because the wave-2 client hands the text to the model.
+- Tool methods carry `@McpTool(description = ..., annotations = McpTool.McpAnnotations(readOnlyHint = true))` for the read tools; `issuePayout` sets `idempotentHint = true`. Descriptions say what the model needs: units (minor units), allowed values and the status flow.
+- `@Transactional` sits on the services, not on the tool classes.
+- `fileClaim` has six flat parameters (`policyNumber`, `district`, `incidentAt`, `kaijuClass`, `description`, `damageItems`), one more than detekt's `LongParameterList` default allows (`allowedFunctionParameters: 5`, detekt-core 2.0.0-alpha.6). The flat list is the model-facing schema (D12), so it is not wrapped in one object. `fileClaim` carries `@Suppress("LongParameterList")` with a one-line reason ("flat parameters are the MCP tool schema"); `config/detekt/detekt.yml` stays untouched. The kaiju class range 1..5 is a named constant (`KAIJU_CLASS_RANGE`, an `IntRange`), so `MagicNumber` stays quiet in main code.
+- Resources return a `String` with a `mimeType` (`text/markdown` for the policy summary, `application/json` for the claim), because data classes are not allowed. Their URI variables are `String` and are parsed by the method; an unparsable or unknown value throws an `IllegalArgumentException` whose message is the not-found sentence (`Claim 999999 not found`, `Policy KP-0000 not found`). The callback wraps it (API facts) into an `McpError` with code -32602 (`INVALID_PARAMS`) and a message ending in `Cause: Claim 999999 not found`. Tests assert `McpError` and a message containing `not found` and the value, never the code. Programmatic resource specifications (which could return -32002) are rejected for the demo: more code, and the annotation style is the thing being demonstrated (D15).
+- Rejected: returning domain objects (JSON `{}` for sealed types, no error flag); `generateOutputSchema = true` (structured content only, no text); throwing exceptions for domain errors (violates ROADMAP rule 10.3, and exception messages carry the root cause text).
+
+### D4. Domain services and sealed results
+
+Each service method returns a sealed result and never throws for a domain case:
+
+| Service | Methods and results |
+| --- | --- |
+| `PolicyService` | `find(policyNumber)`: `PolicyLookup.Found(policy)` or `NotFound` |
+| `ClaimService` | `find(claimNumber)`: `ClaimLookup.Found(claim)` or `NotFound`. `listForCustomer(customerId)`: `CustomerClaims.Found(summaries)` or `UnknownCustomer`. `file(request)`: `FileResult.Filed(claim)`, `PolicyNotFound`, `IncidentOutsidePolicy`, `Invalid(field, reason)`. `updateStatus(claimNumber, target)`: `StatusUpdate.Updated(claim)`, `NotFound`, `IllegalTransition(from, to)` |
+| `PayoutService` | `issue(claimNumber)`: `PayoutResult.Issued(payout)`, `AlreadyIssued(payout)`, `NotFound`, `NotApproved(status)`, `NothingPayable(total, deductible)` |
+
+- The transition table is one `Map<ClaimStatus, Set<ClaimStatus>>` in the domain; `PAID` appears in no set (only `PayoutService` sets it). `fileClaim` creates `FILED` directly; `DRAFT` stays in the enum (glossary status) with no transition into or out of it, because no operation creates a draft and a black-box test could not reach it.
+- `file` validates: kaiju class in 1..5, at least one damage item, each amount > 0 and description not blank, incident time parses as `OffsetDateTime`, incident date (UTC) within the policy's validity dates. The incident time arrives as an ISO-8601 `String` on the tool and is parsed in the service, so a parse failure is an `Invalid("incidentAt", ...)` result and not a binding exception.
+- Payout rules: only `APPROVED`; amount = sum of the estimated amounts minus the policy deductible; if that is not greater than zero the result is `NothingPayable` and nothing is stored. The claim row is read `FOR UPDATE` inside the transaction, so two simultaneous calls serialize; the unique index on `payouts.claim_id` is the backstop. A claim that is already `PAID` returns `AlreadyIssued(existing payout)`. On success the payout row is inserted and the claim set to `PAID` in the same transaction.
+- No coverage-category filtering, coverage limits or Act of Kaiju check in the payout (see D2 and the proposal's out-of-scope list). Rejected alternative: an `Excluded` result for class-5 claims; it would move a policy-wording question out of the RAG story into code and make the adjuster agent's reasoning redundant.
+- Money: plain `Long` named `...Minor`; a value class was considered and rejected for the demo (Exposed columns, JSON and the MCP boundary all want plain `Long`).
+
+### D5. Error mapping
+
+`ToolResults.error` text is a short sentence with the offending value, for example `Claim 999999 not found`, `Cannot change claim 4711 from FILED to APPROVED`, `Claim 4712 is REJECTED; only APPROVED claims can be paid`. The sentences are asserted by the end-to-end tests only through the offending value and key words, so wording can still be tuned.
+
+### D6. Test harness (copy of ADR-0004's pattern, slimmed)
+
+- `@CoreMcpIntegrationTest` in `...coremcp.testsupport`: `@SpringBootTest(webEnvironment = RANDOM_PORT)` plus `@Import(TestInfrastructure::class)`. `TestInfrastructure` declares `@Bean @ServiceConnection fun postgres(): PostgreSQLContainer = PostgreSQLContainer("pgvector/pgvector:pg18")`, the compose image, so one image is cached and tests match the local database; a comment points at `compose.yaml`.
+- Support: `McpTestClient`, a small helper that builds `McpClient.sync(HttpClientStreamableHttpTransport.builder("http://localhost:$port").build())` with a request timeout, initializes it and offers `call(name, args)` and `readResource(uri)`. A second helper, `committedProperty(key)`, reads a value from the committed `application.yaml` with `YamlPropertySourceLoader`: under `RANDOM_PORT` Boot adds `server.port=0` as a test property of higher precedence (spring-boot-test 4.2.0-RC2, `SpringBootTestContextBootstrapper.java:276`), so `Environment.getProperty("server.port")` would return 0 and cannot show the committed 8081. The port comes from `@LocalServerPort`.
+- Kept from ADR-0004: shared context, real PostgreSQL by `@ServiceConnection`, sequential tests, unique data per test, schema agreement and Flyway-state checks, "tables only in the tables package" ArchUnit rule.
+- Left out (and why): `SingleContextGuard` and the full `TestConventionsTest` (overkill for one small module; replaced by one ArchUnit rule that no non-annotation class carries `@SpringBootTest` or one of `@TestPropertySource`, `@Import`, `@ContextConfiguration`, `@ActiveProfiles`, `@DirtiesContext` directly, so those cannot silently start a second context; the rule sees class-level annotations only, so `@MockitoBean` and `@MockitoSpyBean` on fields, a `@DynamicPropertySource` method and a nested `@TestConfiguration` are not covered and the ADR-0004 addendum names them as review items; there is no scenario for that gap, because no test can assert it), fixture tables that prove the schema check detects a missing migration (already proven in `backend`; the same helper logic is copied), credential isolation (no provider), `FakeChatModel` (no chat model exists in the module), and the ADR-0004 rule to "use unique keys and clean up": there is no cleanup in `core-mcp`. Writing tests use the sandbox policy `KP-9000`, the container is fresh on every run, and exact counts are asserted only over rows no test writes. The ADR-0004 addendum says so, so the deviation is visible.
+- Tests that write data only use the sandbox policy `KP-9000` and the claims they create themselves. They never modify claims 4711 to 4713 and they assert fixture reads exactly (customers 1 to 3 and 5 never get new claims, and `KP-1001` to `KP-1004` are never written). Exact counts are asserted only over rows no test writes: customers, policies, claims on policies other than `KP-9000`, and payouts of claims 4711 to 4713 (D15). Tests run in no guaranteed order, so nothing asserts a total that `KP-9000` tests can change.
+
+### D7. Database creation and no Boot Compose lifecycle in `core-mcp`
+
+- `compose.yaml` mounts `./compose/postgres-init:/docker-entrypoint-initdb.d:ro`; `compose/postgres-init/01-create-core-database.sql` holds `CREATE DATABASE core;`. The PostgreSQL image runs it only on an empty volume. For an existing volume the README gives the non-destructive one-off `docker compose exec postgres createdb -U demo core` (and `docker compose down -v` as the destructive alternative). Never run `down -v` as part of this change. Start location: `backend/compose.yaml` is a symlink to the root file, and Docker Compose resolves the relative mount `./compose/postgres-init` against the symlinked directory (checked with Docker Compose v5.7.0), so `docker compose up -d` run from `backend/` on a fresh volume mounts a missing, auto-created `backend/compose/postgres-init` and never creates `core`. Starting from the repository root works. `bootRun` is not affected (Boot canonicalises the compose file path, `DockerComposeFile.toCanonicalFile`, spring-boot-docker-compose 4.2.0-RC2). Consequence: a comment next to the mount in `compose.yaml` and one README sentence say to start the database from the repository root on a fresh volume and otherwise use the `createdb` one-off (BQ "Fresh-volume start location is documented"). Changing the mount path was not tried; the comment is the simpler fix.
+- `core-mcp` does not add `spring-boot-docker-compose`: its connection details (database `POSTGRES_DB=backend`) would override `spring.datasource.url`. The README says to run `docker compose up -d` before `:core-mcp:bootRun`. Alternative rejected: a second compose service or a `spring.docker.compose` override (more files and moving parts for a demo).
+- The init script (one line) has no automated test: a dedicated Testcontainers test plus a Gradle input declaration reaching outside the module would cost more than the line is worth. The mount and the script are verified by hand once with a throwaway container in `tasks.md` 7.2, and the BQ scenario 'Core database exists on a fresh volume' stays.
+
+### D8. Dependency direction
+
+`backend` and `core-mcp` do not depend on each other, and neither has the other on its compile classpath. No ArchUnit rule is added for this: such a rule could only fail through a contrived probe (a class in a package named after the other module), the same reason `chat-streaming` rejected an equivalent rule. The BQ scenario 'Core module is independent of the other modules' is verified once in `tasks.md` 5.2 with `inspect_dependencies` on the four modules and by reading the build files (no `project(":core-mcp")` anywhere, no `project(...)` in `core-mcp`). `core-mcp` never pulls in the Anthropic starter. The backend `ArchitectureTest` is not touched.
+
+### D9. Capabilities and spec organisation
+
+Two new capabilities (`core-claims-mcp` for behaviour, `core-mcp-test-harness` for how tests run, mirroring `backend-test-harness`), `build-and-quality` modified (four requirements restated whole, rebased on the post-`chat-streaming` text, D14; the delta keeps every scenario name that the post-`chat-streaming` main spec has, because the validator refuses a MODIFIED block that omits one: 'Both modules contain tests' keeps its name and covers backend and desktop, 'The protocol module contains tests' is carried over from `chat-streaming`, and 'Core module contains tests' is new; the statement lists core-mcp next to the backend for Spring Boot test support, Testcontainers and the architecture-test library and does not list the protocol module there, as `chat-streaming` task 1.4 adds no ArchUnit dependency to it), and one ADDED requirement in `schema-migrations` instead of generalising its backend-specific wording (the backend requirements stay true and untouched). No `backend-runtime` change.
+
+### D10. ADRs
+
+No new ADR: ADR-0003 already decides module, port, database, package and data ownership. Two short addenda, each dated and naming this change: ADR-0003 (status of `core-mcp` and the `core` database changes from planned to existing; `core-mcp` has no Docker Compose lifecycle support, D7) and ADR-0004 (a section "Module `core-mcp`" that records D6). ROADMAP section 6 assigns no ADR to this change; ADR-0007 (community libraries) is not touched because no community library is used here.
+
+### D11. Docs
+
+README: module table row, commands (`:core-mcp:bootRun`, `:core-mcp:generateMigrations`, `:core-mcp:test`), port 8081, `CORE_DB_URL`, the `createdb` one-off, the MCP endpoint and a one-line way to try it (for example `npx @modelcontextprotocol/inspector` pointed at `http://localhost:8081/mcp`, or the curl initialize call), the fixture table, schema workflow now per module, testing section. `CLAUDE.md`: module list and status line. ROADMAP: tick the checkbox.
+
+### D12. What the wave-2 client needs from this module
+
+Stable names (tools and resources as in the specs), parameter names, JSON field names of the policy, claim, claim summary and payout objects (`claimNumber`, `policyNumber`, `customerId`, `status`, `district`, `incidentAt`, `kaijuClass`, `description`, `damageItems[{category, description, estimatedAmountMinor}]`, `totalEstimatedMinor`, `payout{amountMinor, issuedAt}`; policy: `policyNumber`, `customerId`, `holderName`, `validFrom`, `validTo`, `deductibleMinor`, `categories`; payout tool result adds `newlyIssued`). A backend MCP client will point at `http://localhost:8081/mcp` (`spring.ai.mcp.client.streamable-http.connections.<name>.url`); this server is compatible with the legacy Streamable HTTP client transport.
+
+### D13. Protocol version
+
+The legacy `STREAMABLE` protocol is used. The `MODERN` option (2026-07-28) is rejected: the 2.1 client starter and `mcp-security` target the legacy transports.
+
+### D14. Integration points with the other wave 1 changes (by role)
+
+- `chat-streaming` (backend chat endpoint, desktop chat window, the `chat-protocol` module, ADR-0005): no code contact; wave 2 connects the backend's MCP client to this server. It does touch the same specs: its `build-and-quality` delta modifies 'Multi-module build from one wrapper', 'Check gate runs static analysis and tests' and 'Test tooling is declared and used' (adds the protocol module, "both depend on the protocol module", the scenario 'The protocol module contains tests'), three of the four requirements this change modifies (the fourth, 'Local database via Docker Compose', is not touched by it). Archiving this change replaces those blocks wholesale, so this change's delta restates the post-`chat-streaming` text with the fourth module added and carries no module count. `tasks.md` 0.1 simulates the archives in a temporary copy of `openspec/` and validates this change there before anything else.
+- `policy-rag` (backend policy wording corpus, vector store, retrieval advisor, ADR-0006): no contact. The Act of Kaiju exclusion for claim 4712 is answered from that corpus; the policy numbers `KP-1001` to `KP-1003` and the categories here are what the corpus authors and wave-3 tests can refer to. If `policy-rag` introduced the first backend migration, `backend`'s `FlywayStateTest` assumption already moved; nothing here depends on it.
+- `policy-rag` adds no module and modifies no requirement that this change modifies (its `build-and-quality` delta only ADDS requirements).
+- Shared files that may have changed by then: `gradle/libs.versions.toml`, `settings.gradle.kts`, `compose.yaml`, README, `backend/.../ArchitectureTest.kt`, `CLAUDE.md`, ROADMAP. Rebase the edits listed in `tasks.md` onto the merged state instead of overwriting.
+
+## Test boundaries
+
+| Behaviour | Boundary | Catches | Misses |
+| --- | --- | --- | --- |
+| Tool and resource contracts (names, schemas, error flag, JSON shape, parameter binding, protocol selection) | MCP client over Streamable HTTP against the running server on a random port (`@CoreMcpIntegrationTest`) | Wrong `protocol`, missing `-java-parameters` (arguments null), sealed-result mapping, enum and data-class binding, Jackson Kotlin support, resource errors | Only the contract is tested here: one success and one domain error per tool, plus the binding cases (enum, nested data class, `Instant` format, empty list). The full rule matrix is tested one level down, once (D15) |
+| Business rules (status transitions, filing validation, payout amount, eligibility and idempotency) | Domain service bean in the shared context against real PostgreSQL | Rule logic, SQL, transactions, unique index, `FOR UPDATE` row read | MCP wiring and error text |
+| Fixtures and sequence | Service reads plus SQL checks of the sequence and of the counts over rows no test writes (customers, policies, claims on policies other than `KP-9000`, payouts of 4711-4713) | Seed values, sequence advance | Totals that `KP-9000` tests change (deliberately not asserted) |
+| Schema and migrations | `SchemaAgreementTest` (`MigrationUtils`), `FlywayStateTest` | Table without migration, pending migration | Query semantics |
+| Package rules | ArchUnit in `core-mcp` | Tables outside the package, a second test context by `@SpringBootTest` or the listed class-level context annotations | Runtime wiring, annotations on fields or methods (`@MockitoBean`, `@DynamicPropertySource`) and nested `@TestConfiguration` (review item, ADR-0004 addendum) |
+| Module independence, database creation | No automated test: `inspect_dependencies` and build-file reading once (5.2), a throwaway `pgvector/pgvector:pg18` container with the mount once (7.2) | Wrong dependency edges, a broken init script or mount at the time of the change | Regressions afterwards (accepted for a demo) |
+
+No mocks and no in-memory fakes: the real database is cheap through Testcontainers and an in-memory port would be a second implementation to keep right. The roadmap's "domain services as unit tests" is therefore deliberately not met literally: the services are tested as Spring beans against the real database, without MCP (D15).
+
+## Risks / Trade-offs
+
+- [Spring AI MCP annotation or schema behaviour differs from the sources read] -> the first tasks per tool are end-to-end red tests (binding, enum schema, data-class input, nested JSON), and a descope rule: replace an enum parameter by `String` plus service-side parsing, record it.
+- [`-java-parameters` missing gives `arg0` parameters] -> the first `findPolicy` test fails visibly; the Boot plugin is applied from the start.
+- [Exposed generator output for `timestampWithTimeZone`, unique and enum columns differs from what `SchemaAgreementTest` accepts] -> the agreement test is the check; adjust the table definition, not the test.
+- [A developer's existing compose volume has no `core` database, or compose was started from `backend/` on a fresh volume] -> README one-off and the start-location sentence; a clear startup error otherwise.
+- [Shared mutable test database] -> sandbox policy plus own claims; sequential tests.
+- [Class-5 claim can be paid by the core] -> intentional (D4); the agent and the confirmation step are the controls in this demo.
+- [Open tool access] -> intentional until wave 4; stated in README and the spec.
+- [Resource errors surface as -32602 with the cause in the message, not as -32002] -> asserted by message only (D3, D15); if a later change needs the exact code it adds programmatic resource specifications then.
+- [Tests run in no guaranteed order on one shared database] -> exact counts only over rows no test writes; nothing asserts totals that `KP-9000` tests change (D2, D6).
+
+## Open Questions
+
+None. Decisions that would otherwise have been questions (D15 lists those that depart from the roadmap or from a plan-check suggestion): D2 (fixture values, sandbox policy), D3 (result mapping), D4 (no `Excluded` result, `NothingPayable` result), D6 (no single-context guard), D7 (no Compose lifecycle in `core-mcp`).
+
+### D15. Decisions recorded for the owner's review
+
+- Service-level tests on the real database instead of unit tests (departs from ROADMAP section 8, "domain services as unit tests"): the rules live in SQL as much as in Kotlin (`FOR UPDATE`, the unique index on `payouts.claim_id`, sums over joined rows), and an in-memory port would be a second implementation to keep right. Testcontainers is already running for the MCP tests, so the cost is small.
+- Resource not found surfaces as an `McpError` with code -32602 and a message containing `not found`, not as -32002 (D3): the annotation callback wraps every exception thrown by a resource method; `SyncMcpResourceMethodCallback` (`spring-ai-mcp-annotations` 2.1.0-RC2, lines 133-149) proves it. Programmatic resource specs were rejected to keep the annotation demo.
+- A fifth fixture customer (5, Theo Marsh, `KP-1004`) with no claims, so the "customer without claims" scenario is asserted exactly at service and MCP level, without depending on test order (D2).
+- Exact fixture counts only over rows no test writes (D2, D6); validity dates 2026-01-01 to 2027-12-31 for every policy.
+- `DRAFT` has no transition (nothing creates a draft); it stays a status name only (D4).
+- Over MCP only the contract is tested (one success and one domain error per tool plus binding cases); the full rule matrix stays at service level (Test boundaries).
+- The context-sharing ArchUnit rule covers `@SpringBootTest` and the class-level context annotations `@TestPropertySource`, `@Import`, `@ContextConfiguration`, `@ActiveProfiles` and `@DirtiesContext`. `@MockitoBean` and `@MockitoSpyBean` (normally on fields) are dropped from the rule instead of adding field rules; they, `@DynamicPropertySource` and nested `@TestConfiguration` are a review item written only into the ADR-0004 addendum, with no spec scenario (D6).
+- No cross-module ArchUnit rules and no test-harness requirement for them (D8): module independence is checked once with `inspect_dependencies`, as `chat-streaming` did for the same kind of rule. The backend is not edited.
+- No `CoreDatabaseInitScriptTest`, no `inputs.dir` wiring, no test-harness requirement for it (D7): the one-line `CREATE DATABASE core;` is checked by the manual step 7.2; the BQ scenario stays.
+- Compose started from `backend/` does not find `compose/postgres-init` (symlink resolution, verified with Docker Compose v5.7.0); documented in a compose comment and the README instead of changing the mount (D7).
+- The `build-and-quality` delta is written against the post-`chat-streaming` text (three overlapping requirements, including the scenario 'The protocol module contains tests'), and `tasks.md` 0.1 proves it by simulating the archives of the sibling changes and validating this change in the copy (D9, D14).
+- Test-tooling statement: Spring Boot test support, Testcontainers and the architecture-test library are claimed for backend and core-mcp only; the protocol module has no ArchUnit dependency (`chat-streaming` task 1.4) (D9).
+- `fileClaim` keeps its six flat parameters with `@Suppress("LongParameterList")`; the detekt config is not changed (D3). The kaiju class range is a named constant.
+- No test cleanup in `core-mcp` (deviation from ADR-0004's "clean up"): sandbox policy `KP-9000`, a fresh container per run, exact counts only over rows no test writes; stated in the ADR-0004 addendum (D6).
+- The committed default datasource URL is asserted to contain `/core` in `ServerHandshakeTest`, next to the port check, so the BQ scenario 'Core default connection targets the core database' has an automated check.
