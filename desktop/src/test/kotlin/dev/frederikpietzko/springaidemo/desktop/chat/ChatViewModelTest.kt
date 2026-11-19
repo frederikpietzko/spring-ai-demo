@@ -521,6 +521,20 @@ class ChatViewModelTest {
         assertEquals([], api.decisions)
     }
 
+    @Test
+    suspend fun `a new conversation and an opened one are ignored while a confirmation is pending`() {
+        val api = FakeChatApi(conversations = { [SHED] }) { flowOf(PAYOUT_CONFIRMATION) }
+        val paused = ChatViewModel(api, scriptedIds())
+        paused.send("Pay claim 4711")
+        val before = paused.state.value
+
+        paused.newConversation()
+        paused.open(SHED)
+
+        assertEquals(before, paused.state.value)
+        assertEquals([], api.openedIds)
+    }
+
     private fun user(text: String) = ChatMessage(ChatMessage.Author.USER, text)
 
     private fun assistant(text: String, error: String? = null) =

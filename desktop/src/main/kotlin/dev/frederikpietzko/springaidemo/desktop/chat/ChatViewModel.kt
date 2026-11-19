@@ -126,10 +126,10 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
 
     /**
      * Shows the transcript of [conversation] and continues it: later messages carry its id. A transcript that cannot
-     * be loaded shows no messages. Ignored while an answer is streaming.
+     * be loaded shows no messages. Ignored while an answer is streaming or a confirmation is pending.
      */
     suspend fun open(conversation: ConversationSummary) {
-        if (state.value.sending) return
+        if (state.value.sending || state.value.pendingConfirmation != null) return
         val messages = api.messages(conversation.id).map { it.toChatMessage() }
         mutableState.update {
             if (it.sending) {
@@ -140,7 +140,10 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
         }
     }
 
-    /** Clears the conversation and starts a new one with a new id; ignored while an answer is streaming. */
+    /**
+     * Clears the conversation and starts a new one with a new id; ignored while an answer is streaming or a
+     * confirmation is pending.
+     */
     fun newConversation() {
         if (state.value.sending) return
         mutableState.update { it.copy(conversationId = newId(), messages = [], pendingConfirmation = null) }
