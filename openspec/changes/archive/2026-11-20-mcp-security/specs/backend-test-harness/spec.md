@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: The core tools are faked and no MCP server is contacted
-The backend test context SHALL NOT create an MCP client and SHALL provide a fake tool provider under the bean name of the adjuster's real one, `adjusterCoreTools`. The fake SHALL offer the tools `getClaim` and `issuePayout`, record every call with its arguments and tool context, and be emptied before each test (calls, a failure for the payout tool to throw, and a failure for listing the tools to throw). It SHALL NOT mark any tool as needing confirmation, so that a confirmation always comes from the committed configuration.
+The backend test context SHALL NOT create an MCP client and SHALL provide a fake tool provider under the bean name of the adjuster's real one, `adjusterCoreTools`. The fake SHALL offer the tools `getClaim` and `issuePayout`, record every call with its arguments and tool context, and be emptied before each test (calls and failures to throw). It SHALL NOT mark any tool as needing confirmation, so that a confirmation always comes from the committed configuration.
 
 #### Scenario: No MCP client in the shared context
 - **WHEN** the beans of the shared test context are listed

@@ -12,6 +12,8 @@ kotlinx-serialization = "1.11.0"
 ktor = "3.6.1"
 # Not managed by the Spring AI BOM; pinned on purpose (ADR-0007).
 springAiAgentUtils = "0.13.0"
+# Community MCP security (ADR-0009): built against Spring AI 2.0, verified by this project on 2.1.0-RC2.
+mcpSecurity = "0.1.14"
 
 [libraries]
 # Plugins used by the convention plugin in build-logic
@@ -38,6 +40,11 @@ exposed-java-time = { module = "org.jetbrains.exposed:exposed-java-time", versio
 # Adjuster todo list and skills (TodoWriteTool, SkillsTool), ADR-0007
 spring-ai-agent-utils = { module = "org.springaicommunity:spring-ai-agent-utils", version.ref = "springAiAgentUtils" }
 archunit-junit6 = { module = "com.tngtech.archunit:archunit-junit6", version.ref = "archunit" }
+
+# MCP security (ADR-0009): plain modules only, no *-spring-boot auto-configuration modules
+mcp-authorization-server = { module = "org.springaicommunity:mcp-authorization-server", version.ref = "mcpSecurity" }
+mcp-server-security = { module = "org.springaicommunity:mcp-server-security", version.ref = "mcpSecurity" }
+mcp-client-security = { module = "org.springaicommunity:mcp-client-security", version.ref = "mcpSecurity" }
 
 # Desktop
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "composeMultiplatform" }

@@ -14,7 +14,8 @@ private val log = LoggerFactory.getLogger(FraudCheck::class.java)
 
 /**
  * Who calls the core tools: the same fixed identity as the adjuster chat's, declared here because `fraud` must not
- * depend on `adjuster` (which depends on `fraud`). It travels in the tool context only, never in a message.
+ * depend on `adjuster` (which depends on `fraud`). It travels in the tool context only, never in a message; the core
+ * tools are the adjuster connection's, whose token proves the persona to the core (ADR-0009).
  */
 private val ADJUSTER_IDENTITY: Map<String, Any> = mapOf("actor" to "adjuster-agent")
 
@@ -30,7 +31,7 @@ private const val READ_ONLY_CORE_TOOL = "getClaim"
 class FraudCheck(
     builder: ChatClient.Builder,
     @Value("classpath:prompts/fraud-check-system.md") systemPrompt: Resource,
-    @Qualifier("mcpToolCallbacks") coreTools: ToolCallbackProvider,
+    @Qualifier("adjusterCoreTools") coreTools: ToolCallbackProvider,
     sightingBulletinSearch: SightingBulletinSearch,
 ) {
     /** Filtered on every request, so the MCP client still connects lazily and `issuePayout` is never offered. */

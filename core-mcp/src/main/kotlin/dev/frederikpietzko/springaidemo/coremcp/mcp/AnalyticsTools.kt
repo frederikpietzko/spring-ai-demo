@@ -8,6 +8,7 @@ import dev.frederikpietzko.springaidemo.coremcp.domain.District
 import dev.frederikpietzko.springaidemo.coremcp.domain.InvalidFilter
 import dev.frederikpietzko.springaidemo.coremcp.domain.StatsGrouping
 import dev.frederikpietzko.springaidemo.coremcp.domain.StatsResult
+import dev.frederikpietzko.springaidemo.coremcp.security.CallerAccess
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult
 import org.springframework.ai.mcp.annotation.McpTool
 import org.springframework.ai.mcp.annotation.McpToolParam
@@ -43,19 +44,31 @@ data class ClaimFilterInput(
     fun toFilter(): ClaimFilter = ClaimFilter(district, kaijuClass, status, from, to)
 }
 
-/** Read-only MCP tools that count and aggregate claims by a typed filter; the model never writes SQL. */
+/** The scope every analytics tool needs (ADR-0009); only the adjuster agent's token has it. */
+private const val ANALYTICS_READ = "analytics:read"
+
+/**
+ * Read-only MCP tools that count and aggregate claims by a typed filter; the model never writes SQL. Only a token
+ * with `analytics:read` (the adjuster agent's) may call them.
+ */
 @Component
-class AnalyticsTools(private val analytics: AnalyticsService, private val json: JsonMapper) {
+class AnalyticsTools(
+    private val analytics: AnalyticsService,
+    private val json: JsonMapper,
+    private val access: CallerAccess,
+) {
     @McpTool(
         description = "Counts the claims that match a filter (district, kaiju class, status, incident period). " +
             "Use it for every question about how many claims there are; never estimate a count.",
         annotations = McpTool.McpAnnotations(readOnlyHint = true),
     )
-    fun countClaims(@McpToolParam(description = FILTER_DESCRIPTION) filter: ClaimFilterInput): CallToolResult =
-        when (val result = analytics.countClaims(filter.toFilter())) {
+    fun countClaims(@McpToolParam(description = FILTER_DESCRIPTION) filter: ClaimFilterInput): CallToolResult {
+        access.scopeDenial(ANALYTICS_READ)?.let { return ToolResults.error(it) }
+        return when (val result = analytics.countClaims(filter.toFilter())) {
             is CountResult.Counted -> ToolResults.ok(json, result)
             is InvalidFilter -> ToolResults.error("Invalid filter: ${result.message}")
         }
+    }
 
     @McpTool(
         description = "Payout statistics of the paid claims that match a filter: number of payouts, total and " +
@@ -67,9 +80,11 @@ class AnalyticsTools(private val analytics: AnalyticsService, private val json: 
         @McpToolParam(description = FILTER_DESCRIPTION) filter: ClaimFilterInput,
         @McpToolParam(description = "Group by DISTRICT or KAIJU_CLASS; leave it out for one total", required = false)
         groupBy: StatsGrouping?,
-    ): CallToolResult =
-        when (val result = analytics.payoutStats(filter.toFilter(), groupBy)) {
+    ): CallToolResult {
+        access.scopeDenial(ANALYTICS_READ)?.let { return ToolResults.error(it) }
+        return when (val result = analytics.payoutStats(filter.toFilter(), groupBy)) {
             is StatsResult.Stats -> ToolResults.ok(json, result)
             is InvalidFilter -> ToolResults.error("Invalid filter: ${result.message}")
         }
+    }
 }

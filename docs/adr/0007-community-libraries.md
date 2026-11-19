@@ -1,8 +1,8 @@
 # ADR-0007: Community libraries
 
-- Status: accepted
+- Status: accepted; amended by the change `mcp-security` (see "Amendments") and, when the tracks were merged, by the adjuster wiring of the bullet "Skills" (the `Skill` callback and the sighting bulletin search are the default tools of the adjuster chat client; the core tools come with each request, see `claims-analytics`)
 - Date: 2026-11-20
-- Change: `agent-todo-and-skills` (first user of `spring-ai-agent-utils`); to be amended by `mcp-security` (see "Amendments")
+- Change: `agent-todo-and-skills` (first user of `spring-ai-agent-utils`); amended by `mcp-security` (see "Amendments")
 - Decides ROADMAP risk R2 (a community library may not fit Spring AI 2.1).
 - Updates ADR-0005 through its addendum for this change: the `todo-update` event, the `Done` rule and the deny rule of a paused reply.
 
@@ -25,7 +25,7 @@ The adjuster agent should plan with a visible todo list and load task know-how o
 ### How the two tools are wired
 
 - **Todo list: one `TodoWriteTool` per request.** `AdjusterChat` builds a new tool for every model turn and every decision; its event handler sends `Todos.toTodoUpdate()` into the `channelFlow` of that request (`trySend` on an unlimited buffer, from the thread the tool runs on). Tool calls never reach the streamed `chatResponse()`, so the tool itself is the only place that sees the list. The handler gets no tool context, which is why a singleton tool cannot know whose stream an update belongs to.
-- **Skills: one `Skill` callback for the application.** `AdjusterConfiguration.adjusterSkills(@Value("classpath:skills"))` scans `classpath*:skills/**/SKILL.md` once at startup (`kaiju-classification`, `damage-estimation`) and is a `ToolCallback` bean with the qualifier `adjusterSkills`. The adjuster chat client gets it as a default tool next to the core tools; `AdjusterChat` puts the same callback into the prompt of a resumed reply. The claimant client is not offered it, and a model that was not offered `Skill` cannot call it (Spring AI's name-resolution fallback is off by default).
+- **Skills: one `Skill` callback for the application.** `AdjusterConfiguration.adjusterSkills(@Value("classpath:skills"))` scans `classpath*:skills/**/SKILL.md` once at startup (`kaiju-classification`, `damage-estimation`) and is a `ToolCallback` bean with the qualifier `adjusterSkills`. The adjuster chat client gets it as a default tool (next to the sighting bulletin search; the core tools are passed with each request since `claims-analytics` wraps `payoutStats`); `AdjusterChat` puts the same callback into the prompt of a resumed reply. The claimant client is not offered it, and a model that was not offered `Skill` cannot call it (Spring AI's name-resolution fallback is off by default).
 - **Skill files** carry only single-line `name` and `description` frontmatter: the library's parser reads `key: value` lines only and lists every key in the tool description.
 
 ### Roadmap deviation: where the skill descriptions sit
@@ -55,4 +55,4 @@ The roadmap entry says "Only skill names and descriptions sit in the system prom
 
 ## Amendments
 
-<!-- mcp-security: the pinned mcp-security version, and the Spring AI 2.0 fallback for core-mcp and auth-server (see ADR-0003). -->
+- **2026-11-20, `mcp-security` (ADR-0009):** the second community library is `spring-ai-community/mcp-security`, pinned at `0.1.14` (version `mcpSecurity` in `gradle/libs.versions.toml`), plain modules only: `mcp-authorization-server` (`auth-server`), `mcp-server-security` (`core-mcp`) and `mcp-client-security` (`backend`), none of the `*-spring-boot` auto-configuration modules. Upstream builds the 0.1.x line against Spring AI 2.0; this project verified it on 2.1.0-RC2 and Boot 4.2.0-RC2, so the Spring AI 2.0 fallback for `core-mcp` and `auth-server` (ADR-0003) was not needed. The upgrade path is the same as above: re-run the tests of the three modules; ADR-0009 names the plain Spring Security fallback.

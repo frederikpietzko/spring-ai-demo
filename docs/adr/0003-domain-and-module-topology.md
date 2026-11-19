@@ -1,6 +1,6 @@
 # ADR-0003: Domain and module topology
 
-- Status: accepted; extended by ADR-0005 (chat protocol): the module and package tables gain the shared library module `chat-protocol` (package `chatprotocol`), which is not a runtime module and has no port; updated by the change `core-mcp-claims`: the `core-mcp` row's status "planned" (the module exists), the sentence "`core-mcp` and `auth-server` do not exist yet" (now true for `auth-server` only), "Pending" for the database `core` (it exists) and the consequence "Only `backend` and `desktop` exist; no code, ports or database named `core` are created" (see the addendum)
+- Status: accepted; extended by ADR-0005 (chat protocol): the module and package tables gain the shared library module `chat-protocol` (package `chatprotocol`), which is not a runtime module and has no port; updated by the change `core-mcp-claims`: the `core-mcp` row's status "planned" (the module exists), the sentence "`core-mcp` and `auth-server` do not exist yet" (now true for `auth-server` only), "Pending" for the database `core` (it exists) and the consequence "Only `backend` and `desktop` exist; no code, ports or database named `core` are created" (see the addendum); updated by ADR-0009 (security model, change `mcp-security`): the `auth-server` row's status "planned" (the module exists), the sentence "`core-mcp` and `auth-server` do not exist yet" (both exist), the section "mcp-security fallback" (closed: not needed) and the `core-mcp` addendum's "It depends on no other module" (its tests resolve `:auth-server`; see the addendum 2026-11-20 `mcp-security`)
 - Date: 2026-11-19
 - Change: `test-foundation`
 
@@ -76,3 +76,10 @@ PostgreSQL stays on 5432.
 - The database `core` exists in the same PostgreSQL. `compose.yaml` creates it on a fresh volume through an init script in `compose/postgres-init`; an existing volume gets it with the README's `createdb` one-off. `core-mcp` owns its tables, migrations and seed fixtures; `backend` still never reads it.
 - `core-mcp` has no Docker Compose lifecycle support (no `spring-boot-docker-compose`): Boot would take the connection details from the compose service, whose database is `backend`, and override the `core` URL. Developers start the database with `docker compose up -d` before `:core-mcp:bootRun`.
 
+## Addendum 2026-11-20: `mcp-security`
+
+- The module `auth-server` (package `authserver`) exists: Spring Authorization Server through the community `mcp-authorization-server`, on port 9000, with the two agent clients of ADR-0009. In the module table its status is now "exists"; both planned modules exist.
+- `core-mcp` and `auth-server` have no runtime dependency on each other or on any other module. Correction to the `core-mcp` addendum ("depends on no other module"): `core-mcp`'s tests resolve `:auth-server` through the test-only configuration `authServerRuntime`, to start it as a separate process; nothing in `core-mcp`'s main code or runtime classpath depends on it.
+- The section "mcp-security fallback" is closed: `mcp-security` 0.1.14 works on Spring AI 2.1.0-RC2, no module pins Spring AI 2.0, and the pin is recorded in ADR-0009 (ADR-0007 does not exist in this repository).
+- The data-ownership boundary now carries the security story: `core-mcp` checks the token, the scope of each tool and, for the claimant agent, that the data is the claimant's own (ADR-0009).
+- Start order for local development: database, `auth-server`, `core-mcp`, backend. `core-mcp` and the backend also start without the auth-server; the adjuster's first tool call needs it.

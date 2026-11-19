@@ -44,14 +44,14 @@ The core tools SHALL be offered to the model under exactly the names the core sy
 - **THEN** the request fails with an error naming the duplicate tool and the model receives no prompt
 
 ### Requirement: The core connection is configured by property and starts lazily
-The backend SHALL connect to the core system over Streamable HTTP at the URL of the property `spring.ai.mcp.client.streamable-http.connections.core.url`, `http://localhost:8081` by default and overridable with `CORE_MCP_URL`. It SHALL start without the core system running and SHALL connect on the first adjuster request that needs the tools.
+The backend SHALL connect to the core system over Streamable HTTP with one connection per persona, `core-adjuster` and `core-claimant`, at `http://localhost:8081` by default (`CORE_MCP_URL`), and SHALL offer each connection's tools as its own provider, `adjusterCoreTools` and `claimantCoreTools`. It SHALL start without the core system and the auth-server and connect on the first request that needs the tools. Only the adjuster agent uses a provider.
 
 #### Scenario: Committed configuration points at the core
 - **WHEN** the committed configuration is loaded with the MCP client auto-configurations
-- **THEN** the connection `core` has the URL `http://localhost:8081` and one MCP tool callback provider exists
+- **THEN** the connections `core-adjuster` and `core-claimant` both have the URL `http://localhost:8081` and exactly two MCP tool callback providers exist, named `adjusterCoreTools` and `claimantCoreTools`
 
 #### Scenario: Starts without the core system
-- **WHEN** that context starts while nothing listens on port 8081
+- **WHEN** that context starts while nothing listens on port 8081 or port 9000
 - **THEN** the context starts successfully
 
 #### Scenario: Core system unreachable becomes an error event
@@ -159,3 +159,32 @@ The adjuster system prompt SHALL state today's date (UTC, ISO format) on every r
 #### Scenario: Today's date and the analytics instruction
 - **WHEN** an adjuster request is answered
 - **THEN** the system message received by the model contains today's UTC date, the names `countClaims` and `payoutStats`, and no unresolved placeholder, and the prompt resource itself holds no `{` or `}` other than the one `{today}` placeholder (a stray brace is dropped silently by the template renderer)
+
+### Requirement: Each persona has its own OAuth client
+The backend SHALL register one OAuth client per persona for the grant `client_credentials`: `claimant-agent` (scopes `policies:read claims:read claims:write`) and `adjuster-agent` (those plus `payout:write analytics:read`), with tokens from `<AUTH_SERVER_URL>/oauth2/token` (default `http://localhost:9000`) and the secrets from `CLAIMANT_AGENT_SECRET` and `ADJUSTER_AGENT_SECRET`.
+
+#### Scenario: Each persona fetches its own token
+- **WHEN** the token of each registration is requested from a stub token endpoint
+- **THEN** the claimant request authenticates as `claimant-agent` with the claimant scopes, the adjuster request as `adjuster-agent` with all five scopes, and both use the grant `client_credentials`
+
+### Requirement: Each connection sends its persona's token
+Every request of a connection to the core system SHALL carry the bearer token of its persona's OAuth client, and the backend's own endpoints SHALL stay without security.
+
+#### Scenario: Each connection sends its persona's token
+- **WHEN** the adjuster provider and the claimant provider each list tools against a stub core system that records the `Authorization` header and answers 401, with a stub token endpoint that issues the token `t-<client id>`
+- **THEN** the first request of the adjuster connection carried the bearer token `t-adjuster-agent` and that of the claimant connection the bearer token `t-claimant-agent`
+
+#### Scenario: Backend endpoints stay open
+- **WHEN** the shared backend test context (full auto-configuration) is started
+- **THEN** no `SecurityFilterChain` bean exists and a `POST /chat` without an `Authorization` header is not answered with 401 or 403
+
+### Requirement: Only identity keys reach the core as `_meta`
+Of the tool context of a tool call, only the keys `actor` and `claimantId` SHALL be sent to the core system as request `_meta`; every other key, such as the conversation id, SHALL be dropped.
+
+#### Scenario: Conversation id is not forwarded
+- **WHEN** the tool context `{claimantId: 1, actor: "claimant-agent", conversationId: "c-1"}` is converted for the core system
+- **THEN** the `_meta` holds exactly `claimantId` and `actor`
+
+#### Scenario: Empty context
+- **WHEN** a tool context without those keys is converted
+- **THEN** the `_meta` is empty

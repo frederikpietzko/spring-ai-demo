@@ -17,10 +17,11 @@ Modules (one Gradle build, `./gradlew` wrapper):
 - `backend` - Spring Boot 4.2 + Spring AI 2.1 (Anthropic, Claude Haiku; Ollama embeddings; pgvector RAG), Exposed, Flyway, PostgreSQL, Actuator.
 - `desktop` - Compose Multiplatform desktop app with the themed `Demo*`/`D*` components (adapted from oculi2).
 - `chat-protocol` - shared library module (no runtime): the chat request, persona and `ChatEvent` types with their kotlinx.serialization JSON form, used by `backend` and `desktop` (ADR-0005).
-- `core-mcp` - Spring Boot 4.2 + Spring AI 2.1 MCP server (Streamable HTTP, `@McpTool`/`@McpResource`), Exposed, Flyway, its own database `core`; no chat model, no dependency on the other modules (ADR-0003).
+- `core-mcp` - Spring Boot 4.2 + Spring AI 2.1 MCP server (Streamable HTTP, `@McpTool`/`@McpResource`), Exposed, Flyway, its own database `core`; an OAuth 2 resource server (`mcp-server-security`) whose tools check scope and claimant ownership through `CallerAccess`; no chat model, no runtime dependency on the other modules (its tests fork `auth-server`; ADR-0003, ADR-0009).
+- `auth-server` - Spring Boot 4.2 OAuth 2 authorization server (Spring Authorization Server + `mcp-authorization-server`, port 9000) with the two agent clients `claimant-agent` and `adjuster-agent` (`client_credentials`; ADR-0009).
 - `build-logic` - included build with the `demo.kotlin-jvm` convention plugin (JDK 25, experimental Kotlin flags, JUnit 6 + power-assert, detekt).
 
-Commands: `./gradlew build`, `./gradlew check`, `docker compose up -d`, `./gradlew :backend:bootRun`, `./gradlew :desktop:run`, `./gradlew :backend:generateMigrations` (Exposed generates SQL, Flyway applies it), `./gradlew :core-mcp:bootRun` (after `docker compose up -d`), `./gradlew :core-mcp:test`, `./gradlew :core-mcp:generateMigrations`. Versions live in `gradle/libs.versions.toml`; see `README.md` and `docs/adr/`.
+Commands: `./gradlew build`, `./gradlew check`, `docker compose up -d`, `./gradlew :backend:bootRun`, `./gradlew :desktop:run`, `./gradlew :backend:generateMigrations` (Exposed generates SQL, Flyway applies it), `./gradlew :auth-server:bootRun`, `./gradlew :core-mcp:bootRun` (after `docker compose up -d`), `./gradlew :core-mcp:test`, `./gradlew :core-mcp:generateMigrations`. Versions live in `gradle/libs.versions.toml`; see `README.md` and `docs/adr/`.
 
 ## Before changing code (mandatory)
 

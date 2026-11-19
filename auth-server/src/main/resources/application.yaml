@@ -1,0 +1,21 @@
+server:
+  # ADR-0003: backend 8080, core-mcp 8081, auth-server 9000.
+  port: 9000
+
+spring:
+  application:
+    name: auth-server
+  security:
+    oauth2:
+      authorizationserver:
+        # Pinned, so the `iss` of every token is the same whatever host name a caller uses (localhost or 127.0.0.1);
+        # core-mcp checks it against its own AUTH_SERVER_URL.
+        issuer: ${AUTH_SERVER_URL:http://localhost:9000}
+
+# The client secrets of the two agents (ADR-0009). The defaults are local-development values only, documented in the
+# README and allowed by the secrets scan; set the environment variables everywhere else.
+agents:
+  claimant:
+    secret: ${CLAIMANT_AGENT_SECRET:claimant-local-secret}
+  adjuster:
+    secret: ${ADJUSTER_AGENT_SECRET:adjuster-local-secret}

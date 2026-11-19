@@ -299,7 +299,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
 
 ### Wave 4
 
-- [ ] **`mcp-security`**
+- [x] **`mcp-security`**
   - Scope:
     - New module `auth-server` (Spring Authorization Server via `mcp-authorization-server`) with clients and scopes per ADR-0009.
     - `core-mcp` becomes a resource server (`mcp-server-security`), and every tool checks its scope and, for claimant calls, ownership.

@@ -33,6 +33,9 @@ dependencies {
     implementation("org.springframework.ai:spring-ai-starter-model-session-jdbc")
     // The adjuster's MCP client for the core tools of core-mcp (JDK HttpClient transport, no WebFlux stack).
     implementation("org.springframework.ai:spring-ai-starter-mcp-client")
+    // OAuth for that client (ADR-0009): one client_credentials token per persona. Deliberately no Boot security
+    // starter: it would lock the backend's own endpoints.
+    implementation(libs.mcp.client.security)
     // The adjuster's todo list and skills (ADR-0007): only TodoWriteTool and SkillsTool are used. flexmark serves only
     // the library's web fetch tool, so it stays off the classpath.
     implementation(libs.spring.ai.agent.utils) { exclude(group = "com.vladsch.flexmark") }
@@ -82,6 +85,8 @@ tasks.withType<Test>().configureEach {
     listOf("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL").forEach { environment.remove(it) }
     // Not a credential: removed so the MCP wiring test sees the committed default URL of the core system.
     environment.remove("CORE_MCP_URL")
+    // The agents' client secrets and the auth-server address (ADR-0009): the tests use the committed defaults or stubs.
+    listOf("AUTH_SERVER_URL", "CLAIMANT_AGENT_SECRET", "ADJUSTER_AGENT_SECRET").forEach { environment.remove(it) }
     // Spring relaxed binding maps SPRING_AI_ANTHROPIC_API_KEY and friends onto spring.ai.anthropic.*
     environment.keys.filter { it.startsWith("SPRING_AI_") }.forEach { environment.remove(it) }
     // Boot maps OTEL_* variables (endpoint, sampler, OTEL_SDK_DISABLED) onto management.* properties.

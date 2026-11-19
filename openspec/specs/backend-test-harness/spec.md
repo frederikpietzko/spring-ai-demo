@@ -169,11 +169,11 @@ The shared test context SHALL NOT export traces or metrics, whether or not a col
 - **THEN** it holds no span exporter and no OTLP meter registry, and its meter registry is the in-memory one
 
 ### Requirement: The core tools are faked and no MCP server is contacted
-The backend test context SHALL NOT create an MCP client and SHALL provide a fake tool provider under the real one's bean name. The fake SHALL offer `getClaim`, `issuePayout`, `countClaims` and `payoutStats`, record every call with its arguments and tool context, and be emptied before each test (calls and failures). It SHALL NOT mark any tool as needing confirmation. The fake analytics tools SHALL answer in the real MCP client's shape.
+The backend test context SHALL NOT create an MCP client and SHALL provide a fake tool provider under the bean name of the adjuster's real one, `adjusterCoreTools`. The fake SHALL offer `getClaim`, `issuePayout`, `countClaims` and `payoutStats`, record every call with its arguments and tool context, and be emptied before each test (calls and failures). It SHALL NOT mark any tool as needing confirmation. The fake analytics tools SHALL answer in the real MCP client's shape.
 
 #### Scenario: No MCP client in the shared context
 - **WHEN** the beans of the shared test context are listed
-- **THEN** there is no MCP client bean and the tool provider named `mcpToolCallbacks` is the fake
+- **THEN** there is no MCP client bean and the tool provider named `adjusterCoreTools` is the fake
 
 #### Scenario: Fake calls are recorded and reset
 - **WHEN** a test makes the model request `getClaim` and the next test starts
