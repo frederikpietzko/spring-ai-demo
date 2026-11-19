@@ -2,6 +2,7 @@ package dev.frederikpietzko.springaidemo.desktop
 
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -24,6 +25,8 @@ import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.MessageRole
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
+import dev.frederikpietzko.springaidemo.chatprotocol.TodoItem
+import dev.frederikpietzko.springaidemo.chatprotocol.TodoStatus
 import dev.frederikpietzko.springaidemo.desktop.fakes.FakeChatApi
 import kotlinx.coroutines.flow.flowOf
 import org.junit.jupiter.api.Test
@@ -249,6 +252,84 @@ class AppSemanticsTest {
         onAllNodesWithText("Confirm")[1].assertIsNotEnabled()
     }
 
+    @Test
+    fun `todo updates fill the todo panel next to the reply`() = runDesktopComposeUiTest {
+        setContent { App(FakeChatApi { flowOf(PLAN, ChatEvent.TextDelta("Working."), ChatEvent.Done) }) }
+        waitForIdle()
+
+        sendMessage("Review claim 4711")
+
+        onNodeWithText("Todo list").assertIsDisplayed()
+        onNodeWithText("Verifying the policy").assertIsDisplayed()
+        onNodeWithText("Check coverage").assertIsDisplayed()
+        onNodeWithText("Working.").assertIsDisplayed()
+        onNodeWithText("Send").assertIsEnabled()
+    }
+
+    @Test
+    fun `a later todo update replaces the list in the panel`() = runDesktopComposeUiTest {
+        setContent { App(FakeChatApi { flowOf(PLAN, PROGRESS, ChatEvent.Done) }) }
+        waitForIdle()
+
+        sendMessage("Review claim 4711")
+
+        onNodeWithText("Verify the policy").assertIsDisplayed()
+        onNodeWithText("Checking coverage").assertIsDisplayed()
+        onNodeWithText("Verifying the policy").assertDoesNotExist()
+        onNodeWithText("Check coverage").assertDoesNotExist()
+    }
+
+    @Test
+    fun `no todo panel is shown without todos`() = runDesktopComposeUiTest {
+        setContent { App(FakeChatApi()) }
+        waitForIdle()
+
+        sendMessage("Hi")
+
+        onNodeWithText("Hello").assertIsDisplayed()
+        onNodeWithText("Todo list").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a new conversation removes the todo panel`() = runDesktopComposeUiTest {
+        setContent { App(FakeChatApi { flowOf(PLAN, ChatEvent.Done) }) }
+        waitForIdle()
+        sendMessage("Review claim 4711")
+
+        onNodeWithText("New conversation").performClick()
+        waitForIdle()
+
+        onNodeWithText("Todo list").assertDoesNotExist()
+        onNodeWithText("Verifying the policy").assertDoesNotExist()
+    }
+
+    @Test
+    fun `selecting another persona removes the todo panel`() = runDesktopComposeUiTest {
+        setContent { App(FakeChatApi { flowOf(PLAN, ChatEvent.Done) }) }
+        waitForIdle()
+        choosePersona("Adjuster")
+        sendMessage("Review claim 4711")
+
+        choosePersona("Claimant")
+
+        onNodeWithText("Todo list").assertDoesNotExist()
+        onNodeWithText("Verifying the policy").assertDoesNotExist()
+        onNodeWithText("Check coverage").assertDoesNotExist()
+    }
+
+    private fun ComposeUiTest.sendMessage(text: String) {
+        onNode(hasSetTextAction()).performTextInput(text)
+        onNodeWithText("Send").performClick()
+        waitForIdle()
+    }
+
+    private fun ComposeUiTest.choosePersona(label: String) {
+        onNode(isPersonaSwitch).performClick()
+        waitForIdle()
+        onNodeWithText(label).performClick()
+        waitForIdle()
+    }
+
     private val isPersonaSwitch = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.DropdownList)
 
     private val hasNoText = SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString(""))
@@ -283,5 +364,18 @@ class AppSemanticsTest {
         )
 
         val PAYOUT_CONFIRMATION = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""")
+
+        val PLAN = ChatEvent.TodoUpdate(
+            [
+                TodoItem("Verify the policy", TodoStatus.IN_PROGRESS, "Verifying the policy"),
+                TodoItem("Check coverage", TodoStatus.PENDING, "Checking coverage"),
+            ],
+        )
+        val PROGRESS = ChatEvent.TodoUpdate(
+            [
+                TodoItem("Verify the policy", TodoStatus.COMPLETED, "Verifying the policy"),
+                TodoItem("Check coverage", TodoStatus.IN_PROGRESS, "Checking coverage"),
+            ],
+        )
     }
 }

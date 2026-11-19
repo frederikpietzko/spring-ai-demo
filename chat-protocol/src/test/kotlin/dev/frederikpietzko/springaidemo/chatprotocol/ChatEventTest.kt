@@ -55,6 +55,19 @@ class ChatEventTest {
     }
 
     @Test
+    fun `todo update is encoded with its type and todos`() {
+        val json = ChatEvent.TodoUpdate(
+            [TodoItem("Check coverage", TodoStatus.IN_PROGRESS, "Checking coverage")],
+        ).toJson()
+
+        assertEquals(
+            """{"type":"todo-update","todos":[{"content":"Check coverage","status":"IN_PROGRESS",""" +
+                """"activeForm":"Checking coverage"}]}""",
+            json,
+        )
+    }
+
+    @Test
     fun `the total of a claim card is the sum of its items and not on the wire`() {
         val card = CAR_ROOF_CARD.copy(
             damageItems = [
@@ -83,7 +96,7 @@ class ChatEventTest {
 
     @Test
     fun `an unknown event type is rejected`() {
-        assertFailsWith<SerializationException> { chatEventFromJson("""{"type":"todo-update"}""") }
+        assertFailsWith<SerializationException> { chatEventFromJson("""{"type":"mystery"}""") }
     }
 
     private companion object {
@@ -103,6 +116,14 @@ class ChatEventTest {
             ChatEvent.Error("Größe 🦖 \"quoted\""),
             CAR_ROOF_CARD.copy(description = "Größe 🦖 \"quoted\""),
             ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711,"note":"Größe 🦖"}"""),
+            ChatEvent.TodoUpdate([]),
+            ChatEvent.TodoUpdate(
+                [
+                    TodoItem("Verify the policy", TodoStatus.COMPLETED, "Verifying the policy"),
+                    TodoItem("Check coverage \"Größe\"", TodoStatus.IN_PROGRESS, "Checking coverage"),
+                    TodoItem("Pay out", TodoStatus.PENDING, "Paying out"),
+                ],
+            ),
         ]
 
         @JvmStatic
@@ -112,6 +133,7 @@ class ChatEventTest {
             Arguments.of(ChatEvent.Done, true),
             Arguments.of(ChatEvent.Error("boom"), true),
             Arguments.of(ChatEvent.ConfirmationRequest("c-1", "issuePayout", "{}"), true),
+            Arguments.of(ChatEvent.TodoUpdate([TodoItem("Check", TodoStatus.PENDING, "Checking")]), false),
         ]
     }
 }

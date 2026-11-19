@@ -280,13 +280,13 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
     - The adjuster asks in natural language, and the desktop renders a table or simple chart from a structured result event.
   - Out: text-to-SQL (rejected: unsafe and not a pattern we want to show).
   - Tests: aggregates against seed data. The tool loop with the fake model requests `payoutStats` and the stream carries the table.
-- [ ] **`agent-todo-and-skills`**
+- [x] **`agent-todo-and-skills`**
   - Scope:
     - `spring-ai-agent-utils`: `TodoWriteTool` for the adjuster, with todo changes streamed as `TodoUpdate` events into a desktop todo panel.
     - `SkillsTool` with `SKILL.md` skills `kaiju-classification` and `damage-estimation` under `backend/src/main/resources/skills/`.
     - Writes **ADR-0007**.
   - Out: subagents.
-  - Tests: the fake model writes and updates todos, and the SSE carries the matching `TodoUpdate`s. Only skill names and descriptions sit in the system prompt, and the full skill loads on demand.
+  - Tests: the fake model writes and updates todos, and the SSE carries the matching `TodoUpdate`s. Only skill names and descriptions are offered up front (in the `Skill` tool definition), and the full skill loads on demand.
 - [ ] **`agentic-rag-fraud`**
   - Scope:
     - Sighting bulletins corpus (fictional, timestamped, located).

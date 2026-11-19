@@ -2,8 +2,10 @@ package dev.frederikpietzko.springaidemo.backend.testsupport
 
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.chat.messages.ToolResponseMessage
+import org.springframework.ai.tool.annotation.Tool
 import org.springframework.beans.factory.annotation.Autowired
 import java.time.Duration
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -45,6 +47,20 @@ class FakeChatModelToolsTest {
     }
 
     @Test
+    fun `one reply can request several tools, which all run before the second call`() {
+        val twoTools = TwoTools()
+        fake.requestTools("first" to "{}", "second" to "{}")
+        fake.reply("Both ran.")
+
+        val answer = builder.build().prompt().user("Run both").tools(twoTools).call().content()
+
+        assertEquals("Both ran.", answer)
+        assertEquals(["first", "second"], twoTools.ran)
+        val results = fake.prompts[1].instructions.filterIsInstance<ToolResponseMessage>().single().responses
+        assertEquals(["first", "second"], results.map { it.name })
+    }
+
+    @Test
     fun `streams scripted text chunks in order and completes`() {
         fake.replyChunks("Hel", "lo")
 
@@ -75,5 +91,25 @@ class FakeChatModelToolsTest {
 
         assertEquals(["Claim 4711 ", "is open."], chunks)
         assertEquals(["4711"], tool.executedWith)
+    }
+}
+
+/** Two tools without parameters that record that they ran, for a reply with several tool calls. */
+private class TwoTools {
+    private val received = CopyOnWriteArrayList<String>()
+
+    /** The tools that ran, in order. */
+    val ran: List<String> get() = received.toList()
+
+    @Tool(description = "The first tool")
+    fun first(): String {
+        received.add("first")
+        return "first ran"
+    }
+
+    @Tool(description = "The second tool")
+    fun second(): String {
+        received.add("second")
+        return "second ran"
     }
 }

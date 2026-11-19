@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
+import dev.frederikpietzko.springaidemo.chatprotocol.TodoItem
+import dev.frederikpietzko.springaidemo.chatprotocol.TodoStatus
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatApi
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatMessage
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatViewModel
@@ -54,7 +56,8 @@ private val personaOptions: List<SelectOption<Persona>> = [
 
 /**
  * The chat screen: a header with the application name and the persona switch, the conversation list with "New
- * conversation" on the left, the conversation, the pending confirmation (if any) and an input row on the right.
+ * conversation" on the left, the conversation, the pending confirmation (if any) and an input row in the middle, and
+ * the adjuster's todo list on the right while it has items.
  * [chatApi] talks to the backend (a fake in tests); [themeOverride] forces the light or dark appearance, `null`
  * follows the system.
  */
@@ -93,6 +96,9 @@ fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null) {
                         onSend = { text -> scope.launch { viewModel.send(text) } },
                         onPrepare = { scope.launch { viewModel.prepareClaim() } },
                     )
+                }
+                if (state.todos.isNotEmpty()) {
+                    TodoPanel(state.todos, Modifier.width(260.dp).fillMaxHeight())
                 }
             }
         }
@@ -218,6 +224,34 @@ private fun Fact(label: String, vararg values: String) {
         values.forEach { DText(it) }
     }
 }
+
+/**
+ * The adjuster's latest todo list, one row per item: a status marker, then the active form of the item in progress
+ * and the content of every other item.
+ */
+@Composable
+private fun TodoPanel(todos: List<TodoItem>, modifier: Modifier) {
+    Column(
+        modifier = modifier.background(Demo.colors.surface).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        DText("Todo list", style = Demo.typography.label)
+        todos.forEach { todo ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DText(todo.status.marker, color = Demo.colors.inkMuted)
+                DText(if (todo.status == TodoStatus.IN_PROGRESS) todo.activeForm else todo.content)
+            }
+        }
+    }
+}
+
+/** The text marker of a todo status in the todo panel. */
+private val TodoStatus.marker: String
+    get() = when (this) {
+        TodoStatus.PENDING -> "[ ]"
+        TodoStatus.IN_PROGRESS -> "[>]"
+        TodoStatus.COMPLETED -> "[x]"
+    }
 
 /** A tool call that waits for the user: the tool, its arguments and the two choices. */
 @Composable

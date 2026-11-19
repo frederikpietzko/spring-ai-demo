@@ -109,9 +109,18 @@ curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Acce
 curl -N -X POST localhost:8080/chat/decisions -H 'Content-Type: application/json' -H 'Accept: text/event-stream' -d '{"confirmationId":"<id>","approved":true}'
 ```
 
-Approve runs the paused tool calls once; deny runs none, gives the model the text "The adjuster did not approve this payout." as their result and streams its closing reply. A second decision on the same id (or an unknown id) answers one `error` event. The resumed reply sees only the original message, the paused tool call and its result, not the tool rounds before the pause.
+Approve runs the paused tool calls once; deny runs none of the calls that wait for the decision, gives the model the text "The adjuster did not approve this payout." as their result, runs the other calls of the same reply (a todo write, a claim lookup) normally and streams its closing reply. A second decision on the same id (or an unknown id) answers one `error` event. The resumed reply sees only the original message, the paused tool call and its result, not the tool rounds before the pause.
 
 Demo flow with claim 4711, which the seed files as `FILED`: ask the adjuster to review it (`updateClaimStatus` to `UNDER_REVIEW`), to approve it (`APPROVED`), then to pay it out; only an `APPROVED` claim can be paid, and the payout (800000 + 4500 minus the deductible 50000) waits for the confirmation. A payout for a claim in another state comes back from the core as an error text the model explains. Tests that change data use the sandbox policy `KP-9000`.
+
+### Todo list and skills
+
+The adjuster plans multi-step work with a todo list and loads task know-how on demand, with two tools of the community library `spring-ai-agent-utils` (ADR-0007):
+
+- **Todo list.** Every valid `TodoWrite` call of the model sends the whole list as one event on the same stream, before the text that follows: `data: {"type":"todo-update","todos":[{"content":"Check coverage","status":"IN_PROGRESS","activeForm":"Checking coverage"}]}`. A later update replaces the list. An invalid list (two items in progress, an empty text) is rejected to the model and sends no event. A reply that ends with a todo write still ends with `done`.
+- **Skills.** `kaiju-classification` (the class 1-5 scale) and `damage-estimation` (categories, districts, how to check an estimate) live in `backend/src/main/resources/skills/<name>/SKILL.md`. The model sees only their names and descriptions, in the description of the `Skill` tool; the text of a skill reaches it only when it calls `Skill` with that name. To add a skill, create another folder with a `SKILL.md` that starts with single-line `name:` and `description:` frontmatter between `---` lines, and restart the backend.
+
+Neither tool is offered to the claimant.
 
 ## Conversation endpoints
 
@@ -131,7 +140,7 @@ The title is the beginning of the first message (at most 60 characters).
 
 ## Desktop chat
 
-Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch selects `Claimant` (default) or `Adjuster`. Stored conversations and claim cards belong to the claimant. When the adjuster's reply asks for a payout, a confirmation panel shows the tool and its arguments with **Approve** and **Deny**; while it is open no new message can be sent, and the decision's continuation is appended to the same reply. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key.
+Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch selects `Claimant` (default) or `Adjuster`. Stored conversations and claim cards belong to the claimant. When the adjuster's reply asks for a payout, a confirmation panel shows the tool and its arguments with **Approve** and **Deny**; while it is open no new message can be sent, and the decision's continuation is appended to the same reply. While the adjuster works through a todo list, a **Todo list** panel on the right shows its latest version: `[ ]` pending, `[>]` in progress (with its "-ing" text), `[x]` done. A new conversation, an opened conversation or a persona switch clears it. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key.
 
 
 The column on the left lists the stored conversations, loaded at start and after every answer. Click one to see its transcript and continue it; **New conversation** clears the screen and starts a new one. The desktop gives every conversation its own id, so the backend remembers it across desktop and backend restarts. Without a backend the list stays empty.

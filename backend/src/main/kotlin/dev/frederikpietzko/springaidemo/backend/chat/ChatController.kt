@@ -7,6 +7,7 @@ import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
 import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
+import dev.frederikpietzko.springaidemo.chatprotocol.isTerminal
 import dev.frederikpietzko.springaidemo.chatprotocol.toJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -108,9 +109,9 @@ class ChatController(
         onCompletion { cause -> if (cause == null) emit(ChatEvent.Done) }.mapFailures()
 
     /**
-     * Done only for a completed adjuster reply that did not end itself: after text (or nothing), never after a
-     * confirmation request or an error event of the agent. A failed or cancelled stream throws out of `collect`, so it
-     * gets no Done; [mapFailures] maps the failure.
+     * Done only for a completed adjuster reply that did not end itself: after any event that is not terminal (text, a
+     * todo update) or after nothing, never after a confirmation request or an error event of the agent. A failed or
+     * cancelled stream throws out of `collect`, so it gets no Done; [mapFailures] maps the failure.
      */
     private fun Flow<ChatEvent>.withTerminalEvent(): Flow<ChatEvent> =
         flow {
@@ -119,7 +120,7 @@ class ChatController(
                 last = event
                 emit(event)
             }
-            if (last == null || last is ChatEvent.TextDelta) emit(ChatEvent.Done)
+            if (last?.isTerminal != true) emit(ChatEvent.Done)
         }.mapFailures()
 
     private fun Flow<ChatEvent>.mapFailures(): Flow<ChatEvent> =

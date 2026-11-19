@@ -10,6 +10,8 @@ kotlinx-coroutines = "1.11.0"
 archunit = "1.5.1"
 kotlinx-serialization = "1.11.0"
 ktor = "3.6.1"
+# Not managed by the Spring AI BOM; pinned on purpose (ADR-0007).
+springAiAgentUtils = "0.13.0"
 
 [libraries]
 # Plugins used by the convention plugin in build-logic
@@ -33,6 +35,8 @@ exposed-spring-boot-starter = { module = "org.jetbrains.exposed:exposed-spring-b
 exposed-migration-jdbc = { module = "org.jetbrains.exposed:exposed-migration-jdbc", version.ref = "exposed" }
 # core-mcp: timestamp with time zone columns
 exposed-java-time = { module = "org.jetbrains.exposed:exposed-java-time", version.ref = "exposed" }
+# Adjuster todo list and skills (TodoWriteTool, SkillsTool), ADR-0007
+spring-ai-agent-utils = { module = "org.springaicommunity:spring-ai-agent-utils", version.ref = "springAiAgentUtils" }
 archunit-junit6 = { module = "com.tngtech.archunit:archunit-junit6", version.ref = "archunit" }
 
 # Desktop

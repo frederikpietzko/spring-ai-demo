@@ -81,6 +81,22 @@ class AdjusterConfirmationTest {
     }
 
     @Test
+    fun `denying runs the other calls of the paused reply and denies only the payout`() {
+        fake.requestTools("getClaim" to CLAIM_4711, "issuePayout" to CLAIM_4711)
+        val pause = assertIs<ChatEvent.ConfirmationRequest>(postChat(ADJUSTER_PAY_4711).single())
+        fake.reply("No payout.")
+
+        val events = decide(pause.confirmationId, approved = false)
+
+        assertEquals([ChatEvent.TextDelta("No payout."), ChatEvent.Done], events)
+        assertEquals([FakeCoreTools.Call("getClaim", 4711, IDENTITY)], coreTools.calls)
+        val results = fake.prompts.last().instructions.filterIsInstance<ToolResponseMessage>().last().responses
+            .associate { it.name to it.responseData }
+        assertTrue(results["getClaim"].orEmpty().contains("\"status\":\"FILED\""), results.toString())
+        assertEquals("The adjuster did not approve this payout.", results["issuePayout"])
+    }
+
+    @Test
     fun `replaying a decision runs nothing again`() {
         val confirmationId = pauseForPayout()
         fake.reply("Paid out.")

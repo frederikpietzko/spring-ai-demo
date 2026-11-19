@@ -65,7 +65,7 @@ class HttpChatApiTest {
 
     @Test
     suspend fun `an event the desktop cannot decode becomes one error event saying the answer is unreadable`() {
-        val events = withServer({ it.respondWithEvents("""{"type":"todo-update"}""") }) { baseUrl ->
+        val events = withServer({ it.respondWithEvents("""{"type":"mystery"}""") }) { baseUrl ->
             sendThrough(baseUrl)
         }
 
