@@ -46,16 +46,17 @@ import dev.frederikpietzko.springaidemo.desktop.theme.DemoTheme
 import dev.frederikpietzko.springaidemo.desktop.theme.ThemeMode
 import kotlinx.coroutines.launch
 
-/** Both personas are listed; the adjuster arrives in a later wave. */
+/** Both personas can be chosen; each is answered by its own agent. */
 private val personaOptions: List<SelectOption<Persona>> = [
     SelectOption(Persona.CLAIMANT, "Claimant"),
-    SelectOption(Persona.ADJUSTER, "Adjuster", enabled = false, hint = "later"),
+    SelectOption(Persona.ADJUSTER, "Adjuster"),
 ]
 
 /**
  * The chat screen: a header with the application name and the persona switch, the conversation list with "New
- * conversation" on the left, the conversation and an input row on the right. [chatApi] talks to the backend (a fake in
- * tests); [themeOverride] forces the light or dark appearance, `null` follows the system.
+ * conversation" on the left, the conversation, the pending confirmation (if any) and an input row on the right.
+ * [chatApi] talks to the backend (a fake in tests); [themeOverride] forces the light or dark appearance, `null`
+ * follows the system.
  */
 @Composable
 fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null) {
@@ -80,8 +81,14 @@ fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null) {
                         onConfirm = { scope.launch { viewModel.confirmClaim() } },
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
+                    state.pendingConfirmation?.let { pending ->
+                        ConfirmationPanel(
+                            pending,
+                            onDecide = { approved -> scope.launch { viewModel.decide(approved) } },
+                        )
+                    }
                     InputRow(
-                        sending = state.sending,
+                        canSend = !state.sending && state.pendingConfirmation == null,
                         onSend = { text -> scope.launch { viewModel.send(text) } },
                         onPrepare = { scope.launch { viewModel.prepareClaim() } },
                     )
@@ -211,12 +218,32 @@ private fun Fact(label: String, vararg values: String) {
     }
 }
 
+/** A tool call that waits for the user: the tool, its arguments and the two choices. */
+@Composable
+private fun ConfirmationPanel(pending: ChatEvent.ConfirmationRequest, onDecide: (Boolean) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .background(Demo.colors.surfaceRaised, Demo.shapes.medium)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        DText("Confirm ${pending.toolName}", style = Demo.typography.title)
+        DText(pending.arguments, style = Demo.typography.caption, color = Demo.colors.inkMuted)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DButton("Approve", onClick = { onDecide(true) }, style = DButtonStyle.PRIMARY)
+            DButton("Deny", onClick = { onDecide(false) })
+        }
+    }
+}
+
 /**
  * The message input with "Send" and "Prepare claim". Keeps a 16 dp transparent margin, so the window background shows
  * around it (see the render tests).
  */
 @Composable
-private fun InputRow(sending: Boolean, onSend: (String) -> Unit, onPrepare: () -> Unit) {
+private fun InputRow(canSend: Boolean, onSend: (String) -> Unit, onPrepare: () -> Unit) {
     var input by remember { mutableStateOf("") }
     Row(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -236,8 +263,8 @@ private fun InputRow(sending: Boolean, onSend: (String) -> Unit, onPrepare: () -
                 input = ""
             },
             style = DButtonStyle.PRIMARY,
-            enabled = !sending,
+            enabled = canSend,
         )
-        DButton("Prepare claim", onClick = onPrepare, style = DButtonStyle.SECONDARY, enabled = !sending)
+        DButton("Prepare claim", onClick = onPrepare, style = DButtonStyle.SECONDARY, enabled = canSend)
     }
 }

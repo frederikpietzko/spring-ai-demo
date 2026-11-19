@@ -28,13 +28,18 @@ class EndpointsTest {
     }
 
     @Test
-    fun `only actuator, error, chat and conversation endpoints are mapped`() {
+    fun `chat decision path accepts only POST`() {
+        client.get().uri("/chat/decisions").exchange().expectStatus().isEqualTo(HttpStatus.METHOD_NOT_ALLOWED)
+    }
+
+    @Test
+    fun `only actuator, error, chat, chat decision and conversation endpoints are mapped`() {
         val patterns = context.getBeansOfType(RequestMappingInfoHandlerMapping::class.java).values
             .flatMap { it.handlerMethods.keys }
             .flatMap { it.pathPatternsCondition?.patternValues.orEmpty() }
 
         assertTrue(patterns.isNotEmpty(), "expected at least the actuator mappings")
-        val allowed = setOf("/error", "/chat", "/conversations", "/conversations/{id}/messages")
+        val allowed = setOf("/error", "/chat", "/chat/decisions", "/conversations", "/conversations/{id}/messages")
         assertTrue(patterns.all { it.startsWith("/actuator") || it in allowed }, patterns.toString())
     }
 }

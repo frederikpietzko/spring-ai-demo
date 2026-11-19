@@ -3,11 +3,13 @@ package dev.frederikpietzko.springaidemo.desktop.chat
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatAction
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
+import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.MessageRole
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import dev.frederikpietzko.springaidemo.chatprotocol.isTerminal
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,7 +34,7 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
      * Sends [text] and streams the reply into the conversation until a terminal event arrives. An error event, or a
      * stream that ends without a terminal event, is shown under the (partial) reply; `sending` is reset in any case.
      * Then the conversation list is refreshed, after the input is usable again (not when cancelled). A blank [text],
-     * or a call while an answer is still streaming, is ignored.
+     * or a call while an answer is still streaming or a confirmation is pending, is ignored.
      */
     suspend fun send(text: String) {
         if (text.isBlank()) return
@@ -41,7 +43,7 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
 
     /**
      * Asks the backend to turn the conversation into a claim card, shown as the user line "Prepare my claim"; the
-     * answer is streamed like a reply to [send]. Ignored while an answer is streaming.
+     * answer is streamed like a reply to [send]. Ignored while an answer is streaming or a confirmation is pending.
      */
     suspend fun prepareClaim() {
         exchange(userLine = "Prepare my claim", message = "", action = ChatAction.PREPARE_CLAIM)
@@ -49,7 +51,7 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
 
     /**
      * Asks the backend to file the conversation's prepared claim, shown as the user line "Confirm claim"; the answer is
-     * streamed like a reply to [send]. Ignored while an answer is streaming.
+     * streamed like a reply to [send]. Ignored while an answer is streaming or a confirmation is pending.
      */
     suspend fun confirmClaim() {
         exchange(userLine = "Confirm claim", message = "", action = ChatAction.CONFIRM_CLAIM)
@@ -57,13 +59,37 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
 
     /** Adds [userLine], sends [message] with [action] in the current conversation and streams the answer. */
     private suspend fun exchange(userLine: String, message: String, action: ChatAction) {
-        if (state.value.sending) return
+        if (state.value.sending || state.value.pendingConfirmation != null) return
         val question: List<ChatMessage> =
             [ChatMessage(ChatMessage.Author.USER, userLine), ChatMessage(ChatMessage.Author.ASSISTANT, "")]
         mutableState.update { it.copy(messages = it.messages + question, sending = true) }
+        streamReply(api.send(ChatRequest(state.value.persona, message, state.value.conversationId, action)))
+    }
+
+    /**
+     * Approves or denies the pending confirmation: sends one decision, clears the confirmation and appends the
+     * continued reply to the same assistant message. Ignored when nothing is pending.
+     */
+    suspend fun decide(approved: Boolean) {
+        val pending = state.value.pendingConfirmation ?: return
+        mutableState.update { it.copy(pendingConfirmation = null, sending = true) }
+        streamReply(api.decide(ConfirmationDecision(pending.confirmationId, approved)))
+    }
+
+    /** Selects the persona for the next message. */
+    fun selectPersona(persona: Persona) {
+        mutableState.update { it.copy(persona = persona) }
+    }
+
+    /**
+     * Appends [events] to the last (assistant) message until a terminal event arrives. A confirmation request is kept
+     * as pending; an error event, or a stream that ends without a terminal event, is shown under the (partial) reply;
+     * `sending` is reset in any case.
+     */
+    private suspend fun streamReply(events: Flow<ChatEvent>) {
         try {
             var terminated = false
-            api.send(ChatRequest(state.value.persona, message, state.value.conversationId, action))
+            events
                 // The stream ends with exactly one terminal event; stop collecting there.
                 .transformWhile { event ->
                     emit(event)
@@ -74,6 +100,10 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
                         is ChatEvent.TextDelta -> updateReply { it.copy(text = it.text + event.text) }
                         is ChatEvent.ClaimCard -> updateReply { it.copy(claimCard = event) }
                         ChatEvent.Done -> terminated = true
+                        is ChatEvent.ConfirmationRequest -> {
+                            terminated = true
+                            mutableState.update { it.copy(pendingConfirmation = event) }
+                        }
                         is ChatEvent.Error -> {
                             terminated = true
                             updateReply { it.copy(error = event.message) }
@@ -102,27 +132,26 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
         if (state.value.sending) return
         val messages = api.messages(conversation.id).map { it.toChatMessage() }
         mutableState.update {
-            if (it.sending) it else it.copy(conversationId = conversation.id, messages = messages)
+            if (it.sending) {
+                it
+            } else {
+                it.copy(conversationId = conversation.id, messages = messages, pendingConfirmation = null)
+            }
         }
     }
 
     /** Clears the conversation and starts a new one with a new id; ignored while an answer is streaming. */
     fun newConversation() {
         if (state.value.sending) return
-        mutableState.update { it.copy(conversationId = newId(), messages = []) }
-    }
-
-    /** Selects the persona for the next message. */
-    fun selectPersona(persona: Persona) {
-        mutableState.update { it.copy(persona = persona) }
-    }
-
-    private fun ConversationMessage.toChatMessage(): ChatMessage = when (role) {
-        MessageRole.USER -> ChatMessage(ChatMessage.Author.USER, text)
-        MessageRole.ASSISTANT -> ChatMessage(ChatMessage.Author.ASSISTANT, text)
+        mutableState.update { it.copy(conversationId = newId(), messages = [], pendingConfirmation = null) }
     }
 
     private fun updateReply(change: (ChatMessage) -> ChatMessage) {
         mutableState.update { it.copy(messages = it.messages.dropLast(1) + change(it.messages.last())) }
     }
+}
+
+private fun ConversationMessage.toChatMessage(): ChatMessage = when (role) {
+    MessageRole.USER -> ChatMessage(ChatMessage.Author.USER, text)
+    MessageRole.ASSISTANT -> ChatMessage(ChatMessage.Author.ASSISTANT, text)
 }

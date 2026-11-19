@@ -3,6 +3,7 @@ package dev.frederikpietzko.springaidemo.desktop.chat
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatJson
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
+import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.chatEventFromJson
@@ -33,24 +34,35 @@ private const val ERROR_ANSWER = "The backend answered with an error"
 private const val UNREADABLE_ANSWER = "The backend sent an unreadable answer"
 
 /**
- * The chat endpoint over HTTP: posts the request and reads the server-sent events into a [Flow] with Ktor's `SSE`
- * plugin (CIO engine). Every failure that is an exception becomes one [ChatEvent.Error], so the screen only ever sees
- * events and the application runs without a backend; cancellation and JVM errors (`OutOfMemoryError`, ...) are
- * rethrown. The conversation list and transcripts are plain `GET`s; every failure there gives an empty list. Closing
- * it closes the [client].
+ * The chat endpoints over HTTP: posts a request to `/chat` or a decision to `/chat/decisions` and reads the
+ * server-sent events into a [Flow] with Ktor's `SSE` plugin (CIO engine). Every failure that is an exception becomes
+ * one [ChatEvent.Error], so the screen only ever sees events and the application runs without a backend; cancellation
+ * and JVM errors (`OutOfMemoryError`, ...) are rethrown. The conversation list and transcripts are plain `GET`s; every
+ * failure there gives an empty list. Closing it closes the [client].
  */
 class HttpChatApi(
     private val baseUrl: String,
     private val client: HttpClient = HttpClient(CIO) { install(SSE) },
 ) : ChatApi, AutoCloseable {
     override fun send(request: ChatRequest): Flow<ChatEvent> =
+        events("/chat", ChatJson.encodeToString(ChatRequest.serializer(), request))
+
+    override fun decide(decision: ConfirmationDecision): Flow<ChatEvent> =
+        events("/chat/decisions", ChatJson.encodeToString(ConfirmationDecision.serializer(), decision))
+
+    override fun close() {
+        client.close()
+    }
+
+    /** Posts the JSON [body] to [path] and emits the answer's events, every failure mapped to one error event. */
+    private fun events(path: String, body: String): Flow<ChatEvent> =
         flow {
             client.sse(
-                "$baseUrl/chat",
+                "$baseUrl$path",
                 request = {
                     method = HttpMethod.Post
                     contentType(ContentType.Application.Json)
-                    setBody(ChatJson.encodeToString(ChatRequest.serializer(), request))
+                    setBody(body)
                 },
             ) {
                 incoming.collect { event -> event.data?.let { emit(chatEventFromJson(it)) } }
@@ -69,10 +81,6 @@ class HttpChatApi(
             URLBuilder(baseUrl).appendPathSegments("conversations", id, "messages", encodeSlash = true).buildString(),
             ListSerializer(ConversationMessage.serializer()),
         )
-
-    override fun close() {
-        client.close()
-    }
 
     /** Reads a JSON list; a failed request, a non-2xx status or an undecodable body give an empty list. */
     private suspend fun <T> getList(url: String, serializer: KSerializer<List<T>>): List<T> =

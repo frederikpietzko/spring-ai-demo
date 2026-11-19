@@ -6,11 +6,12 @@ import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.session.SessionAttributes
 import org.springframework.ai.session.advisor.SessionAdvisors
 import org.springframework.ai.session.advisor.SessionMemoryAdvisor
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 
 /** The claimant agent: answers one claimant message of a conversation as a stream of text chunks. */
 @Service
-class ClaimantChat(private val claimantChatClient: ChatClient) {
+class ClaimantChat(@Qualifier("claimantChatClient") private val claimantChatClient: ChatClient) {
     /**
      * Streams the model's reply to [message] in the conversation [conversationId]; Spring AI streams a `Flux`, bridged
      * here to a Kotlin `Flow`. The session advisors add the earlier turns and store this one. The typed text also

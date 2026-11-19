@@ -50,6 +50,19 @@ spring:
           initialize-schema: never
           # Lets the conversation list find the claimant's sessions with findByMetadata(agentName, "claimant").
           indexed-attributes: agentName
+    mcp:
+      client:
+        # Connect on the first adjuster request instead of at startup, so the backend starts without core-mcp.
+        initialized: false
+        streamable-http:
+          connections:
+            core:
+              # The insurer core system (core-mcp, ADR-0003 port 8081); the default endpoint /mcp matches it.
+              url: ${CORE_MCP_URL:http://localhost:8081}
+    tools:
+      confirmation:
+        # A payout waits for a human decision. By name, because MCP tools carry no requiresConfirmation flag.
+        tools: issuePayout
 
 management:
   endpoints:

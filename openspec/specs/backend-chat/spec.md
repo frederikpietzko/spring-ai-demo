@@ -18,7 +18,7 @@ The backend SHALL accept `POST /chat` with a JSON chat request and SHALL answer 
 - **THEN** the text delta event decodes to the same text
 
 ### Requirement: A stream ends with exactly one terminal event
-Every chat stream that starts SHALL end with exactly one terminal event: done when the model reply completed, error when it failed with an exception. Done SHALL NOT follow an error. The error message SHALL be generic and SHALL NOT expose the exception text; the cause is only logged. A failure that is not an exception (a JVM error) is not a failed reply: it SHALL be rethrown, and the stream breaks without a terminal event.
+Every chat stream that starts SHALL end with exactly one terminal event: done when the model reply completed, error when it failed with an exception, confirmation-request when the reply is waiting for a human decision (see `adjuster-tools`). Done SHALL NOT follow an error or a confirmation-request. The error message SHALL be generic and the cause only logged. A JVM error is not a failed reply: it SHALL be rethrown, and the stream breaks without a terminal event.
 
 #### Scenario: Failure after some chunks
 - **WHEN** the model streams the chunk "Hel" and then fails with the message "provider exploded"
@@ -32,12 +32,9 @@ Every chat stream that starts SHALL end with exactly one terminal event: done wh
 - **WHEN** the model streams the chunk "Hel" and then fails with a JVM error instead of an exception
 - **THEN** collecting the stream fails with that error and no error event is produced for it
 
-### Requirement: Persona selects the agent
-The backend SHALL answer a request for persona `CLAIMANT` through the claimant agent. For persona `ADJUSTER` it SHALL answer with a single error event saying the persona is not available yet and SHALL NOT call the model.
-
-#### Scenario: Adjuster is not available yet
-- **WHEN** a client posts a request for persona `ADJUSTER`
-- **THEN** the only event is one error event that names the persona, and the model received no prompt
+#### Scenario: A confirmation request is terminal
+- **WHEN** an adjuster reply pauses for a payout confirmation
+- **THEN** the last event is the confirmation-request event and no done or error event follows it
 
 ### Requirement: Claimant instructions frame the conversation
 The claimant agent SHALL send the model a system message with the claims-desk instructions for a claimant and a user message that carries the claimant's text exactly as typed. The claimant's text SHALL NOT itself be template-processed. When policy wording is retrieved for the message, the claimant's text SHALL reach the model verbatim inside the retrieval template of the user message; when nothing is retrieved, the user message SHALL be the claimant's text alone.
@@ -82,3 +79,14 @@ The claimant agent SHALL record an audit entry for every streamed chat call that
 #### Scenario: Auditing does not change the events
 - **WHEN** a claimant request is answered with the chunks "Hel" and "lo"
 - **THEN** the events are the same as without the audit: text delta "Hel", text delta "lo", done
+
+### Requirement: Each persona is answered by its own agent
+The backend SHALL answer a request for persona `CLAIMANT` through the claimant agent and a request for persona `ADJUSTER` through the adjuster agent (see `adjuster-tools`). The two agents SHALL NOT share tools or instructions.
+
+#### Scenario: Claimant request uses the claimant agent
+- **WHEN** a client posts a request for persona `CLAIMANT`
+- **THEN** the prompt received by the model has the claimant instructions as its system message and no tool callbacks
+
+#### Scenario: Adjuster request uses the adjuster agent
+- **WHEN** a client posts a request for persona `ADJUSTER`
+- **THEN** the prompt received by the model has the adjuster instructions as its system message and the events end with a terminal event

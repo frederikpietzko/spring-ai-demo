@@ -19,6 +19,7 @@ import androidx.compose.ui.text.AnnotatedString
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatAction
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ClaimCardItem
+import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.MessageRole
@@ -67,7 +68,7 @@ class AppSemanticsTest {
     }
 
     @Test
-    fun `Adjuster cannot be chosen`() = runDesktopComposeUiTest {
+    fun `Adjuster can be chosen and the next message is sent as the adjuster`() = runDesktopComposeUiTest {
         val api = FakeChatApi()
         setContent { App(api) }
         waitForIdle()
@@ -76,10 +77,50 @@ class AppSemanticsTest {
         waitForIdle()
         onNodeWithText("Adjuster").performClick()
         waitForIdle()
+        onNode(hasSetTextAction()).performTextInput("Hi")
+        onNodeWithText("Send").performClick()
+        waitForIdle()
 
-        // The popup stays open after a click on a disabled option, so only the switch itself is asserted.
-        onNode(isPersonaSwitch).assertTextContains("Claimant")
-        assertEquals([], api.requests)
+        onNode(isPersonaSwitch).assertTextContains("Adjuster")
+        val request = api.requests.single()
+        assertEquals(Persona.ADJUSTER, request.persona)
+        assertEquals("Hi", request.message)
+    }
+
+    @Test
+    fun `a pending confirmation shows the tool, its arguments and the approve and deny buttons`() =
+        runDesktopComposeUiTest {
+            setContent { App(FakeChatApi { flowOf(ChatEvent.TextDelta("Ready to pay."), PAYOUT_CONFIRMATION) }) }
+            waitForIdle()
+
+            onNode(hasSetTextAction()).performTextInput("Pay claim 4711")
+            onNodeWithText("Send").performClick()
+            waitForIdle()
+
+            onNodeWithText("Ready to pay.").assertIsDisplayed()
+            onNodeWithText("issuePayout", substring = true).assertIsDisplayed()
+            onNodeWithText("""{"claimNumber":4711}""", substring = true).assertIsDisplayed()
+            onNodeWithText("Approve").assertIsDisplayed()
+            onNodeWithText("Deny").assertIsDisplayed()
+        }
+
+    @Test
+    fun `clicking Approve sends the approving decision and the confirmation disappears`() = runDesktopComposeUiTest {
+        val api = FakeChatApi(decisionReply = { flowOf(ChatEvent.TextDelta("Paid"), ChatEvent.Done) }) {
+            flowOf(PAYOUT_CONFIRMATION)
+        }
+        setContent { App(api) }
+        waitForIdle()
+        onNode(hasSetTextAction()).performTextInput("Pay claim 4711")
+        onNodeWithText("Send").performClick()
+        waitForIdle()
+
+        onNodeWithText("Approve").performClick()
+        waitForIdle()
+
+        assertEquals([ConfirmationDecision("c-1", approved = true)], api.decisions)
+        onNodeWithText("Paid").assertIsDisplayed()
+        onNodeWithText("Approve").assertDoesNotExist()
     }
 
     @Test
@@ -240,5 +281,7 @@ class AppSemanticsTest {
                 ClaimCardItem("GARDEN", "Garden gnome", 25000),
             ],
         )
+
+        val PAYOUT_CONFIRMATION = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""")
     }
 }

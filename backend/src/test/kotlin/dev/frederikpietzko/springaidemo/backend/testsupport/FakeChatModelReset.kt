@@ -4,9 +4,14 @@ import org.junit.jupiter.api.extension.BeforeEachCallback
 import org.junit.jupiter.api.extension.ExtensionContext
 import org.springframework.test.context.junit.jupiter.SpringExtension
 
-/** Empties the shared [FakeChatModel] before each test so scripts and prompts never leak between tests. */
+/**
+ * Empties the shared [FakeChatModel] and [FakeCoreTools] before each test so scripts, prompts, tool calls and
+ * configured failures never leak between tests.
+ */
 class FakeChatModelReset : BeforeEachCallback {
     override fun beforeEach(context: ExtensionContext) {
-        SpringExtension.getApplicationContext(context).getBean(FakeChatModel::class.java).reset()
+        val applicationContext = SpringExtension.getApplicationContext(context)
+        applicationContext.getBean(FakeChatModel::class.java).reset()
+        applicationContext.getBean(FakeCoreTools::class.java).reset()
     }
 }

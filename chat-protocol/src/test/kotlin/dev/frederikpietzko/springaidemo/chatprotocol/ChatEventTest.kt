@@ -44,6 +44,17 @@ class ChatEventTest {
     }
 
     @Test
+    fun `confirmation request is encoded with its type, id, tool name and arguments`() {
+        val json = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""").toJson()
+
+        assertEquals(
+            """{"type":"confirmation-request","confirmationId":"c-1","toolName":"issuePayout",""" +
+                """"arguments":"{\"claimNumber\":4711}"}""",
+            json,
+        )
+    }
+
+    @Test
     fun `the total of a claim card is the sum of its items and not on the wire`() {
         val card = CAR_ROOF_CARD.copy(
             damageItems = [
@@ -58,7 +69,7 @@ class ChatEventTest {
 
     @ParameterizedTest
     @MethodSource("terminality")
-    fun `done and error end the stream, text deltas and claim cards do not`(event: ChatEvent, terminal: Boolean) {
+    fun `done, error and confirmation request end the stream, others do not`(event: ChatEvent, terminal: Boolean) {
         assertEquals(terminal, event.isTerminal)
     }
 
@@ -91,6 +102,7 @@ class ChatEventTest {
             ChatEvent.Done,
             ChatEvent.Error("Größe 🦖 \"quoted\""),
             CAR_ROOF_CARD.copy(description = "Größe 🦖 \"quoted\""),
+            ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711,"note":"Größe 🦖"}"""),
         ]
 
         @JvmStatic
@@ -99,6 +111,7 @@ class ChatEventTest {
             Arguments.of(CAR_ROOF_CARD, false),
             Arguments.of(ChatEvent.Done, true),
             Arguments.of(ChatEvent.Error("boom"), true),
+            Arguments.of(ChatEvent.ConfirmationRequest("c-1", "issuePayout", "{}"), true),
         ]
     }
 }

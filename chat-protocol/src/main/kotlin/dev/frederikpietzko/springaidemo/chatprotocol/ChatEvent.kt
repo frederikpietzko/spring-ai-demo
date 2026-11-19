@@ -9,8 +9,10 @@ val ChatJson: Json = Json
 
 /**
  * One event of a chat stream. The JSON field `type` names the event (kotlinx's default class discriminator), for
- * example `{"type":"text-delta","text":"Hel"}`. The events are [TextDelta], [ClaimCard], [Done] and [Error]; a stream
- * ends with exactly one terminal event ([isTerminal]), [Done] or [Error].
+ * example `{"type":"text-delta","text":"Hel"}`. The events are [TextDelta], [ClaimCard], [Done], [Error] and
+ * [ConfirmationRequest]; a stream ends with exactly one terminal event ([isTerminal]): [Done], [Error] or
+ * [ConfirmationRequest]. After a confirmation request the client answers with a [ConfirmationDecision], whose reply is
+ * a new stream with the same rules.
  *
  * Extension rule (ADR-0005): the change that first emits a new event adds its subclass here with a `@SerialName`
  * (`claim-intake` added [ClaimCard]) and decides in [isTerminal] whether it ends the stream; new fields get defaults.
@@ -56,17 +58,29 @@ sealed interface ChatEvent {
     @Serializable
     @SerialName("error")
     data class Error(val message: String) : ChatEvent
+
+    /**
+     * Terminal event: the reply waits for a human decision on the tool [toolName] with the JSON [arguments], for
+     * example a payout. The client answers with a [ConfirmationDecision] carrying [confirmationId]; the paused tool
+     * calls stay on the server.
+     */
+    @Serializable
+    @SerialName("confirmation-request")
+    data class ConfirmationRequest(val confirmationId: String, val toolName: String, val arguments: String) : ChatEvent
 }
 
 /** One damage item of a [ChatEvent.ClaimCard]: its category, a description and the estimated amount in minor units. */
 @Serializable
 data class ClaimCardItem(val category: String, val description: String, val amountMinor: Long)
 
-/** Whether this event ends the stream: [ChatEvent.Done] and [ChatEvent.Error] do, every other event does not. */
+/**
+ * Whether this event ends the stream: [ChatEvent.Done], [ChatEvent.Error] and [ChatEvent.ConfirmationRequest] do,
+ * every other event does not.
+ */
 val ChatEvent.isTerminal: Boolean
     get() = when (this) {
         is ChatEvent.TextDelta, is ChatEvent.ClaimCard -> false
-        ChatEvent.Done, is ChatEvent.Error -> true
+        ChatEvent.Done, is ChatEvent.Error, is ChatEvent.ConfirmationRequest -> true
     }
 
 /** Encodes this event through the sealed base serializer, so the JSON always carries `type`. */

@@ -55,7 +55,7 @@ The backend SHALL configure an Anthropic chat model with Claude Haiku (`claude-h
 - **THEN** a chat client builder bean is registered
 
 ### Requirement: Only operational, chat and conversation endpoints are served
-The backend SHALL serve HTTP endpoints only for the health endpoint, the error page, the chat endpoint (`POST /chat`) and the conversation endpoints (`GET /conversations` and `GET /conversations/{id}/messages`). A request to the chat path with another method SHALL be answered with status 405, and the root path SHALL NOT be served.
+The backend SHALL serve HTTP endpoints only for the health endpoint, the error page, the chat endpoint (`POST /chat`), the chat decision endpoint (`POST /chat/decisions`) and the conversation endpoints (`GET /conversations` and `GET /conversations/{id}/messages`). A request to the chat path or to the chat decision path with another method SHALL be answered with status 405, and the root path SHALL NOT be served.
 
 #### Scenario: Root path is not served
 - **WHEN** a client requests `GET /`
@@ -65,9 +65,13 @@ The backend SHALL serve HTTP endpoints only for the health endpoint, the error p
 - **WHEN** a client requests `GET /chat`
 - **THEN** the response status is 405
 
+#### Scenario: Chat decision path accepts only POST
+- **WHEN** a client requests `GET /chat/decisions`
+- **THEN** the response status is 405
+
 #### Scenario: No other endpoint is mapped
 - **WHEN** the request mappings of the running backend are listed
-- **THEN** every mapping is an actuator path, the error path, `/chat` or a conversation path
+- **THEN** every mapping is an actuator path, the error path, `/chat`, `/chat/decisions` or a conversation path
 
 ### Requirement: Starts without an Anthropic API key
 The backend SHALL start and report healthy when no Anthropic API key is configured. The key SHALL be read only from the `ANTHROPIC_API_KEY` environment variable and SHALL never appear in committed files. A chat call without a key fails when it is made, not at startup.

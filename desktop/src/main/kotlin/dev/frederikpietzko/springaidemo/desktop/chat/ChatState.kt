@@ -20,7 +20,8 @@ data class ChatMessage(
 
 /**
  * What the chat screen shows: the conversation and its id (sent with every request of it), whether an answer is
- * streaming, the selected persona and the stored conversations, newest first.
+ * streaming, the selected persona, the stored conversations (newest first), and the tool call that waits for the
+ * user's approve or deny, if any.
  */
 data class ChatState(
     val conversationId: String,
@@ -28,4 +29,5 @@ data class ChatState(
     val sending: Boolean = false,
     val persona: Persona = Persona.CLAIMANT,
     val conversations: List<ConversationSummary> = [],
+    val pendingConfirmation: ChatEvent.ConfirmationRequest? = null,
 )

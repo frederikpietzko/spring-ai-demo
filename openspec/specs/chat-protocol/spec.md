@@ -7,7 +7,7 @@ Defines the types that backend and desktop exchange for a chat: the request, the
 ## Requirements
 
 ### Requirement: Chat events have a stable JSON form
-The protocol SHALL define the chat events `TextDelta`, `Done`, `Error` and `ClaimCard`, each serialized as a JSON object whose `type` field names the event: `text-delta` with a `text` field, `done` with no further field, `error` with a `message` field, `claim-card` with the fields of its own requirement. Decoding SHALL accept exactly these types and give back the same event.
+The protocol SHALL define the chat events `TextDelta`, `Done`, `Error`, `ClaimCard` and `ConfirmationRequest`, each serialized as a JSON object whose `type` field names the event: `text-delta` with a `text` field, `done` with no further field, `error` with a `message` field, `claim-card` with the fields of its own requirement, `confirmation-request` with the fields `confirmationId`, `toolName` and `arguments`. Decoding SHALL accept exactly these types and give back the same event.
 
 #### Scenario: Text delta wire form
 - **WHEN** a text delta carrying "Hel" is encoded
@@ -20,6 +20,10 @@ The protocol SHALL define the chat events `TextDelta`, `Done`, `Error` and `Clai
 #### Scenario: Error wire form
 - **WHEN** an error event carrying "boom" is encoded
 - **THEN** the JSON is `{"type":"error","message":"boom"}`
+
+#### Scenario: Confirmation request wire form
+- **WHEN** a confirmation request with id "c-1", tool name "issuePayout" and arguments `{"claimNumber":4711}` is encoded
+- **THEN** the JSON is `{"type":"confirmation-request","confirmationId":"c-1","toolName":"issuePayout","arguments":"{\"claimNumber\":4711}"}`
 
 #### Scenario: Round trip
 - **WHEN** each event is encoded and the JSON is decoded as a chat event
@@ -93,8 +97,19 @@ The chat request SHALL have an `action` field with the values `MESSAGE`, `PREPAR
 - **THEN** decoding fails
 
 ### Requirement: Events say whether they end the stream
-The protocol SHALL tell for every chat event whether it is terminal: `Done` and `Error` are terminal, `TextDelta` and `ClaimCard` are not. The answer SHALL come from an exhaustive match, so a new event cannot be added without deciding it.
+The protocol SHALL tell for every chat event whether it is terminal: `Done`, `Error` and `ConfirmationRequest` are terminal, `TextDelta` and `ClaimCard` are not. The answer SHALL come from an exhaustive match, so a new event cannot be added without deciding it.
 
 #### Scenario: Terminal and non-terminal events
 - **WHEN** the terminal-ness of each event is asked
-- **THEN** `Done` and `Error` are terminal and `TextDelta` and `ClaimCard` are not
+- **THEN** `Done`, `Error` and `ConfirmationRequest` are terminal and `TextDelta` and `ClaimCard` are not
+
+### Requirement: Confirmation decision carries the id and the choice
+The protocol SHALL define the confirmation decision as a JSON object with a `confirmationId` field and an `approved` field (a boolean). It SHALL carry nothing else: the paused tool calls are never sent by the client.
+
+#### Scenario: Decision wire form
+- **WHEN** a decision for id "c-1" that approves is encoded
+- **THEN** the JSON is `{"confirmationId":"c-1","approved":true}` and decoding it gives the same decision
+
+#### Scenario: Missing choice is rejected
+- **WHEN** the JSON `{"confirmationId":"c-1"}` is decoded as a decision
+- **THEN** decoding fails
