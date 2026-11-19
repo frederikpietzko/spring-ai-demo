@@ -1,6 +1,6 @@
 # ADR-0003: Domain and module topology
 
-- Status: accepted
+- Status: accepted; extended by ADR-0005 (chat protocol): the module and package tables gain the shared library module `chat-protocol` (package `chatprotocol`), which is not a runtime module and has no port
 - Date: 2026-11-19
 - Change: `test-foundation`
 

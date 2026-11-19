@@ -39,8 +39,8 @@ The backend SHALL expose an HTTP health endpoint that reports the overall status
 - **WHEN** a client requests `GET /actuator/health` while the database is reachable
 - **THEN** the body includes a database component with status `UP`
 
-### Requirement: Anthropic Haiku is the default chat model
-The backend SHALL configure an Anthropic chat model with Claude Haiku (`claude-haiku-5-5`) as the default model and SHALL make a chat model and a chat client builder available to the application. It SHALL NOT expose a chat HTTP endpoint yet.
+### Requirement: Haiku is the default chat model
+The backend SHALL configure an Anthropic chat model with Claude Haiku (`claude-haiku-5-5`) as the default model and SHALL make a chat model and a chat client builder available to the application.
 
 #### Scenario: Chat model configured with Haiku
 - **WHEN** the backend runs and its configuration properties and beans are inspected
@@ -50,9 +50,20 @@ The backend SHALL configure an Anthropic chat model with Claude Haiku (`claude-h
 - **WHEN** the backend runs and its beans are inspected
 - **THEN** a chat client builder bean is registered
 
-#### Scenario: No chat endpoint
-- **WHEN** a client requests `GET /` or `GET /chat`
+### Requirement: Only operational and chat endpoints are served
+The backend SHALL serve HTTP endpoints only for the health endpoint, the error page and the chat endpoint (`POST /chat`). A request to the chat path with another method SHALL be answered with status 405, and the root path SHALL NOT be served.
+
+#### Scenario: Root path is not served
+- **WHEN** a client requests `GET /`
 - **THEN** the response status is 404
+
+#### Scenario: Chat path accepts only POST
+- **WHEN** a client requests `GET /chat`
+- **THEN** the response status is 405
+
+#### Scenario: No other endpoint is mapped
+- **WHEN** the request mappings of the running backend are listed
+- **THEN** every mapping is an actuator path, the error path or `/chat`
 
 ### Requirement: Starts without an Anthropic API key
 The backend SHALL start and report healthy when no Anthropic API key is configured. The key SHALL be read only from the `ANTHROPIC_API_KEY` environment variable and SHALL never appear in committed files. A chat call without a key fails when it is made, not at startup.

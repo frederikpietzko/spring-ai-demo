@@ -1,6 +1,6 @@
 # ADR-0004: Test strategy
 
-- Status: accepted
+- Status: accepted; partially superseded by ADR-0005 (chat protocol): (1) the Backend tests statement "only actuator and `/error` mappings exist" (`/chat` is mapped too, `GET /chat` is a 405); (2) the desktop semantics test "name and placeholder shown, no controls" (the chat screen has an input, a send button and a persona switch); (3) "One production seam: `App(themeOverride: ThemeMode? = null)`" (`App(chatApi: ChatApi, themeOverride: ThemeMode? = null)` adds the `ChatApi` seam)
 - Date: 2026-11-19
 - Change: `test-foundation`
 - Supersedes (parts of ADR-0002): the section "Deferred tests"; the paragraph on Anthropic in tests; the statement "no `api-key` property exists in any file" (the test properties commit the placeholder `spring.ai.anthropic.api-key=test-placeholder`, production files still carry none); the consequence "`bootRun` and `generateMigrations` need Docker; `build` and `check` do not"; the consequence "Without tests, regressions are caught only by the command checks ..."; the Quality gate statement "ArchUnit is not added yet; ..."

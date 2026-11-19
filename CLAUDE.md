@@ -10,12 +10,13 @@ Development is spec-driven: behavior is specified in OpenSpec (`openspec/`) befo
 
 Demo domain, feature order and waves: **`ROADMAP.md`** (Kaiju insurance claims desk). Pick the next unticked change from the current wave.
 
-> Status: build scaffold and test harness in place (shared backend test context with a fake `ChatModel`, desktop tests, secrets scan; see `openspec/specs/backend-test-harness` and ADR-0004), no features or tables yet. `./gradlew check` runs the tests and needs Docker. The Gradle hooks in `.claude/hooks/hooks.disabled.json` stay intentionally disabled (the build exposes `:<module>:detekt` and `:<module>:check`, so they can be enabled later).
+> Status: build scaffold and test harness in place (shared backend test context with a fake `ChatModel`, desktop tests, secrets scan; see `openspec/specs/backend-test-harness` and ADR-0004). First feature: streaming claimant chat (`POST /chat` as server-sent events, desktop chat screen, shared `chat-protocol` module; ADR-0005). No tables yet. `./gradlew check` runs the tests and needs Docker. The Gradle hooks in `.claude/hooks/hooks.disabled.json` stay intentionally disabled (the build exposes `:<module>:detekt` and `:<module>:check`, so they can be enabled later).
 
 Modules (one Gradle build, `./gradlew` wrapper):
 
 - `backend` - Spring Boot 4.2 + Spring AI 2.1 (Anthropic, Claude Haiku), Exposed, Flyway, PostgreSQL, Actuator.
 - `desktop` - Compose Multiplatform desktop app with the themed `Demo*`/`D*` components (adapted from oculi2).
+- `chat-protocol` - shared library module (no runtime): the chat request, persona and `ChatEvent` types with their kotlinx.serialization JSON form, used by `backend` and `desktop` (ADR-0005).
 - `build-logic` - included build with the `demo.kotlin-jvm` convention plugin (JDK 25, experimental Kotlin flags, JUnit 6 + power-assert, detekt).
 
 Commands: `./gradlew build`, `./gradlew check`, `docker compose up -d`, `./gradlew :backend:bootRun`, `./gradlew :desktop:run`, `./gradlew :backend:generateMigrations` (Exposed generates SQL, Flyway applies it). Versions live in `gradle/libs.versions.toml`; see `README.md` and `docs/adr/`.

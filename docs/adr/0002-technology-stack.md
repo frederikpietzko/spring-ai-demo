@@ -1,6 +1,6 @@
 # ADR-0002: Technology stack
 
-- Status: accepted; partially superseded by ADR-0004 (test strategy): the section "Deferred tests", the paragraph on Anthropic in tests, the statement "no `api-key` property exists in any file" (tests commit a placeholder `spring.ai.anthropic.api-key`), and the consequences "`bootRun` and `generateMigrations` need Docker; `build` and `check` do not", "Without tests, regressions are caught only by the command checks ...", and the Quality gate statement "ArchUnit is not added yet; ..."
+- Status: accepted; partially superseded by ADR-0004 (test strategy): the section "Deferred tests", the paragraph on Anthropic in tests, the statement "no `api-key` property exists in any file" (tests commit a placeholder `spring.ai.anthropic.api-key`), and the consequences "`bootRun` and `generateMigrations` need Docker; `build` and `check` do not", "Without tests, regressions are caught only by the command checks ...", and the Quality gate statement "ArchUnit is not added yet; ..."; partially superseded by ADR-0005 (chat protocol): the Backend statement "Only wiring: the auto-configured chat model and `ChatClient.Builder`, no chat endpoint" (the backend now serves `POST /chat`, and the claimant `ChatClient` bean has a system prompt and an audit advisor)
 - Date: 2026-11-19
 - Change: `scaffold-project`
 

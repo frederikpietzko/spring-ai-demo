@@ -99,6 +99,34 @@ class FakeChatModelTest {
     }
 
     @Test
+    fun `streams the scripted chunks and then fails with the scripted error`() {
+        fake.replyChunksThenFail("boom", "Hel")
+
+        val signals = client.prompt().user("Hi").stream().content().materialize().collectList().block().orEmpty()
+
+        assertEquals(["Hel"], signals.filter { it.isOnNext }.map { it.get() })
+        assertEquals("boom", signals.last().throwable?.message)
+    }
+
+    @Test
+    fun `a scripted failure without chunks fails the stream at once`() {
+        fake.replyChunksThenFail("boom")
+
+        val signals = client.prompt().user("Hi").stream().content().materialize().collectList().block().orEmpty()
+
+        assertEquals("boom", signals.single().throwable?.message)
+    }
+
+    @Test
+    fun `a scripted failure fails a blocking call with the scripted message`() {
+        fake.replyChunksThenFail("boom", "Hel")
+
+        val error = assertFailsWith<IllegalStateException> { client.prompt().user("Hi").call().content() }
+
+        assertEquals("boom", error.message)
+    }
+
+    @Test
     fun `reset restarts the generated tool call ids`() {
         fake.requestTool("getClaim", "{}")
         fake.reset()

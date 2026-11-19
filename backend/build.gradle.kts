@@ -14,6 +14,7 @@ val migrationGeneratorImage = "postgres:18"
 dependencies {
     implementation(platform(libs.spring.boot.dependencies))
     implementation(platform(libs.spring.ai.bom))
+    implementation(project(":chat-protocol"))
 
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
@@ -22,6 +23,8 @@ dependencies {
     implementation(libs.exposed.spring.boot.starter)
     implementation("org.springframework.ai:spring-ai-starter-model-anthropic")
     implementation("tools.jackson.module:jackson-module-kotlin")
+    // Lets Spring MVC return a Kotlin Flow (the Flux-to-Flow bridge of the chat endpoint); version from the Boot BOM.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")
     runtimeOnly("org.postgresql:postgresql")
 
     developmentOnly(platform(libs.spring.boot.dependencies))

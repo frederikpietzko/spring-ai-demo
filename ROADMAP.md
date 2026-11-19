@@ -230,7 +230,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
     - No security yet. Ports and DB per ADR-0003.
   - Out: OAuth (wave 4), analytics tools (wave 3).
   - Tests: domain services as unit tests. MCP tools end to end through an MCP client against the running server (Testcontainers Postgres). Payout rules: no payout for a rejected claim, the deductible is applied, payouts are idempotent per claim.
-- [ ] **`chat-streaming`**
+- [x] **`chat-streaming`**
   - Scope:
     - Backend: chat endpoint streaming SSE (`ChatClient.stream()` `Flux` bridged to `Flow`), a claimant system prompt, and one small custom Kotlin advisor (for example audit metadata).
     - Desktop: a chat window rendering streamed deltas, plus the persona switch, with only `CLAIMANT` wired for now.

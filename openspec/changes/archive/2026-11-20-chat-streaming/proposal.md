@@ -41,7 +41,7 @@ The demo has a build, a test harness and a themed desktop shell, but nothing a u
 
 ## Impact
 
-- `settings.gradle.kts`, root `build.gradle.kts`, `gradle/libs.versions.toml` (Ktor, kotlinx.serialization, serialization plugin; `kotlinx-coroutines-reactor` gets no entry, the Boot BOM manages it, see design D12), new `chat-protocol/` module.
+- `settings.gradle.kts`, root `build.gradle.kts`, `gradle/libs.versions.toml` (Ktor, kotlinx.serialization, serialization plugin, `kotlin-reflect` for the desktop's suspend tests; `kotlinx-coroutines-reactor` gets no entry, the Boot BOM manages it, see design D12), new `chat-protocol/` module.
 - `backend`: new package `...backend.chat`, `prompts/claimant-system.md`, dependencies on `chat-protocol` and `kotlinx-coroutines-reactor`; `EndpointsTest` updated; `FakeChatModel` extended.
 - `desktop`: new chat screen, `ChatApi`, `HttpChatApi`, `ChatViewModel`; `App.kt` and `main.kt` changed; Ktor client dependencies; `AppSemanticsTest` and `AppRenderTest` updated.
 - Docs: `docs/adr/0005-chat-protocol.md` (new), status-line notes on ADR-0001, ADR-0002, ADR-0003 and ADR-0004, `README.md`, `CLAUDE.md`.

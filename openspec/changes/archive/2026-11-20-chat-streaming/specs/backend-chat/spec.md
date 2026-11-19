@@ -18,7 +18,7 @@ The backend SHALL accept `POST /chat` with a JSON chat request and SHALL answer 
 - **THEN** the text delta event decodes to the same text
 
 ### Requirement: A stream ends with exactly one terminal event
-Every chat stream that starts SHALL end with exactly one terminal event: done when the model reply completed, error when it failed. Done SHALL NOT follow an error. The error message SHALL be generic and SHALL NOT expose the exception text; the cause is only logged.
+Every chat stream that starts SHALL end with exactly one terminal event: done when the model reply completed, error when it failed with an exception. Done SHALL NOT follow an error. The error message SHALL be generic and SHALL NOT expose the exception text; the cause is only logged. A failure that is not an exception (a JVM error) is not a failed reply: it SHALL be rethrown, and the stream breaks without a terminal event.
 
 #### Scenario: Failure after some chunks
 - **WHEN** the model streams the chunk "Hel" and then fails with the message "provider exploded"
@@ -27,6 +27,10 @@ Every chat stream that starts SHALL end with exactly one terminal event: done wh
 #### Scenario: Failure before the first chunk
 - **WHEN** the model fails before streaming any chunk
 - **THEN** the only event is one error event
+
+#### Scenario: A JVM error is rethrown
+- **WHEN** the model streams the chunk "Hel" and then fails with a JVM error instead of an exception
+- **THEN** collecting the stream fails with that error and no error event is produced for it
 
 ### Requirement: Persona selects the agent
 The backend SHALL answer a request for persona `CLAIMANT` through the claimant agent. For persona `ADJUSTER` it SHALL answer with a single error event saying the persona is not available yet and SHALL NOT call the model.

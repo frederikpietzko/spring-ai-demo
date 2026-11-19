@@ -41,6 +41,18 @@ class FakeChatModel : ChatModel {
         script.add(Step(AssistantMessage(chunks.joinToString("")), chunks.toList()))
     }
 
+    /**
+     * Queues a reply that fails with an [IllegalStateException] carrying [error]: a stream emits [chunks] first and
+     * then the error, a blocking call throws it. Unlike an exhausted script this is an intended, scripted failure.
+     */
+    fun replyChunksThenFail(error: String, vararg chunks: String) =
+        replyChunksThenFail(IllegalStateException(error), *chunks)
+
+    /** Queues a reply that emits [chunks] and then fails with [failure], for any throwable, JVM errors included. */
+    fun replyChunksThenFail(failure: Throwable, vararg chunks: String) {
+        script.add(Step(AssistantMessage(chunks.joinToString("")), chunks = chunks.toList(), failure = failure))
+    }
+
     /** Queues one reply that is bare JSON text, for structured output. */
     fun replyJson(json: String) = reply(json)
 
@@ -53,8 +65,9 @@ class FakeChatModel : ChatModel {
 
     override fun call(prompt: Prompt): ChatResponse {
         received.add(prompt)
-        val step = script.poll() ?: error(exhaustedMessage(prompt))
-        return ChatResponse([Generation(step.message)])
+        (val message, val failure) = script.poll() ?: error(exhaustedMessage(prompt))
+        failure?.let { throw it }
+        return ChatResponse([Generation(message)])
     }
 
     /**
@@ -69,7 +82,8 @@ class FakeChatModel : ChatModel {
             if (step.message.hasToolCalls()) {
                 Flux.just(ChatResponse([Generation(step.message)]))
             } else {
-                Flux.fromIterable(step.chunks).map { ChatResponse([Generation(AssistantMessage(it))]) }
+                val chunks = Flux.fromIterable(step.chunks).map { ChatResponse([Generation(AssistantMessage(it))]) }
+                step.failure?.let { chunks.concatWith(Flux.error(it)) } ?: chunks
             }
         }
 
@@ -82,6 +96,9 @@ class FakeChatModel : ChatModel {
     private fun exhaustedMessage(prompt: Prompt) =
         "Fake chat model script exhausted, unexpected prompt: ${prompt.contents}"
 
-    /** One scripted answer: the full message for blocking calls and the text chunks for streamed calls. */
-    private data class Step(val message: AssistantMessage, val chunks: List<String>)
+    /**
+     * One scripted answer: the full message for blocking calls and the text chunks for streamed calls, optionally
+     * followed by the [failure].
+     */
+    private data class Step(val message: AssistantMessage, val chunks: List<String>, val failure: Throwable? = null)
 }

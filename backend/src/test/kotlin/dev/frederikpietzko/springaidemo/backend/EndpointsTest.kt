@@ -3,6 +3,7 @@ package dev.frederikpietzko.springaidemo.backend
 import dev.frederikpietzko.springaidemo.backend.testsupport.IntegrationTest
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.context.ApplicationContext
+import org.springframework.http.HttpStatus
 import org.springframework.test.web.servlet.client.RestTestClient
 import org.springframework.web.servlet.mvc.method.RequestMappingInfoHandlerMapping
 import kotlin.test.Test
@@ -22,17 +23,17 @@ class EndpointsTest {
     }
 
     @Test
-    fun `there is no chat endpoint yet`() {
-        client.get().uri("/chat").exchange().expectStatus().isNotFound
+    fun `chat path accepts only POST`() {
+        client.get().uri("/chat").exchange().expectStatus().isEqualTo(HttpStatus.METHOD_NOT_ALLOWED)
     }
 
     @Test
-    fun `only actuator and error endpoints are mapped`() {
+    fun `only actuator, error and chat endpoints are mapped`() {
         val patterns = context.getBeansOfType(RequestMappingInfoHandlerMapping::class.java).values
             .flatMap { it.handlerMethods.keys }
             .flatMap { it.pathPatternsCondition?.patternValues.orEmpty() }
 
         assertTrue(patterns.isNotEmpty(), "expected at least the actuator mappings")
-        assertTrue(patterns.all { it.startsWith("/actuator") || it == "/error" }, patterns.toString())
+        assertTrue(patterns.all { it.startsWith("/actuator") || it == "/error" || it == "/chat" }, patterns.toString())
     }
 }
