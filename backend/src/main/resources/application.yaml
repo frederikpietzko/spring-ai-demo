@@ -80,6 +80,12 @@ spring:
         # A payout waits for a human decision. By name, because MCP tools carry no requiresConfirmation flag.
         tools: issuePayout
 
+demo:
+  adjuster:
+    # Model routing (ADR-0008): the adjuster orchestrator plans, delegates and decides, so it runs on the stronger
+    # model; everything else (claimant, claim intake, the subagents) stays on the cheaper default above.
+    model: claude-sonnet-5-5
+
 management:
   tracing:
     sampling:

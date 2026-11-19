@@ -29,9 +29,10 @@ import org.springframework.stereotype.Service
 
 /**
  * Who calls the core tools. It travels in the tool context only, never in a message, and is forwarded to `core-mcp`
- * as MCP `_meta`. A fixed adjuster identity until the claimant id and OAuth arrive (`mcp-security`).
+ * as MCP `_meta`. A fixed adjuster identity until the claimant id and OAuth arrive (`mcp-security`). The adjuster's
+ * subagents ([AdjusterSubagents]) call the core tools with the same identity.
  */
-private val ADJUSTER_IDENTITY: Map<String, Any> = mapOf("actor" to "adjuster-agent")
+val ADJUSTER_IDENTITY: Map<String, Any> = mapOf("actor" to "adjuster-agent")
 
 /** What the model receives as the result of a payout the adjuster denied. */
 private const val DENIED = "The adjuster did not approve this payout."
@@ -50,6 +51,7 @@ class AdjusterChat(
     @Qualifier("adjusterChatClient") private val adjusterChatClient: ChatClient,
     @Qualifier("mcpToolCallbacks") private val coreTools: ToolCallbackProvider,
     @Qualifier("adjusterSkills") private val adjusterSkills: ToolCallback,
+    @Qualifier("adjusterTask") private val adjusterTask: ToolCallback,
     private val toolCallingManager: ToolCallingManager,
     private val pendingConfirmations: PendingConfirmations,
     private val sightingBulletinSearch: SightingBulletinSearch,
@@ -83,8 +85,8 @@ class AdjusterChat(
     /**
      * Runs the tool calls of the [paused] reply and returns the conversation with their results: the calls that wait
      * for a decision run only when [approved], every other call runs as it would have without the pause. The loop
-     * keeps no state, so the prompt carries every adjuster tool (the core tools, [todoWrite], the skills and the
-     * bulletin search) and the tool context again: a tool missing here fails with "No ToolCallback found".
+     * keeps no state, so the prompt carries every adjuster tool (the core tools, [todoWrite], the skills, the
+     * bulletin search and `Task`) and the tool context again: a tool missing here fails the decision.
      */
     private fun runToolCalls(paused: PausedTurn, approved: Boolean, todoWrite: TodoWriteTool): List<Message> {
         val keys = ToolCallDecisions.toolCallKeys(checkNotNull(paused.reply.result) { "paused reply" }.output)
@@ -98,6 +100,7 @@ class AdjusterChat(
                 *ToolCallbacks.from(todoWrite),
                 adjusterSkills,
                 *ToolCallbacks.from(sightingBulletinSearch),
+                adjusterTask,
             )
             .toolContext(ADJUSTER_IDENTITY)
             .build()

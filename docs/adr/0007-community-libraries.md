@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-11-20
-- Change: `agent-todo-and-skills` (first user of `spring-ai-agent-utils`); to be amended by `mcp-security` (see "Amendments")
+- Change: `agent-todo-and-skills` (first user of `spring-ai-agent-utils`); amended by `subagents`, to be amended by `mcp-security` (see "Amendments")
 - Decides ROADMAP risk R2 (a community library may not fit Spring AI 2.1).
 - Updates ADR-0005 through its addendum for this change: the `todo-update` event, the `Done` rule and the deny rule of a paused reply.
 
@@ -19,7 +19,7 @@ The adjuster agent should plan with a visible todo list and load task know-how o
 ### Depend on the library, pinned
 
 - `org.springaicommunity:spring-ai-agent-utils:0.13.0`, version `springAiAgentUtils` in `gradle/libs.versions.toml`, `implementation` in `backend` with `exclude(group = "com.vladsch.flexmark")`. `spring-ai-agent-utils-common:0.13.0` comes along. Spring AI stays on the BOM's 2.1.0-RC2 (confirmed with the resolved runtime classpath).
-- Only `TodoWriteTool` and `SkillsTool` are used. Nothing is registered automatically: the backend builds both itself.
+- Used classes: `TodoWriteTool` and `SkillsTool` (`agent-todo-and-skills`), and for the subagents (`subagents`, amendment below) `TaskTool`, the subagent SPI of `spring-ai-agent-utils-common` (`SubagentType`, `SubagentExecutor`, `SubagentResolver`, `SubagentReference`, `TaskCall`), `ClaudeSubagentDefinition`, `MarkdownParser`, `Skills` and the `TaskRepository` interface. Nothing is registered automatically: the backend builds every tool itself.
 - Runtime proof on 2.1.0-RC2 (offline, with the shared fake chat model): `SkillsTest` builds the skill tool from the classpath and calls it; `AdjusterSkillsTest` checks what the model sees up front and the loaded body; `AdjusterTodoTest` runs real `TodoWrite` calls through the streaming tool loop and the payout resume.
 
 ### How the two tools are wired
@@ -54,5 +54,17 @@ The roadmap entry says "Only skill names and descriptions sit in the system prom
 - A new skill is one more `SKILL.md` in its own folder under `backend/src/main/resources/skills/`; it is offered after a restart.
 
 ## Amendments
+
+### `subagents`: `TaskTool` with a subagent type of our own
+
+The adjuster delegates to two subagents with the library's `Task` tool (`TaskTool`), defined as Markdown files under `backend/src/main/resources/agents/` (single-line frontmatter, read with `MarkdownParser`). The library's Claude subagent type (`ClaudeSubagentType`, `ClaudeSubagentExecutor`, kind `CLAUDE`) is not used, for these reasons (0.13.0 sources):
+
+- Its tool list is fixed (shell, file system, web fetch) with no way to add `getClaim` or the bulletin search, and its `SmartWebFetchTool` needs `flexmark`, which this ADR excludes: `build()` would fail.
+- Kind `CLAUDE` registers four built-in coding agents (`general-purpose`, `Explore`, `Plan`, `Bash`); `general-purpose` inherits every tool.
+- `model: haiku` maps to a 4.5 model id, it sets no tool context (the core tools need the caller identity) and it returns plain text only.
+
+Instead, `backend.adjuster` holds a small subagent type of kind `ADJUSTER_SUBAGENT`: `AdjusterSubagent` (a `ClaudeSubagentDefinition` with that kind, so the library's frontmatter getters `model`, `tools()` and `skills()` are reused), `AdjusterSubagentResolver` and the executor `AdjusterSubagents` (model from the file, deny-by-default tools, preloaded skills via `Skills.loadResource`, the adjuster identity in the tool context, a typed `FraudAssessment` for `fraud-investigator`). The `Task` tool gets a short description of our own and a `TaskRepository` that refuses background tasks (`NoBackgroundTasks`), so `run_in_background` ends as an error and runs nothing. Model routing is ADR-0008.
+
+The executor fetches its `ChatClient.Builder` through an `ObjectProvider` per run instead of injecting it: Spring AI's `toolCallbackResolver` collects every `ToolCallback` bean (`Task` among them) while the chat client builder is being created, so a direct injection is a bean cycle.
 
 <!-- mcp-security: the pinned mcp-security version, and the Spring AI 2.0 fallback for core-mcp and auth-server (see ADR-0003). -->

@@ -122,6 +122,17 @@ The adjuster plans multi-step work with a todo list and loads task know-how on d
 
 Neither tool is offered to the claimant.
 
+### Subagents and model routing
+
+The adjuster orchestrates and hands focused work to two subagents with the `Task` tool of `spring-ai-agent-utils` (ADR-0007). A `Task` call names the subagent and gives it a self-contained prompt; the subagent runs once, in the foreground, and its answer is the tool result. Only that answer comes back, not its own steps.
+
+- **`fraud-investigator`** checks one claim against the sighting bulletins with `getClaim` and `searchSightingBulletins` and answers a `FraudAssessment` (verdict, evidence, confidence) as JSON. A reply that is no assessment ends the `Task` call as an error. It reads no claim history: the fraud story rests on the claim's place and time and the bulletins, so the roadmap's "read-only tools" are narrowed to these two.
+- **`damage-assessor`** checks the damage items of one claim with `getClaim`; the full text of the `damage-estimation` skill is loaded into its instructions. It answers in a few sentences.
+
+Each subagent is one Markdown file under `backend/src/main/resources/agents/` with single-line frontmatter (`name`, `description`, `model`, `tools`, `skills`) and its instructions as the body. To add one, write another file and add a `SubagentReference` for it in `adjusterTaskTool` (`AdjusterTask.kt`). A subagent gets exactly the tools its `tools:` line names (none without the line), chosen from the core tools and the bulletin search; only the read-only `getClaim` and `searchSightingBulletins` may be listed, and a test fails when a file lists another one. A reply that asks for any other tool, or has no text, ends the `Task` call as an error and runs nothing. Background tasks (`run_in_background`) are refused.
+
+Models (ADR-0008): the default stays `claude-haiku-5-5`; the adjuster orchestrator runs on `demo.adjuster.model` (`claude-sonnet-5-5`); each subagent on the `model:` line of its file (`claude-haiku-5-5` for both). A model the orchestrator names in a `Task` call is ignored. The orchestrator is told to record each delegation in its todo list (in progress before the `Task` call, completed after it), so the desktop's todo panel shows it.
+
 ## Fraud check
 
 Agentic RAG: retrieval is a tool the model decides to call, not a fixed step before every answer.

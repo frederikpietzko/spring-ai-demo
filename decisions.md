@@ -440,3 +440,40 @@ Binding text: `openspec/changes/archive/2026-11-20-agent-todo-and-skills/design.
 - **Upgrade path:** move `spring-ai-agent-utils` to the first 0.14.x release once it exists and Spring AI 2.1 is final; the backend tests are the compatibility check.
 - **Todo list across a payout decision:** the resume is stateless, so session memory for the adjuster would also keep the list.
 - **Duplicate test:** the claimant tool-list assertion in `AdjusterTodoTest` repeats an older `AdjusterChatTest` test; one could go.
+
+### Wave 4 - `subagents`
+
+Review: clean (no confirmed blockers).
+
+Binding text: `openspec/changes/archive/2026-11-20-subagents/design.md` (D0-D8) and `docs/adr/0008-model-routing.md`; `docs/adr/0007-community-libraries.md` is amended for the extra library classes.
+
+**Decisions**
+
+- **Delegation mechanism:** keep `TaskTool` and the Markdown agent definitions, but register our own subagent type (kind `ADJUSTER_SUBAGENT`: `AdjusterSubagent`, `AdjusterSubagentResolver`, executor `AdjusterSubagents`) instead of the library's Claude subagent type. *Why:* in 0.13.0 the Claude type has a fixed coding tool list with no way to add `getClaim` or the bulletin search, needs flexmark (excluded by ADR-0007), auto-registers four coding agents, maps `model: haiku` to a 4.5 id, ignores `TaskCall.model`, sets no tool context and returns plain text. One `@Tool` per subagent with its own ChatClient stays the fallback.
+- **Model routing (ADR-0008):** the default stays `claude-haiku-5-5`; the adjuster orchestrator is the one per-client override, `claude-sonnet-5-5`, read from `demo.adjuster.model` and set as default options on `adjusterChatClient`; subagent models come from the `model:` line (full id) of their file, both naming `claude-haiku-5-5`; `TaskCall.model` is ignored; claimant and claim intake keep the default. *Why:* one key and one frontmatter line read well on a slide; a model chosen by the LLM per call could pick an expensive one, and a routing properties class is more machinery than needed.
+- **Tool allow-list, deny by default:** a subagent gets only the tools on its `tools:` line, no line means no tools; the executor filters the core MCP tools plus the bulletin search callback. No agent file lists `issuePayout` or `updateClaimStatus`, and a test checks all agent files against a read-only set. A paused reply (confirmation policy) or a blank reply makes the `Task` call an error; the executor catches nothing. *Why:* the library inherits all tools when `tools:` is missing, a hole in an injection-containment demo; tests assert the outcome (no payout, error text, no assessment), not exception wording.
+- **Structured result:** only `fraud-investigator` is typed (`BeanOutputConverter` on `FraudAssessment`, written back as JSON); an unreadable reply is an error and no verdict is invented. `damage-assessor` answers plain text, which the Task response carries as a JSON string. *Why:* Spring AI passes valid JSON through unquoted; a typed damage result was not asked for.
+- **Executor gets its builder through `ObjectProvider<ChatClient.Builder>`:** a fresh prototype builder per run instead of injecting and cloning. *Why:* direct injection is a bean cycle (builder, tool-calling advisor, tool callback resolver, every `ToolCallback` bean including `adjusterTask`, executor, builder).
+- **Background tasks refused:** `TaskTool.builder().taskRepository(NoBackgroundTasks)` throws on `putTask`; no `TaskOutputTool`; `resume` and `model` are ignored. *Why:* `TaskCall` still offers `run_in_background` and the library would start a real subagent in a future; failing closed costs one small class.
+- **Progress through the todo list:** the orchestrator records each delegation in its own `TodoWrite` calls before and after `Task` (one line in `adjuster-system.md`); no new protocol event, no desktop change. *Why:* `TaskTool` is a plain Function with no tool context or SSE channel; a dedicated event would need an ADR-0005 extension.
+- **Tests with fake models:** one ordered script on the shared `FakeChatModel` serves orchestrator and subagents, told apart by `fake.prompts[i]` (system text, `options.model`, tool names, tool responses). *Why:* ADR-0004 allows one `ChatModel` bean; the subagent call runs synchronously inside the orchestrator's tool execution, so the order is deterministic.
+- **Wiring:** code lives in the existing `adjuster` package (no new package, no new ArchUnit rule); `adjusterTask` is injected by qualifier; `AdjusterChat.runToolCalls` also lists the Task callback so a paused reply with `Task` and `issuePayout` resumes; `ADJUSTER_IDENTITY` is a public top-level `val`. *Why:* existing rules cover the constraints; a missing resume callback fails with "No ToolCallback found"; the Kotlin policy forbids `internal` in an application module.
+- **Per-request tools:** `.tools(toolCallbackProvider)` instead of the deprecated `.toolCallbacks(...)`.
+- **Skills preloading:** the executor loads all skills once at startup and adds the full text of each skill on the `skills:` line to the instructions; an unknown skill name is ignored.
+- **`FraudCheck` untouched:** `fraud-investigator.md` carries its own copy of the instructions; no spec delta for `fraud-check`. *Why:* nothing calls `FraudCheck` yet; folding the two is a follow-up.
+- **Merge of `agentic-rag-fraud` first (task 0.1):** `roadmap-track-d` was merged into this branch as its own merge commit, both sides kept in every conflict (one duplicate `FakeChatModel.requestTools` removed). *Why:* the fraud investigator needs the bulletin search and `FraudAssessment`.
+- **Plan check:** 8 issues of the adversarial check applied (merge task, paused reply as error, JSON-quoted plain text, `adjusterTaskTool` function before the bean, non-brittle error assertions, background refusal, narrowed fraud tools, naming); requirements split because strict validation limits text to 500 characters.
+
+**Descoped / deviations from the roadmap entry**
+
+- `fraud-investigator` has only `getClaim` and the bulletin search (no claim history); the roadmap's "subagent progress" is the orchestrator's own todo entries, not a stream of the subagent's steps. The ROADMAP scope and test lines were reworded accordingly.
+- The test line says one scripted fake serves orchestrator and subagents, told apart by prompt contents.
+
+**Follow-ups**
+
+- **"null" reply from `fraud-investigator`:** a reply of the literal text `null` passes the blank check, `convert()` returns null and the Task call succeeds with the result `null` instead of ending as an error.
+- **Untested branch:** the blank-text failure in `AdjusterSubagents.run` has no test (only the awaiting-decision and unreadable-assessment cases are covered).
+- **Tool callbacks by name:** `toolCallbackResolver` picks up every `ToolCallback` bean (Skill, Task); harmless while name-resolution fallback is off, but enabling it would make them callable by name from any client.
+- **Duplicated fraud instructions:** `fraud-investigator.md` and `prompts/fraud-check-system.md`; fold `FraudCheck` into the subagent.
+- **Unknown skill names** on a `skills:` line are silently ignored; a startup check could fail loudly.
+- **Out of scope:** a claim-history tool for `fraud-investigator`, a subagent progress event (ADR-0005 extension), a typed damage result, background tasks.

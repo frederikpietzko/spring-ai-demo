@@ -73,12 +73,12 @@ class AdjusterTodoTest {
     }
 
     @Test
-    fun `the adjuster is offered the todo and skill tools next to the core tools`() {
+    fun `the adjuster is offered the todo, skill and task tools next to the core tools`() {
         fake.replyChunks("ok")
 
         postAdjuster()
 
-        val expected: Set<String> = ["getClaim", "issuePayout", "Skill", "TodoWrite", "searchSightingBulletins"]
+        val expected: Set<String> = ["getClaim", "issuePayout", "Skill", "TodoWrite", "searchSightingBulletins", "Task"]
         assertEquals(expected, toolNames(0).toSet())
     }
 
