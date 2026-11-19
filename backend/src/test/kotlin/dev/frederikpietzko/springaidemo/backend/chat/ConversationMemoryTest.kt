@@ -1,6 +1,7 @@
 package dev.frederikpietzko.springaidemo.backend.chat
 
 import dev.frederikpietzko.springaidemo.backend.testsupport.FakeChatModel
+import dev.frederikpietzko.springaidemo.backend.testsupport.FakeDecisionModel
 import dev.frederikpietzko.springaidemo.backend.testsupport.IntegrationTest
 import dev.frederikpietzko.springaidemo.backend.testsupport.claimantJson
 import dev.frederikpietzko.springaidemo.backend.testsupport.postChat
@@ -59,6 +60,9 @@ class ConversationMemoryTest {
 
     @Autowired
     private lateinit var conversationSearch: ConversationSearch
+
+    @Autowired
+    private lateinit var decisionModel: FakeDecisionModel
 
     @Test
     fun `the second turn of a conversation sees the first`() {
@@ -129,6 +133,7 @@ class ConversationMemoryTest {
                 policyWordingAdvisor,
                 restartedSessionService(),
                 conversationSearch,
+                decisionModel,
             ),
         )
 

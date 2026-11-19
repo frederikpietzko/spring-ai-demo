@@ -2,6 +2,7 @@ package dev.frederikpietzko.springaidemo.backend
 
 import org.springframework.ai.anthropic.AnthropicChatModel
 import org.springframework.ai.chat.model.ChatModel
+import org.springframework.ai.decision.DecisionModel
 import org.springframework.ai.embedding.EmbeddingModel
 import org.springframework.ai.model.anthropic.autoconfigure.AnthropicChatAutoConfiguration
 import org.springframework.ai.model.ollama.autoconfigure.OllamaApiAutoConfiguration
@@ -25,9 +26,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Provider selection of the committed configuration, outside the shared integration context (which switches both real
+ * Provider selection of the committed configuration, outside the shared integration context (which switches the real
  * models off). Both providers' model auto-configurations are applied as in production; nothing is called, the base
- * URLs are unreachable and no key is set.
+ * URLs are unreachable and no key is set. Creating the decision model pulls nothing (the pull strategy stays `never`).
  */
 class OllamaWiringTest {
     private val runner =
@@ -55,7 +56,10 @@ class OllamaWiringTest {
             assertIs<AnthropicChatModel>(context.getBeansOfType(ChatModel::class.java).values.single())
             assertIs<OllamaEmbeddingModel>(context.getBeansOfType(EmbeddingModel::class.java).values.single())
             assertEquals("nomic-embed-text", context.getBean(OllamaEmbeddingProperties::class.java).model)
-            assertTrue(context.getBeansOfType(OllamaDecisionModel::class.java).isEmpty())
+            val decisionModel = assertIs<OllamaDecisionModel>(
+                context.getBeansOfType(DecisionModel::class.java).values.single(),
+            )
+            assertEquals("d1-omni:600m", decisionModel.options.model)
         }
     }
 

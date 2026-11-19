@@ -317,7 +317,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
 
 ### Wave 5
 
-- [ ] **`injection-guardrails`**
+- [x] **`injection-guardrails`**
   - Scope:
     - The poisoned-invoice scenario as seed data and a documented walkthrough.
     - A `DecisionModel` guardrail advisor on input (before memory and retrieval) and on output.

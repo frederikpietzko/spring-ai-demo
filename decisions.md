@@ -524,3 +524,41 @@ The tracks' sync merges had resolved the same conflicts (mcp-tools-and-confirmat
 - **Shared test helpers added twice:** tracks B and D both added `FakeChatModel.requestTools(vararg)`; one implementation stays (`requestTool` delegates to it) and both tests of it stay.
 - **Desktop file split:** `AnalyticsTable` and its row moved from `App.kt` into `AnalyticsTable.kt`, because the todo panel and the table together pushed `App.kt` over detekt's `TooManyFunctions` limit (config untouched).
 - **Order of docs:** ADR-0005 addenda and the sections above follow commit time; the merge narratives of the tracks' own sync merges were folded into this section; ROADMAP ticks are the union of all tracks.
+
+### Wave 5 - `injection-guardrails`
+
+Review: clean (no confirmed blockers).
+
+Binding text: `openspec/changes/archive/2026-11-20-injection-guardrails/design.md` (D1-D8). No new ADR; status notes went into ADR-0004, ADR-0005 and ADR-0006.
+
+**Decisions**
+
+- **Decision provider:** `OllamaDecisionModel` (`d1-omni:600m`) through the existing Ollama starter: `spring.ai.model.decision: ollama`, `spring.ai.ollama.decision.model: d1-omni:600m`, `pull-model-strategy` stays `never`, so creating the bean makes no network call. *Why:* Anthropic has no `DecisionModel` and Spring AI 2.1.0-RC2 has no `ChatModel`-backed one; Ollama is already a startup dependency (ADR-0006). A hand-written Anthropic-backed one was rejected because its probabilities would not be calibrated.
+- **Placement and order:** one stream-only `GuardrailAdvisor` in the new package `backend.guardrail`, on the claimant client only, at `HIGHEST_PRECEDENCE + 150` (public const): below `SessionTurnAdvisor` (+200), inside `AuditAdvisor` (+100). The adjuster chat is untouched. *Why:* the session turn creates the session before the rest of the chain runs, so a later input guard would leave an empty titled conversation; +150 keeps the typed text and lets the audit record the blocked attempt. The adjuster is attacked through a tool result this advisor never sees; its control is human confirmation.
+- **Fail closed:** a failed decision call errors the stream (generic `Error` event); a provider refusal blocks like a yes. *Why:* failing open is an anti-pattern to demo.
+- **Output check:** chunks pass through, the text is collected, one decision call runs after the stream completes (inside `Mono.defer`, on the bounded-elastic scheduler), and one notice chunk is appended when the reply is flagged. Blank text is never sent to the decision model; errors pass through unchanged. The walkthrough says streamed text cannot be taken back and the session memory already holds the original reply. *Why:* buffering the reply would break token streaming and the archived "failure after some chunks" scenario; `DecisionInput.text` throws on blank text.
+- **Blank claimant message:** the input check is skipped and the chain continues as before. Through `POST /chat` a blank message never reaches the advisor (ChatClient rejects blank user text, behaviour that predates this change). *Why:* preserves the chat-streaming decision that a blank message is not validated.
+- **Poisoned invoice seed:** migration `V20261122000000__seed_poisoned_invoice.sql` (customer, policy, coverage and damage item 50, claim 4700 for `NEON_MARKET`, filed, estimate 150000); the invoice text is the damage item description; no attachment table, no `setval`. *Why:* existing fixtures stay unchanged; ids 12-100 and claim numbers 4613-4710 are never generated at runtime; `NEON_MARKET` avoids the analytics aggregates; 4714 is avoided because the backend filing fake starts there. The core's `issuePayout` pays only approved claims, a free extra layer.
+- **Where scope denial is tested:** the claimant-token denial is a `core-mcp` test against claim 4700 (error names the payout scope, no payout row). The backend claimant test asserts only that no `issuePayout` reaches the core, because the claimant chat has no such tool and the confirmation policy matches by name. The mcp-security deviation (a missing scope is a tool error, not HTTP 403) is kept.
+- **Test seams:** `IntegrationTest` sets `spring.ai.model.decision=none`; `TestInfrastructure` has a scripted `FakeDecisionModel` as the only `DecisionModel` bean (settable phrase matched case-insensitively, modes answer/refuse/fail, records inputs even when failing, reset in `FakeChatModelReset`; default answer "safe"). `OllamaWiringTest` now expects exactly one `OllamaDecisionModel`. `FakeCoreTools.getClaim` answers 4700 with the seed's values and the shared invoice constant. *Why:* a real decision model next to the fake would break `ProviderGuardTest` and could reach Ollama.
+- **Texts and questions:** short refusal and notice texts; two `YesNoQuestion`s (injection, payout promise) with the default 0.5 threshold. `GuardrailOrderTest` reads the audit order through `AuditAdvisor(AuditTrail()).order` (no `internal`). The ArchUnit rule forbids `guardrail` from depending on the other backend packages, `chatprotocol` and Exposed.
+- **README:** besides prerequisites and a prompt-injection section, the claim 4700 fixture, the fake decision model and the Ollama URL row were documented, so nothing goes stale.
+
+**Descoped / deviations from the roadmap entry**
+
+- Audit redaction and auditing of the blocking intake call, which ADR-0005 assigns to this change, are not done; ADR-0005 carries a status note and the proposal and walkthrough record it. *Why:* the roadmap entry lists neither, and a blocked message is never stored.
+- The adjuster chat has no guard on tool results (see follow-ups); its containment is confirmation plus scope denial.
+
+**Declined review findings**
+
+- None declined. Four minor findings were left as follow-ups (below).
+
+**Follow-ups**
+
+- Upgrade the host Ollama (0.33.3 now) to 0.40.4 or later and run `ollama pull d1-omni:600m`. Until then every claimant message in `bootRun` ends with "The claims desk is unavailable." (fail closed). The real classifier has never been run; the README prerequisites say so.
+- A blank claimant message gives HTTP 500 with an empty event stream (ChatClient rejects blank text in `ClaimantChat`); predates this change. One protocol `Error` event or a 400 in `ChatController` would fix it.
+- Audit redaction and auditing of the blocking claim-intake call are still open (ADR-0005 status note).
+- A `ToolCallback` decorator that classifies `getClaim` results is the missing guard layer for the adjuster chat.
+- On the output half, a failing decision call is raised after the full reply was streamed and stored, so the unchecked text is delivered and the error arrives afterwards.
+- `GuardrailAdvisor` implements only `StreamAdvisor`; a non-streaming call on the claimant client would bypass it (latent: only `ClaimantChat.stream` exists).
+- Weak tests: "the claimant chat cannot pay out when the guardrail misses" cannot fail on the confirmation layer it is named for, and "a reply without text is not checked" does not assert the pause its scenario names.

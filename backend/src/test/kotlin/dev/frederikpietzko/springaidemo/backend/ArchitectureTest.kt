@@ -91,4 +91,25 @@ class ArchitectureTest {
             )
             .because("the adjuster depends on the fraud check, not the reverse, and ADR-0006 keeps Exposed out")
 
+    /**
+     * The prompt-injection guardrail is a self-contained advisor over Spring AI's decision model: it knows no other
+     * application package (the chat configuration wires it, not the reverse), not the protocol and not Exposed. Full
+     * package prefixes, as above.
+     */
+    @ArchTest
+    val guardrail_depends_on_no_other_application_package: ArchRule =
+        noClasses()
+            .that().resideInAPackage("${BackendApplication::class.java.packageName}.guardrail..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                "${BackendApplication::class.java.packageName}.adjuster..",
+                "${BackendApplication::class.java.packageName}.chat..",
+                "${BackendApplication::class.java.packageName}.fraud..",
+                "${BackendApplication::class.java.packageName}.intake..",
+                "${BackendApplication::class.java.packageName}.observability..",
+                "${BackendApplication::class.java.packageName}.rag..",
+                "${BackendApplication::class.java.packageName}.springai..",
+                "dev.frederikpietzko.springaidemo.chatprotocol..",
+                "org.jetbrains.exposed..",
+            )
+            .because("the chat configuration wires the guardrail; the guardrail itself needs only Spring AI")
 }

@@ -13,7 +13,7 @@ private const val POSTGRES_IMAGE = "pgvector/pgvector:pg18"
 
 /**
  * Infrastructure of the shared integration test context: a real PostgreSQL (with pgvector), the scripted chat model,
- * the deterministic embedding model and the fake core tools.
+ * the deterministic embedding model, the scripted decision model and the fake core tools.
  */
 @TestConfiguration(proxyBeanMethods = false)
 class TestInfrastructure {
@@ -32,6 +32,10 @@ class TestInfrastructure {
     /** The only embedding model of the test context (the real provider is switched off in [IntegrationTest]). */
     @Bean
     fun fakeEmbeddingModel(): FakeEmbeddingModel = FakeEmbeddingModel()
+
+    /** The only decision model of the test context (the real provider is switched off in [IntegrationTest]). */
+    @Bean
+    fun fakeDecisionModel(): FakeDecisionModel = FakeDecisionModel()
 
     /** Records every stopped observation; emptied before each test by [ObservationRecorderReset]. */
     @Bean

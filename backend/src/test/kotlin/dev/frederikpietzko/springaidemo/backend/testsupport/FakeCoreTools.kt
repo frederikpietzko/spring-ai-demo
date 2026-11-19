@@ -9,7 +9,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Stand-in for the core tools `getClaim`, `issuePayout`, `countClaims` and `payoutStats` of `core-mcp` (same names,
- * parameters and JSON fields as the core's tool contract), so the adjuster runs without an MCP server. The analytics
+ * parameters and JSON fields as the core's tool contract), so the adjuster runs without an MCP server. `getClaim`
+ * answers claim 4700 with the poisoned invoice and every other number like claim 4711. The analytics
  * tools answer in the MCP wire shape ([mcpWireShape]), because the backend parses their result. Records every call
  * with its arguments and tool context. Every tool declares a [ToolContext] parameter: `MethodToolCallback` hands the
  * context only to such a parameter, and fails loudly when the context is empty. No tool sets `requiresConfirmation`:
@@ -50,6 +51,7 @@ class FakeCoreTools {
         toolContext: ToolContext,
     ): Map<String, Any> {
         received.add(Call("getClaim", claimNumber, toolContext.context.toMap()))
+        if (claimNumber == POISONED_CLAIM) return poisonedClaim()
         return mapOf(
             "claimNumber" to claimNumber,
             "policyNumber" to "KP-1001",
@@ -98,6 +100,24 @@ class FakeCoreTools {
         return mcpWireShape(if (groupBy == "KAIJU_CLASS") HARBOUR_BY_KAIJU_CLASS else HARBOUR_CLASS_4_TOTAL)
     }
 
+    /** Seed claim 4700 of the poisoned invoice scenario: its one damage item is the [POISONED_INVOICE]. */
+    private fun poisonedClaim(): Map<String, Any> = mapOf(
+        "claimNumber" to POISONED_CLAIM,
+        "policyNumber" to "KP-1005",
+        "status" to "FILED",
+        "district" to "NEON_MARKET",
+        "incidentAt" to "2026-11-19T20:00:00Z",
+        "kaijuClass" to POISONED_CLAIM_KAIJU_CLASS,
+        "totalEstimatedMinor" to POISONED_CLAIM_TOTAL_MINOR,
+        "damageItems" to [
+            mapOf(
+                "category" to "BUILDING",
+                "description" to POISONED_INVOICE,
+                "estimatedAmountMinor" to POISONED_CLAIM_TOTAL_MINOR,
+            ),
+        ],
+    )
+
     /** Forgets the recorded calls and all three failures (payout, analytics, listing). */
     fun reset() {
         received.clear()
@@ -108,6 +128,15 @@ class FakeCoreTools {
     }
 
     private companion object {
+        /** The poisoned invoice claim; every other claim number gets the answer for 4711. */
+        const val POISONED_CLAIM = 4700L
+
+        /** Seed claim 4700: a class 2 kaiju tore down a neon sign. */
+        const val POISONED_CLAIM_KAIJU_CLASS = 2
+
+        /** Seed claim 4700: one damage item of 150000. */
+        const val POISONED_CLAIM_TOTAL_MINOR = 150_000L
+
         /** Seed claim 4711 was a class 3 kaiju at the harbour (the claimed place and time of the fraud scenario). */
         const val CLAIM_4711_KAIJU_CLASS = 3
 

@@ -91,6 +91,27 @@ class FakeCoreToolsTest {
     }
 
     @Test
+    fun `the fake getClaim answers claim 4700 with the poisoned invoice as its damage item`() {
+        val getClaim = adjusterCoreTools.toolCallbacks.single { it.toolDefinition.name() == "getClaim" }
+
+        val claim = json.readTree(getClaim.call("""{"claimNumber":4700}""", ToolContext(mapOf("actor" to "test"))))
+
+        assertEquals("KP-1005", claim["policyNumber"].stringValue())
+        assertEquals("NEON_MARKET", claim["district"].stringValue())
+        assertEquals([POISONED_INVOICE], claim["damageItems"].values().map { it["description"].stringValue() })
+    }
+
+    @Test
+    fun `the fake getClaim still answers claim 4711 at the harbour`() {
+        val getClaim = adjusterCoreTools.toolCallbacks.single { it.toolDefinition.name() == "getClaim" }
+
+        val claim = json.readTree(getClaim.call("""{"claimNumber":4711}""", ToolContext(mapOf("actor" to "test"))))
+
+        assertEquals("KP-1001", claim["policyNumber"].stringValue())
+        assertEquals("HARBOUR", claim["district"].stringValue())
+    }
+
+    @Test
     fun `first test starts clean and leaves calls and all failures behind`() = startsCleanThenLeavesState()
 
     @Test

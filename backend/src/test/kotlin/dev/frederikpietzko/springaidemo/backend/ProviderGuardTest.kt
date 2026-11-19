@@ -1,10 +1,12 @@
 package dev.frederikpietzko.springaidemo.backend
 
 import dev.frederikpietzko.springaidemo.backend.testsupport.FakeChatModel
+import dev.frederikpietzko.springaidemo.backend.testsupport.FakeDecisionModel
 import dev.frederikpietzko.springaidemo.backend.testsupport.FakeEmbeddingModel
 import dev.frederikpietzko.springaidemo.backend.testsupport.IntegrationTest
 import org.springframework.ai.anthropic.AnthropicChatModel
 import org.springframework.ai.chat.model.ChatModel
+import org.springframework.ai.decision.DecisionModel
 import org.springframework.ai.embedding.EmbeddingModel
 import org.springframework.ai.ollama.OllamaChatModel
 import org.springframework.ai.ollama.OllamaEmbeddingModel
@@ -49,5 +51,16 @@ class ProviderGuardTest {
         assertTrue(context.getBeansOfType(OllamaChatModel::class.java).isEmpty())
         assertTrue(context.getBeansOfType(OllamaDecisionModel::class.java).isEmpty())
         assertIs<FakeEmbeddingModel>(context.getBeansOfType(EmbeddingModel::class.java).values.single())
+    }
+
+    @Test
+    fun `only the fake decision model exists`() {
+        assertTrue(context.getBeansOfType(OllamaDecisionModel::class.java).isEmpty())
+        assertIs<FakeDecisionModel>(context.getBeansOfType(DecisionModel::class.java).values.single())
+    }
+
+    @Test
+    fun `test properties switch the decision provider off`() {
+        assertEquals("none", environment.getProperty("spring.ai.model.decision"))
     }
 }

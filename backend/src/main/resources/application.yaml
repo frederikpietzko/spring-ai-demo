@@ -23,8 +23,9 @@ spring:
       # Explicit since the Ollama starter also offers a chat model; without this two chat models would exist.
       chat: anthropic
       embedding: ollama
-      # The Ollama starter would also add a decision model; nothing uses one yet.
-      decision: none
+      # The claimant chat's prompt-injection guardrail (GuardrailAdvisor) asks the Ollama decision model. Ollama 0.40.4
+      # or later serves it; on an older Ollama every claimant message fails closed (README, Prerequisites).
+      decision: ollama
     anthropic:
       chat:
         model: claude-haiku-5-5
@@ -35,6 +36,10 @@ spring:
       embedding:
         # 768 dimensions, matching the vector_store column; the library default is mxbai-embed-large (1024).
         model: nomic-embed-text
+      decision:
+        # The library default, written down. No pull-model-strategy: the default `never` keeps startup offline, so
+        # pull the model once by hand (`ollama pull d1-omni:600m`).
+        model: d1-omni:600m
     vectorstore:
       pgvector:
         # Flyway owns the DDL (db/vector, ADR-0006); the store only checks the table at startup.
