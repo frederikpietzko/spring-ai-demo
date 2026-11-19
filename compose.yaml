@@ -13,6 +13,9 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql
+      # Creates the database `core` (core-mcp) on a fresh volume only. Compose resolves this relative path against the
+      # directory it is started from, so start a fresh volume from the repository root, not from the symlinked backend/.
+      - ./compose/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U demo -d backend"]
       interval: 5s

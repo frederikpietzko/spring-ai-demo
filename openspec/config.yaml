@@ -30,3 +30,9 @@ schema: spec-driven
 #     archive:
 #       guidance:
 #         - Summarize the archive outcome before finishing
+
+rules:
+  design:
+    - Keep design.md short - the decisions with one rejected alternative each and the test boundaries; do not restate the roadmap or the specs.
+  tasks:
+    - Keep tasks.md lean - at most about 12 tasks, each a coherent behaviour slice together with its tests (red -> green), not one task per tiny step.

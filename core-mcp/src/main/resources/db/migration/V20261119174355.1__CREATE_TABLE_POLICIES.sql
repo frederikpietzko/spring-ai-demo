@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS policies (id BIGSERIAL PRIMARY KEY, policy_number VARCHAR(20) NOT NULL, customer_id BIGINT NOT NULL, valid_from DATE NOT NULL, valid_to DATE NOT NULL, deductible_minor BIGINT NOT NULL, CONSTRAINT fk_policies_customer_id__id FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT ON UPDATE RESTRICT);
+ALTER TABLE policies ADD CONSTRAINT policies_policy_number_unique UNIQUE (policy_number);
+CREATE SEQUENCE IF NOT EXISTS policies_id_seq START WITH 1 MINVALUE 1 MAXVALUE 9223372036854775807;
