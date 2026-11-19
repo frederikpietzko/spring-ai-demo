@@ -8,6 +8,8 @@ Demonstrate and explore the capabilities of **Spring AI 2.1** (Kotlin, Spring Bo
 
 Development is spec-driven: behavior is specified in OpenSpec (`openspec/`) before it is coded. Architectural decisions are recorded as ADRs in `docs/adr/`.
 
+Demo domain, feature order and waves: **`ROADMAP.md`** (Kaiju insurance claims desk). Pick the next unticked change from the current wave.
+
 > Status: build scaffold in place, no features, tables or tests yet (see `openspec/changes/scaffold-project`). The Gradle hooks in `.claude/hooks/hooks.disabled.json` stay intentionally disabled (the build exposes `:<module>:detekt` and `:<module>:check`, so they can be enabled later).
 
 Modules (one Gradle build, `./gradlew` wrapper):
