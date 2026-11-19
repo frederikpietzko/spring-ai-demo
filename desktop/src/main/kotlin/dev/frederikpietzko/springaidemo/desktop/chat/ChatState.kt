@@ -1,10 +1,19 @@
 package dev.frederikpietzko.springaidemo.desktop.chat
 
+import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 
-/** One message of the conversation; an assistant message may carry an [error] under its (partial) text. */
-data class ChatMessage(val author: Author, val text: String, val error: String? = null) {
+/**
+ * One message of the conversation; an assistant message may carry an [error] under its (partial) text and a
+ * [claimCard] to confirm.
+ */
+data class ChatMessage(
+    val author: Author,
+    val text: String,
+    val error: String? = null,
+    val claimCard: ChatEvent.ClaimCard? = null,
+) {
     /** Who wrote the message. */
     enum class Author { USER, ASSISTANT }
 }

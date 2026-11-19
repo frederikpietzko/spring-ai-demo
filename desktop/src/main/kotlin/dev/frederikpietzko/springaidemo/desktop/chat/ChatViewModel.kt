@@ -1,11 +1,13 @@
 package dev.frederikpietzko.springaidemo.desktop.chat
 
+import dev.frederikpietzko.springaidemo.chatprotocol.ChatAction
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.MessageRole
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
+import dev.frederikpietzko.springaidemo.chatprotocol.isTerminal
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,21 +35,44 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
      * or a call while an answer is still streaming, is ignored.
      */
     suspend fun send(text: String) {
-        if (text.isBlank() || state.value.sending) return
+        if (text.isBlank()) return
+        exchange(userLine = text, message = text, action = ChatAction.MESSAGE)
+    }
+
+    /**
+     * Asks the backend to turn the conversation into a claim card, shown as the user line "Prepare my claim"; the
+     * answer is streamed like a reply to [send]. Ignored while an answer is streaming.
+     */
+    suspend fun prepareClaim() {
+        exchange(userLine = "Prepare my claim", message = "", action = ChatAction.PREPARE_CLAIM)
+    }
+
+    /**
+     * Asks the backend to file the conversation's prepared claim, shown as the user line "Confirm claim"; the answer is
+     * streamed like a reply to [send]. Ignored while an answer is streaming.
+     */
+    suspend fun confirmClaim() {
+        exchange(userLine = "Confirm claim", message = "", action = ChatAction.CONFIRM_CLAIM)
+    }
+
+    /** Adds [userLine], sends [message] with [action] in the current conversation and streams the answer. */
+    private suspend fun exchange(userLine: String, message: String, action: ChatAction) {
+        if (state.value.sending) return
         val question: List<ChatMessage> =
-            [ChatMessage(ChatMessage.Author.USER, text), ChatMessage(ChatMessage.Author.ASSISTANT, "")]
+            [ChatMessage(ChatMessage.Author.USER, userLine), ChatMessage(ChatMessage.Author.ASSISTANT, "")]
         mutableState.update { it.copy(messages = it.messages + question, sending = true) }
         try {
             var terminated = false
-            api.send(ChatRequest(state.value.persona, text, state.value.conversationId))
+            api.send(ChatRequest(state.value.persona, message, state.value.conversationId, action))
                 // The stream ends with exactly one terminal event; stop collecting there.
                 .transformWhile { event ->
                     emit(event)
-                    event is ChatEvent.TextDelta
+                    !event.isTerminal
                 }
                 .collect { event ->
                     when (event) {
                         is ChatEvent.TextDelta -> updateReply { it.copy(text = it.text + event.text) }
+                        is ChatEvent.ClaimCard -> updateReply { it.copy(claimCard = event) }
                         ChatEvent.Done -> terminated = true
                         is ChatEvent.Error -> {
                             terminated = true

@@ -44,6 +44,55 @@ class ChatRequestTest {
     }
 
     @Test
+    fun `a request without an action decodes with the default action`() {
+        val request = ChatJson.decodeFromString(ChatRequest.serializer(), """{"persona":"CLAIMANT","message":"Hi"}""")
+
+        assertEquals(ChatAction.MESSAGE, request.action)
+    }
+
+    @Test
+    fun `the default action is left out of the wire form`() {
+        val json = ChatJson.encodeToString(
+            ChatRequest.serializer(),
+            ChatRequest(Persona.CLAIMANT, "Hi", conversationId = "c-1", action = ChatAction.MESSAGE),
+        )
+
+        assertEquals("""{"persona":"CLAIMANT","message":"Hi","conversationId":"c-1"}""", json)
+    }
+
+    @Test
+    fun `a prepare request is encoded with its action and decodes to the same request`() {
+        val request = ChatRequest(Persona.CLAIMANT, "", conversationId = "c-1", action = ChatAction.PREPARE_CLAIM)
+
+        val json = ChatJson.encodeToString(ChatRequest.serializer(), request)
+
+        assertEquals("""{"persona":"CLAIMANT","message":"","conversationId":"c-1","action":"PREPARE_CLAIM"}""", json)
+        assertEquals(request, ChatJson.decodeFromString(ChatRequest.serializer(), json))
+    }
+
+    @Test
+    fun `a confirm request survives a round trip`() {
+        val request = ChatRequest(Persona.CLAIMANT, "", conversationId = "c-1", action = ChatAction.CONFIRM_CLAIM)
+
+        val decoded = ChatJson.decodeFromString(
+            ChatRequest.serializer(),
+            ChatJson.encodeToString(ChatRequest.serializer(), request),
+        )
+
+        assertEquals(request, decoded)
+    }
+
+    @Test
+    fun `an unknown action is rejected`() {
+        assertFailsWith<SerializationException> {
+            ChatJson.decodeFromString(
+                ChatRequest.serializer(),
+                """{"persona":"CLAIMANT","message":"Hi","action":"PAY"}""",
+            )
+        }
+    }
+
+    @Test
     fun `an unknown persona is rejected`() {
         assertFailsWith<SerializationException> {
             ChatJson.decodeFromString(ChatRequest.serializer(), """{"persona":"AUDITOR","message":"Hi"}""")

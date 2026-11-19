@@ -235,3 +235,49 @@ Binding text: `openspec/changes/archive/2026-11-20-session-memory/design.md` (D1
 - **Missing test:** nothing asserts that the system message mentions `conversation_search` and no longer says only the current message is visible.
 - **Manual check:** `:desktop:run` against a running backend with a real key; the README conversation example is one `text` block holding two JSON arrays.
 - **Style warnings:** a few IDE warnings remain in touched test files (e.g. the `seedTurns` helper); detekt is clean.
+
+### Wave 2 - `claim-intake`
+
+Review: clean (no confirmed blockers).
+
+Binding text: `openspec/changes/archive/2026-11-20-claim-intake/design.md` (D1-D11). This change wrote no new ADR; `docs/adr/0005-chat-protocol.md` got a status note and an "Addendum 2026-11-20: claim-intake" section, and `docs/adr/0003-domain-and-module-topology.md` a data-ownership note.
+
+**Decisions**
+
+- **Explicit actions on the one `/chat` endpoint:** `ChatRequest(persona, message, conversationId, action)` with `ChatAction = MESSAGE | PREPARE_CLAIM | CONFIRM_CLAIM`; `MESSAGE` is the default and left out of the JSON, so the old wire form is unchanged; the message of a prepare or confirm request is ignored. The desktop gets a "Prepare claim" button. *Why:* the model is never asked to decide when to file, and the extension rule of ADR-0005 holds.
+- **Blocking structured-output intake call:** `ClaimIntake` builds a private `ChatClient` from the prototype `ChatClient.Builder` with no advisors, passes the stored conversation as plain user and assistant messages, adds today's date (UTC) as a system parameter and a fixed final instruction, and reads a `ClaimReport` with `entity<T>()` inside `flowOn(Dispatchers.IO)`. *Why:* a text-only history cannot carry a half tool call into the prompt, and advisors (audit, retrieval, memory) have no business in an extraction.
+- **Nullable draft, validated twin:** `ClaimReport` and `DamageItem` have nullable fields aligned with core-mcp `fileClaim`; `validate()` returns `Ready(ValidClaim)` or `NeedsDetails(details)`. A blank string, a missing damage item, a kaiju class outside 1 to 5 and an incident time without an offset are missing details. *Why:* the model may not invent facts; a missing fact becomes a follow-up question, and the non-null `ValidClaim` makes filing code free of `!!`.
+- **Sealed results, no exceptions for domain outcomes:** `IntakeResult` is `Ready | NeedsDetails | Unreadable`; only a `JacksonException` or a null entity is `Unreadable`, a provider failure still reaches the controller's generic `Error`. The follow-up wording is templated in the chat layer (`IntakeEvents.kt`); the `intake` package holds no wording and no protocol types, pinned by an ArchUnit rule. *Why:* wording and wire types are presentation.
+- **Prepared claim held in memory per conversation:** the validated claim waits in a map keyed by the conversation id session-memory resolves. Prepare drops the earlier one before it extracts and stores only `Ready` (so a follow-up, an unreadable reply, an empty conversation or a provider failure leaves nothing to confirm); confirm removes and files it and puts it back when the port refuses; nothing prepared is `Rejected("there is no prepared claim to confirm")`. A request without a conversation id gets a fresh id and so names nothing. *Why:* the simplest thing that gives a confirmation step; it is lost on restart.
+- **Filing behind a port:** `ClaimFiling.file(ValidClaim): FilingResult` with `InMemoryClaimFiling` (claim numbers from 4714, readable `filed` list, policies other than `KP-1001` to `KP-1004` and `KP-9000` are refused). *Why:* core-mcp's `fileClaim` exists, but the backend has no MCP client yet.
+- **Protocol additions:** `ClaimCard` event (`claim-card`, string district and category, ISO incident time with zero seconds kept, derived `totalMinor` that is not serialised) and `ChatEvent.isTerminal` from an exhaustive `when`; the desktop reads a stream until the first terminal event, so a card no longer ends a reply. *Why:* a new event cannot be added without deciding it.
+- **Desktop:** the card is a highlighted `DCard` with label and value rows, the total and a "Confirm" button; Confirm is enabled only on the newest message and while nothing streams; prepare and confirm reuse the shared exchange function and the conversation id of the current (new or reopened) conversation, and the conversation list is refreshed afterwards. *Why:* the backend files only the latest prepared claim.
+- **Claimant prompt:** a "Filing a claim" section points to the Prepare claim button; "What you cannot do yet" no longer says filing is impossible; the phrase "cannot look up the claimant's own policy" and the memory section stay. *Why:* the prompt must not contradict the feature.
+- **The intake call is not audited:** recorded as a deliberate deviation in the ADR-0005 addendum. *Why:* a blocking call does not pass the audit advisor; `injection-guardrails` decides it.
+- **Tests:** the shared `FakeChatModel` scripts the report JSON; one class per behaviour group (`ClaimIntakeTest`, `ClaimConfirmationTest`, `ClaimActionsEndpointTest`, `PrepareFromStoredConversationTest`); fixed conversation ids; fixtures `claimReportJson` and `claimJson`; a prompt-shape test proves no tool messages and no blank assistant message reach the intake prompt, and a compaction test proves extraction reads the whole stored log. *Why:* black-box through the HTTP boundary, offline.
+- **User-facing wording:** follow-up "To prepare your claim I still need: <details>. Please tell me and press Prepare claim again."; unreadable asks to describe what happened, what was damaged and the policy number; filed "Your claim has been filed. Your claim number is <n>."; rejected "Your claim was not filed: <reason>.".
+- **Extra JSON schema hints:** `@field:JsonPropertyDescription` on district, description and damage items too, several saying "null if unknown". *Why:* steers the model to null instead of an invented value.
+- **Proposed glossary addition (owner to accept at merge):** **Prepared claim**: a validated claim report that the backend holds for one conversation until the claimant confirms it; not a claim status (no claim number, not DRAFT, lost on restart).
+
+**Descoped / deviations from the roadmap entry**
+
+- **Filing through a port, not the MCP tool:** the roadmap wants confirmation then `fileClaim`; this change files into an in-memory adapter and the MCP wiring is a follow-up after the tracks merge.
+- **Photo (multimodal) input:** descoped.
+- **Intake call not audited:** see Decisions.
+- **Claim card is not restored on reopening:** the transcript holds text only, so a reopened conversation shows no card; press Prepare claim again. Accepted.
+- **No optional visual check:** `renderComposeScene` cannot click Prepare claim to put a card on screen, so layout is covered by semantics tests only.
+
+**Declined review findings**
+
+- Two review findings were dismissed as not confirmed. The minor findings listed under Follow-ups are accepted for the demo.
+
+**Follow-ups**
+
+- Replace `InMemoryClaimFiling` with an MCP adapter that calls core-mcp's `fileClaim` after the tracks merge; add `flowOn(Dispatchers.IO)` to the confirm flow then (the call blocks) and rewrite the refused-policy scenario against what the tool rejects.
+- Manual check with a real provider key and Ollama: the README curl sequence (message, `PREPARE_CLAIM`, `CONFIRM_CLAIM` with one conversation id), and how reliably Haiku returns valid JSON with prompt-based structured output; `useProviderStructuredOutput()` is an alternative.
+- Audit the blocking intake call when `injection-guardrails` lands.
+- Overlapping calls for one conversation are not ordered: an older prepare can re-insert its claim after a newer follow-up, a refused confirm can overwrite a newer prepared claim, and confirm removes the claim before `file()` runs, so a throwing adapter loses it. Prepare plus Confirm again files a duplicate. The claimant chat model never learns that a claim was filed.
+- Client-supplied conversation ids are trusted, and `GET /conversations` lists every id, so any client can prepare or confirm another conversation's claim (same follow-up as session-memory).
+- An empty user message can be stored and then sent as an empty `UserMessage` in the extraction prompt; a MESSAGE request with an empty message seems to fail before the stream starts (no Error event). Consider answering it with an Error event.
+- If `conversations.transcript()` throws during prepare, the old prepared card stays confirmable because it is only dropped inside `prepare()`.
+- CLAUDE.md's status line ("no features or tables yet") is out of date; out of scope here.

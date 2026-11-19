@@ -81,6 +81,20 @@ curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Acce
 - A request may carry a `conversationId` (`{"persona":"CLAIMANT","message":"Hi","conversationId":"c-1"}`): requests with the same id form one conversation, and the model sees its earlier turns. Without an id (or with a blank one) the request starts a fresh conversation of its own. Conversations are stored in the backend database and survive restarts; after more than ten turns the prompt keeps only the five most recent ones, and the model can still find older messages with its `conversation_search` tool.
 - Each claimant message is grounded in the fictional policy wording (`backend/src/main/resources/corpus/policy-wording`): the closest clauses are added to the prompt, labelled `[source - title]`, and the model is asked to cite those labels when the message asks about coverage (ADR-0006).
 
+### Preparing and confirming a claim
+
+A claimant request may carry an `action` (default `MESSAGE`). `PREPARE_CLAIM` turns the stored conversation named by `conversationId` into a claim report with one structured-output call (`entity<ClaimReport>()`); `CONFIRM_CLAIM` files the claim prepared last. Both ignore the message and must carry the same `conversationId` as the conversation's messages:
+
+```bash
+curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Accept: text/event-stream' -d '{"persona":"CLAIMANT","message":"A class 3 kaiju stepped on my car in the harbour yesterday at 3 pm, the roof costs 800000 to fix. My policy is KP-1001.","conversationId":"c-1"}'
+curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Accept: text/event-stream' -d '{"persona":"CLAIMANT","message":"","conversationId":"c-1","action":"PREPARE_CLAIM"}'
+curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Accept: text/event-stream' -d '{"persona":"CLAIMANT","message":"","conversationId":"c-1","action":"CONFIRM_CLAIM"}'
+```
+
+- A complete report is answered with a claim card, then `done`: `data: {"type":"claim-card","policyNumber":"KP-1001","district":"HARBOUR","incidentAt":"2026-11-19T15:00:00Z","kaijuClass":3,"description":"...","damageItems":[{"category":"VEHICLE","description":"Car roof","amountMinor":800000}]}`. The backend keeps it as the conversation's prepared claim (in memory, lost on restart).
+- A report that lacks details (policy number, district, incident time, kaiju class 1 to 5, description, damage items with an amount above zero) is answered with one text delta naming them; nothing is prepared. A reply the backend cannot read asks the claimant to describe the incident again.
+- The confirm answers with the new claim number (from 4714 upwards), or with the reason it was not filed: no prepared claim, or a refused policy (a policy number ending in `-0000`). The claim is filed by a local in-memory stand-in until the backend calls the `fileClaim` MCP tool of `core-mcp`.
+
 ## Conversation endpoints
 
 The stored claimant conversations, newest first, and the transcript of one of them (what the claimant typed and what the assistant answered; an unknown id is a `404`):
@@ -102,6 +116,8 @@ The title is the beginning of the first message (at most 60 characters).
 Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch shows `Claimant`; `Adjuster` is listed but not selectable yet. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key.
 
 The column on the left lists the stored conversations, loaded at start and after every answer. Click one to see its transcript and continue it; **New conversation** clears the screen and starts a new one. The desktop gives every conversation its own id, so the backend remembers it across desktop and backend restarts. Without a backend the list stays empty.
+
+Once the claimant has described what happened, what was damaged and the policy number, **Prepare claim** (next to Send) asks the backend for a claim card: the policy, district, incident time, kaiju class, description, the damage items with their amounts and the total. **Confirm** on the card files the claim and shows its claim number. Only the newest card can be confirmed; after any later message press Prepare claim again for a fresh card. A reopened conversation shows its text only, not its cards.
 
 ## Environment variables
 

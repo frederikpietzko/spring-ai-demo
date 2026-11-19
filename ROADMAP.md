@@ -262,7 +262,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
     - Conversation ids per desktop conversation, a conversation list, resume after a backend restart.
   - Out: long-term memory (`AutoMemoryTools`); a possible later change.
   - Tests: a second turn sees the first (fake model captures the prompt). A restart keeps the history (new context, same DB). Two conversations stay isolated.
-- [ ] **`claim-intake`**
+- [x] **`claim-intake`**
   - Scope:
     - Structured output: the claimant's free text becomes a `ClaimReport` via `entity<ClaimReport>()` with validation (missing fields make the agent ask a follow-up question).
     - The claim card is rendered in the desktop, and on confirmation the claim is filed through the `core-mcp` `fileClaim` tool. If `mcp-tools-and-confirmation` isn't merged yet, put filing behind a port and wire it later.

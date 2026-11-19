@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatApi
@@ -35,6 +36,7 @@ import dev.frederikpietzko.springaidemo.desktop.chat.ChatMessage
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatViewModel
 import dev.frederikpietzko.springaidemo.desktop.components.DButton
 import dev.frederikpietzko.springaidemo.desktop.components.DButtonStyle
+import dev.frederikpietzko.springaidemo.desktop.components.DCard
 import dev.frederikpietzko.springaidemo.desktop.components.DSelect
 import dev.frederikpietzko.springaidemo.desktop.components.DText
 import dev.frederikpietzko.springaidemo.desktop.components.DTextField
@@ -72,8 +74,17 @@ fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null) {
                     modifier = Modifier.width(240.dp).fillMaxHeight(),
                 )
                 Column(Modifier.weight(1f).fillMaxHeight()) {
-                    Conversation(state.messages, Modifier.weight(1f).fillMaxWidth())
-                    InputRow(sending = state.sending, onSend = { text -> scope.launch { viewModel.send(text) } })
+                    Conversation(
+                        messages = state.messages,
+                        sending = state.sending,
+                        onConfirm = { scope.launch { viewModel.confirmClaim() } },
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
+                    InputRow(
+                        sending = state.sending,
+                        onSend = { text -> scope.launch { viewModel.send(text) } },
+                        onPrepare = { scope.launch { viewModel.prepareClaim() } },
+                    )
                 }
             }
         }
@@ -124,9 +135,12 @@ private fun Header(persona: Persona, onPersona: (Persona) -> Unit) {
     }
 }
 
-/** The messages, scrolled to the newest one whenever the conversation changes (not covered by a test). */
+/**
+ * The messages, scrolled to the newest one whenever the conversation changes (not covered by a test). Only the claim
+ * card of the last message can be confirmed: the backend files only the latest prepared claim.
+ */
 @Composable
-private fun Conversation(messages: List<ChatMessage>, modifier: Modifier) {
+private fun Conversation(messages: List<ChatMessage>, sending: Boolean, onConfirm: () -> Unit, modifier: Modifier) {
     if (messages.isEmpty()) {
         Box(modifier, contentAlignment = Alignment.Center) {
             DText("Describe the kaiju damage to get started.", color = Demo.colors.inkMuted)
@@ -141,12 +155,18 @@ private fun Conversation(messages: List<ChatMessage>, modifier: Modifier) {
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(messages) { MessageBubble(it) }
+        items(messages) { message ->
+            MessageBubble(
+                message = message,
+                canConfirm = message === messages.last() && !sending,
+                onConfirm = onConfirm,
+            )
+        }
     }
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage) {
+private fun MessageBubble(message: ChatMessage, canConfirm: Boolean, onConfirm: () -> Unit) {
     val fromUser = message.author == ChatMessage.Author.USER
     Box(Modifier.fillMaxWidth(), contentAlignment = if (fromUser) Alignment.CenterEnd else Alignment.CenterStart) {
         Column(
@@ -158,16 +178,45 @@ private fun MessageBubble(message: ChatMessage) {
         ) {
             when {
                 message.text.isNotEmpty() -> DText(message.text)
-                message.error == null -> DText("…", color = Demo.colors.inkMuted)
+                message.error == null && message.claimCard == null -> DText("…", color = Demo.colors.inkMuted)
             }
+            message.claimCard?.let { ClaimCard(it, canConfirm, onConfirm) }
             message.error?.let { DText(it, style = Demo.typography.caption, color = Demo.colors.danger) }
         }
     }
 }
 
-/** Keeps a 16 dp transparent margin, so the window background shows around it (see the render tests). */
+/** A prepared claim to check: its facts, the damage items with their amounts in minor units, the total and Confirm. */
 @Composable
-private fun InputRow(sending: Boolean, onSend: (String) -> Unit) {
+private fun ClaimCard(card: ChatEvent.ClaimCard, canConfirm: Boolean, onConfirm: () -> Unit) {
+    DCard(Modifier.fillMaxWidth(), highlighted = true) {
+        DText("Claim to confirm", style = Demo.typography.label)
+        Fact("Policy", card.policyNumber)
+        Fact("District", card.district)
+        Fact("Incident", card.incidentAt)
+        Fact("Kaiju class", card.kaijuClass.toString())
+        DText(card.description)
+        card.damageItems.forEach { item -> Fact(item.category, item.description, item.amountMinor.toString()) }
+        Fact("Total", card.totalMinor.toString())
+        DButton("Confirm", onClick = onConfirm, style = DButtonStyle.PRIMARY, enabled = canConfirm)
+    }
+}
+
+/** One line of the claim card: a muted [label] and its [values]. */
+@Composable
+private fun Fact(label: String, vararg values: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        DText(label, color = Demo.colors.inkMuted, modifier = Modifier.width(96.dp))
+        values.forEach { DText(it) }
+    }
+}
+
+/**
+ * The message input with "Send" and "Prepare claim". Keeps a 16 dp transparent margin, so the window background shows
+ * around it (see the render tests).
+ */
+@Composable
+private fun InputRow(sending: Boolean, onSend: (String) -> Unit, onPrepare: () -> Unit) {
     var input by remember { mutableStateOf("") }
     Row(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -189,5 +238,6 @@ private fun InputRow(sending: Boolean, onSend: (String) -> Unit) {
             style = DButtonStyle.PRIMARY,
             enabled = !sending,
         )
+        DButton("Prepare claim", onClick = onPrepare, style = DButtonStyle.SECONDARY, enabled = !sending)
     }
 }

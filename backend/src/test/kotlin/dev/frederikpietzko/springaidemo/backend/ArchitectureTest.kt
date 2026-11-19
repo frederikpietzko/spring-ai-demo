@@ -29,4 +29,18 @@ class ArchitectureTest {
             .that().resideInAPackage("${BackendApplication::class.java.packageName}.rag..")
             .should().dependOnClassesThat().resideInAPackage("org.jetbrains.exposed..")
             .because("ADR-0006: the vector store owns the vector table, Exposed does not map it")
+
+    /**
+     * The claim intake is domain code: the chat layer maps its results to protocol events and wording, never the other
+     * way round. Full package prefixes: a bare `..chat..` would also match Spring AI's `org.springframework.ai.chat`.
+     */
+    @ArchTest
+    val intake_does_not_depend_on_chat: ArchRule =
+        noClasses()
+            .that().resideInAPackage("${BackendApplication::class.java.packageName}.intake..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                "${BackendApplication::class.java.packageName}.chat..",
+                "dev.frederikpietzko.springaidemo.chatprotocol..",
+            )
+            .because("the chat layer maps intake results to events and wording, the intake knows no protocol")
 }

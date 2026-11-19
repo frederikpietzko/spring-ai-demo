@@ -7,21 +7,27 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import androidx.compose.ui.text.AnnotatedString
+import dev.frederikpietzko.springaidemo.chatprotocol.ChatAction
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
+import dev.frederikpietzko.springaidemo.chatprotocol.ClaimCardItem
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.MessageRole
+import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import dev.frederikpietzko.springaidemo.desktop.fakes.FakeChatApi
 import kotlinx.coroutines.flow.flowOf
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class AppSemanticsTest {
@@ -143,12 +149,96 @@ class AppSemanticsTest {
         onNodeWithText("Describe the kaiju damage to get started.").assertIsDisplayed()
     }
 
+    @Test
+    fun `Prepare claim sends the prepare action and shows the claim card with its items and total`() =
+        runDesktopComposeUiTest {
+            val api = FakeChatApi { flowOf(CARD, ChatEvent.Done) }
+            setContent { App(api) }
+            waitForIdle()
+
+            onNodeWithText("Prepare claim").performClick()
+            waitForIdle()
+
+            val request = api.requests.single()
+            assertEquals(Persona.CLAIMANT to "", request.persona to request.message)
+            assertEquals(ChatAction.PREPARE_CLAIM, request.action)
+            assertTrue(!request.conversationId.isNullOrBlank(), request.toString())
+            onNodeWithText("Prepare my claim").assertIsDisplayed()
+            onNodeWithText("KP-1001").assertIsDisplayed()
+            onNodeWithText("Car roof").assertIsDisplayed()
+            onNodeWithText("800000").assertIsDisplayed()
+            onNodeWithText("Garden gnome").assertIsDisplayed()
+            onNodeWithText("25000").assertIsDisplayed()
+            onNodeWithText("825000").assertIsDisplayed()
+            onNodeWithText("Confirm").assertIsEnabled()
+        }
+
+    @Test
+    fun `Confirm on the card sends the confirm action and shows the answer`() = runDesktopComposeUiTest {
+        val api = claimsApi()
+        setContent { App(api) }
+        waitForIdle()
+        onNodeWithText("Prepare claim").performClick()
+        waitForIdle()
+
+        onNodeWithText("Confirm").performClick()
+        waitForIdle()
+
+        assertEquals([ChatAction.PREPARE_CLAIM, ChatAction.CONFIRM_CLAIM], api.requests.map { it.action })
+        assertEquals("", api.requests.last().message)
+        onNodeWithText("Confirm claim").assertIsDisplayed()
+        onNodeWithText(FILED).assertIsDisplayed()
+    }
+
+    @Test
+    fun `only the newest claim card can be confirmed`() = runDesktopComposeUiTest(height = TALL) {
+        setContent { App(claimsApi()) }
+        waitForIdle()
+        onNodeWithText("Prepare claim").performClick()
+        waitForIdle()
+        onNodeWithText("Prepare claim").performClick()
+        waitForIdle()
+
+        val confirms = onAllNodesWithText("Confirm")
+        confirms[0].assertIsNotEnabled()
+        confirms[1].assertIsEnabled()
+        confirms[1].performClick()
+        waitForIdle()
+
+        onAllNodesWithText("Confirm")[1].assertIsNotEnabled()
+    }
+
     private val isPersonaSwitch = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.DropdownList)
 
     private val hasNoText = SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString(""))
 
+    /** Answers a prepare with [CARD] and a confirm with [FILED]. */
+    private fun claimsApi() = FakeChatApi { request ->
+        when (request.action) {
+            ChatAction.PREPARE_CLAIM -> flowOf(CARD, ChatEvent.Done)
+            else -> flowOf(ChatEvent.TextDelta(FILED), ChatEvent.Done)
+        }
+    }
+
     private companion object {
         val SHED = ConversationSummary("c-3", "Shed", "2026-11-20T10:00:00Z")
         val GNOME = ConversationSummary("c-7", "Gnome", "2026-11-20T09:00:00Z")
+
+        const val FILED = "Your claim has been filed. Your claim number is 4714."
+
+        /** A window tall enough for two claim cards, so the first one stays composed in the lazy list. */
+        const val TALL = 1600
+
+        val CARD = ChatEvent.ClaimCard(
+            policyNumber = "KP-1001",
+            district = "HARBOUR",
+            incidentAt = "2026-11-19T15:00:00Z",
+            kaijuClass = 3,
+            description = "Kaiju stepped on the car",
+            damageItems = [
+                ClaimCardItem("VEHICLE", "Car roof", 800000),
+                ClaimCardItem("GARDEN", "Garden gnome", 25000),
+            ],
+        )
     }
 }

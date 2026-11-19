@@ -128,6 +128,17 @@ class ChatEndpointTest {
     }
 
     @Test
+    fun `the claimant instructions point to the Prepare claim button`() {
+        fake.replyChunks("ok")
+
+        postChat(CLAIMANT_HI)
+
+        val system = fake.prompts.last().instructions.filterIsInstance<SystemMessage>().single().text.orEmpty()
+        assertTrue(system.contains("Prepare claim"), system)
+        assertTrue(system.contains("cannot look up the claimant's own policy"), system)
+    }
+
+    @Test
     fun `the claimant instructions describe the memory and the recall tool`() {
         fake.replyChunks("ok")
 

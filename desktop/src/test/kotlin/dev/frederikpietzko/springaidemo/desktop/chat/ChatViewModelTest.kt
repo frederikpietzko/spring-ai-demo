@@ -1,7 +1,9 @@
 package dev.frederikpietzko.springaidemo.desktop.chat
 
+import dev.frederikpietzko.springaidemo.chatprotocol.ChatAction
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
+import dev.frederikpietzko.springaidemo.chatprotocol.ClaimCardItem
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.MessageRole
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 class ChatViewModelTest {
@@ -97,6 +100,145 @@ class ChatViewModelTest {
             cutOff.state.value.messages,
         )
         assertEquals(false, cutOff.state.value.sending)
+    }
+
+    @Test
+    suspend fun `a claim card is kept on the reply and done ends it`() {
+        val carded = ChatViewModel(FakeChatApi { flowOf(CARD, ChatEvent.Done) }, scriptedIds())
+
+        carded.send("Hi")
+
+        assertEquals(
+            ChatState(
+                conversationId = "c-1",
+                messages = [user("Hi"), ChatMessage(ChatMessage.Author.ASSISTANT, "", claimCard = CARD)],
+            ),
+            carded.state.value,
+        )
+    }
+
+    @Test
+    suspend fun `text before a claim card stays on the reply next to the card`() {
+        val carded = ChatViewModel(
+            FakeChatApi { flowOf(ChatEvent.TextDelta("Here is your claim"), CARD, ChatEvent.Done) },
+            scriptedIds(),
+        )
+
+        carded.send("Hi")
+
+        assertEquals(
+            [user("Hi"), ChatMessage(ChatMessage.Author.ASSISTANT, "Here is your claim", claimCard = CARD)],
+            carded.state.value.messages,
+        )
+        assertEquals(false, carded.state.value.sending)
+    }
+
+    @Test
+    suspend fun `a prepare sends the prepare action with an empty message and shows the card`() {
+        val api = FakeChatApi { flowOf(CARD, ChatEvent.Done) }
+        val claims = ChatViewModel(api, scriptedIds())
+
+        claims.prepareClaim()
+
+        assertEquals([ChatRequest(Persona.CLAIMANT, "", "c-1", ChatAction.PREPARE_CLAIM)], api.requests)
+        assertEquals(
+            [user("Prepare my claim"), ChatMessage(ChatMessage.Author.ASSISTANT, "", claimCard = CARD)],
+            claims.state.value.messages,
+        )
+    }
+
+    @Test
+    suspend fun `a confirm sends the confirm action and shows the answer below the card`() {
+        val api = FakeChatApi { request ->
+            when (request.action) {
+                ChatAction.PREPARE_CLAIM -> flowOf(CARD, ChatEvent.Done)
+                else -> flowOf(ChatEvent.TextDelta("Your claim number is 4714."), ChatEvent.Done)
+            }
+        }
+        val claims = ChatViewModel(api, scriptedIds())
+
+        claims.prepareClaim()
+        claims.confirmClaim()
+
+        assertEquals(ChatRequest(Persona.CLAIMANT, "", "c-1", ChatAction.CONFIRM_CLAIM), api.requests.last())
+        assertEquals(
+            [
+                user("Prepare my claim"),
+                ChatMessage(ChatMessage.Author.ASSISTANT, "", claimCard = CARD),
+                user("Confirm claim"),
+                assistant("Your claim number is 4714."),
+            ],
+            claims.state.value.messages,
+        )
+    }
+
+    @Test
+    suspend fun `message, prepare and confirm share one conversation id`() {
+        val api = FakeChatApi { flowOf(ChatEvent.Done) }
+        val claims = ChatViewModel(api, scriptedIds())
+
+        claims.send("A kaiju sat on my car")
+        claims.prepareClaim()
+        claims.confirmClaim()
+
+        val [message, prepare, confirm] = api.requests
+        assertTrue(!message.conversationId.isNullOrBlank(), message.toString())
+        assertEquals(message.conversationId, prepare.conversationId)
+        assertEquals(message.conversationId, confirm.conversationId)
+        assertEquals(
+            [ChatAction.MESSAGE, ChatAction.PREPARE_CLAIM, ChatAction.CONFIRM_CLAIM],
+            api.requests.map { it.action },
+        )
+    }
+
+    @Test
+    suspend fun `a prepare in a new conversation carries the new id`() {
+        val api = FakeChatApi { flowOf(ChatEvent.Done) }
+        val claims = ChatViewModel(api, scriptedIds())
+
+        claims.newConversation()
+        claims.prepareClaim()
+
+        assertEquals(["c-2"], api.requests.map { it.conversationId })
+    }
+
+    @Test
+    suspend fun `a prepare in a reopened conversation carries its id`() {
+        val api = FakeChatApi { flowOf(ChatEvent.Done) }
+        val claims = ChatViewModel(api, scriptedIds())
+
+        claims.open(GNOME)
+        claims.prepareClaim()
+
+        assertEquals(["c-7"], api.requests.map { it.conversationId })
+    }
+
+    @Test
+    suspend fun `no prepare or confirm is sent while an answer streams`() = coroutineScope {
+        val first = launch { viewModel.send("Hi") }
+        viewModel.state.await { it.sending }
+
+        withTimeout(TIMEOUT) {
+            viewModel.prepareClaim()
+            viewModel.confirmClaim()
+        }
+
+        assertEquals([user("Hi"), assistant("")], viewModel.state.value.messages)
+        assertEquals(1, api.requests.size)
+        events.send(ChatEvent.Done)
+        first.join()
+    }
+
+    @Test
+    suspend fun `the list is requested again after a prepare`() {
+        val listed = ChatViewModel(
+            FakeChatApi(conversations = { [SHED] }) { flowOf(CARD, ChatEvent.Done) },
+            scriptedIds(),
+        )
+
+        listed.prepareClaim()
+
+        assertEquals([SHED], listed.state.value.conversations)
     }
 
     @ParameterizedTest
@@ -274,6 +416,14 @@ class ChatViewModelTest {
         val TIMEOUT = 5.seconds
 
         const val GNOME_TEXT = "my garden gnome is gone"
+        val CARD = ChatEvent.ClaimCard(
+            policyNumber = "KP-1001",
+            district = "HARBOUR",
+            incidentAt = "2026-11-19T15:00:00Z",
+            kaijuClass = 3,
+            description = "Kaiju stepped on the car",
+            damageItems = [ClaimCardItem("VEHICLE", "Car roof", 800000)],
+        )
         val SHED = ConversationSummary("c-3", "Shed", "2026-11-20T10:00:00Z")
         val GNOME = ConversationSummary("c-7", "Gnome", "2026-11-20T09:00:00Z")
     }
