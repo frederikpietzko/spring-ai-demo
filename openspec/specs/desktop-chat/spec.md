@@ -171,7 +171,7 @@ The desktop application SHALL show a persona switch with `Claimant` selected by 
 - **THEN** the switch shows `Adjuster` and the next message is sent with persona `ADJUSTER`
 
 ### Requirement: A pending payout confirmation is shown and decided
-When the backend ends a reply with a confirmation-request event, the desktop application SHALL show the tool name and its arguments with an `Approve` and a `Deny` button, SHALL NOT send a new message while the confirmation is pending, and SHALL keep the reply text received so far. Choosing a button SHALL send exactly one decision with the confirmation id to the backend, clear the pending confirmation and append the streamed continuation to the same reply until its terminal event.
+When the backend ends a reply with a confirmation-request event, the desktop application SHALL show the tool name and its arguments with an `Approve` and a `Deny` button and keep the reply text received so far; while it is pending, no message, new or opened conversation or claim confirmation SHALL start. Choosing a button SHALL send exactly one decision with the confirmation id, clear the pending confirmation and append the streamed continuation to the same reply until its terminal event.
 
 #### Scenario: Confirmation request is shown
 - **WHEN** the backend streams the text delta "Ready to pay." and then a confirmation request for `issuePayout` with the arguments `{"claimNumber":4711}`
@@ -180,6 +180,10 @@ When the backend ends a reply with a confirmation-request event, the desktop app
 #### Scenario: No new message while a confirmation is pending
 - **WHEN** a confirmation is pending and the user sends a message
 - **THEN** the message is not sent and the conversation is unchanged
+
+#### Scenario: No other conversation while a confirmation is pending
+- **WHEN** a confirmation is pending and the user starts a new conversation or opens a stored one
+- **THEN** the conversation, its id and the pending confirmation are unchanged
 
 #### Scenario: Approve sends the decision and shows the continuation
 - **WHEN** a confirmation with id "c-1" is pending, the user clicks `Approve`, and the backend streams the text delta "Paid" and done

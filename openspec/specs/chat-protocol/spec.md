@@ -7,7 +7,7 @@ Defines the types that backend and desktop exchange for a chat: the request, the
 ## Requirements
 
 ### Requirement: Chat events have a stable JSON form
-The protocol SHALL define the chat events `TextDelta`, `Done`, `Error`, `ClaimCard`, `ConfirmationRequest`, `AnalyticsTable` and `TodoUpdate`, each serialized as a JSON object whose `type` field names the event: `text-delta` with a `text` field, `done` with no further field, `error` with a `message` field, `claim-card` and `analytics-table` with the fields of their own requirements, `confirmation-request` with its own fields, `todo-update` with a `todos` array. Decoding SHALL accept exactly these types and give back the same event.
+The protocol SHALL define the chat events `TextDelta`, `Done`, `Error`, `ClaimCard`, `ConfirmationRequest`, `AnalyticsTable` and `TodoUpdate`, each a JSON object whose `type` field names it: `text-delta` with `text`, `done` alone, `error` with `message`, `todo-update` with `todos`, and `claim-card`, `confirmation-request` and `analytics-table` with the fields their scenarios and requirements give. Decoding SHALL accept exactly these types and give back the same event.
 
 #### Scenario: Text delta wire form
 - **WHEN** a text delta carrying "Hel" is encoded

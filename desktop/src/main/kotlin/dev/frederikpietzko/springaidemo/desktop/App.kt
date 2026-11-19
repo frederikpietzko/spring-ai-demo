@@ -27,7 +27,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
@@ -216,23 +215,6 @@ private fun ClaimCard(card: ChatEvent.ClaimCard, canConfirm: Boolean, onConfirm:
         card.damageItems.forEach { item -> Fact(item.category, item.description, item.amountMinor.toString()) }
         Fact("Total", card.totalMinor.toString())
         DButton("Confirm", onClick = onConfirm, style = DButtonStyle.PRIMARY, enabled = canConfirm)
-    }
-}
-
-/** A table a tool computed: the title, a header line and one line per row, every cell as text in an equal column. */
-@Composable
-private fun AnalyticsTable(table: ChatEvent.AnalyticsTable) {
-    DCard(Modifier.fillMaxWidth()) {
-        DText(table.title, style = Demo.typography.label)
-        TableRow(table.columns, color = Demo.colors.inkMuted)
-        table.rows.forEach { TableRow(it) }
-    }
-}
-
-@Composable
-private fun TableRow(cells: List<String>, color: Color = Demo.colors.ink) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        cells.forEach { DText(it, color = color, modifier = Modifier.weight(1f)) }
     }
 }
 
