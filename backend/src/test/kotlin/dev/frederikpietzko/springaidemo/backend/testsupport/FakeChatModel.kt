@@ -1,9 +1,15 @@
 package dev.frederikpietzko.springaidemo.backend.testsupport
 
+import io.micrometer.observation.ObservationRegistry
 import org.springframework.ai.chat.messages.AssistantMessage
+import org.springframework.ai.chat.metadata.ChatResponseMetadata
+import org.springframework.ai.chat.metadata.DefaultUsage
 import org.springframework.ai.chat.model.ChatModel
 import org.springframework.ai.chat.model.ChatResponse
 import org.springframework.ai.chat.model.Generation
+import org.springframework.ai.chat.observation.ChatModelObservationContext
+import org.springframework.ai.chat.observation.ChatModelObservationDocumentation
+import org.springframework.ai.chat.observation.DefaultChatModelObservationConvention
 import org.springframework.ai.chat.prompt.ChatOptions
 import org.springframework.ai.chat.prompt.Prompt
 import org.springframework.ai.model.tool.ToolCallingChatOptions
@@ -12,12 +18,19 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
+/** The usage every blocking call of the fake reports (total 10). */
+private const val INPUT_TOKENS = 7
+private const val OUTPUT_TOKENS = 3
+
 /**
  * Scripted chat model for tests: replies are queued with [reply] and consumed in order, every received [Prompt] is
  * recorded. An empty script fails loudly. State is thread-safe because the tool loop and streaming run on other
  * threads.
+ *
+ * Like a real provider model, a blocking call is reported to [observationRegistry] as a model observation with a fixed
+ * usage of 7 input and 3 output tokens, so the token usage metric can be tested. Streamed calls report nothing.
  */
-class FakeChatModel : ChatModel {
+class FakeChatModel(private val observationRegistry: ObservationRegistry = ObservationRegistry.NOOP) : ChatModel {
     private val script = ConcurrentLinkedQueue<Step>()
     private val received = CopyOnWriteArrayList<Prompt>()
     private val toolCallIds = AtomicInteger()
@@ -67,7 +80,16 @@ class FakeChatModel : ChatModel {
         received.add(prompt)
         (val message, val failure) = script.poll() ?: error(exhaustedMessage(prompt))
         failure?.let { throw it }
-        return ChatResponse([Generation(message)])
+        val usage = ChatResponseMetadata.builder().usage(DefaultUsage(INPUT_TOKENS, OUTPUT_TOKENS)).build()
+        return ChatResponse([Generation(message)], usage).also { observe(prompt, it) }
+    }
+
+    /** Reports one model call the way provider models do, so Spring AI's token usage handler counts its usage. */
+    private fun observe(prompt: Prompt, response: ChatResponse) {
+        val context = ChatModelObservationContext.builder().prompt(prompt).provider("fake").build()
+        ChatModelObservationDocumentation.CHAT_MODEL_OPERATION
+            .observation(null, DefaultChatModelObservationConvention(), { context }, observationRegistry)
+            .observe { context.setResponse(response) }
     }
 
     /**

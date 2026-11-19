@@ -36,5 +36,5 @@ import org.junit.jupiter.api.extension.ExtendWith
 )
 @AutoConfigureRestTestClient
 @Import(TestInfrastructure::class)
-@ExtendWith(FakeChatModelReset::class, SingleContextGuard::class)
+@ExtendWith(FakeChatModelReset::class, ObservationRecorderReset::class, SingleContextGuard::class)
 annotation class IntegrationTest

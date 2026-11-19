@@ -41,6 +41,14 @@ Run started 2026-11-20. Each archived change is one local commit on the run's br
   - `agent-todo-and-skills` waits until A's MCP work has been merged into track B, because it needs the ADJUSTER persona that `mcp-tools-and-confirmation` creates. Building it earlier would mean two competing adjuster wirings.
   - `observability` comes before the roadmap's "best after wave 4". Spring AI's built-in observations also cover the chat clients, advisors, tools and vector stores added later.
 
+- **O10 Up to four tracks (the owner raised the limit to four "if it makes sense").** Track C (`roadmap-track-c`) took `observability` while `mcp-tools-and-confirmation` (track A) and `session-memory`/`claim-intake` (track B) ran. All other remaining changes depend on `mcp-tools-and-confirmation`. When it lands, four changes become ready at once:
+  - A: `mcp-security`, then `injection-guardrails` (after `claim-intake`).
+  - B: `agent-todo-and-skills`, then `subagents`.
+  - C: `claims-analytics`.
+  - D: `agentic-rag-fraud`, then `evaluation`.
+
+  A shell watcher starts track D. It costs no tokens, and no agent is left waiting. Before every change, each track merges the other tracks' new commits and runs `check`. *Why:* the parallelism follows the dependency graph, so no track has nothing to do. Two more changes: a track stops after 3 agent failures in a row (usage limit or API outage), and plans are written just before each change is implemented, which removes the plan-refresh step.
+
 ## Per change
 
 Sections are added in landing order.
@@ -235,6 +243,48 @@ Binding text: `openspec/changes/archive/2026-11-20-session-memory/design.md` (D1
 - **Missing test:** nothing asserts that the system message mentions `conversation_search` and no longer says only the current message is visible.
 - **Manual check:** `:desktop:run` against a running backend with a real key; the README conversation example is one `text` block holding two JSON arrays.
 - **Style warnings:** a few IDE warnings remain in touched test files (e.g. the `seedTurns` helper); detekt is clean.
+
+### Wave 5 - `observability`
+
+Review: clean (no confirmed blockers).
+
+Binding text: `openspec/changes/archive/2026-11-20-observability/design.md` (D1-D10 and "Implementation revisions") and `docs/adr/0010-observability.md`. This section is the index.
+
+**Decisions**
+
+- **Export path:** `spring-boot-starter-opentelemetry` (Boot BOM, no catalogue entry) exports traces and metrics over OTLP/HTTP; `spring-boot-starter-opentelemetry-test` for tests; one `grafana/otel-lgtm:0.41.0` service in `compose.yaml`. `application.yaml` sets sampling 1.0, metrics push step 10s and the common endpoint `http://localhost:4318`. *Why:* Boot 4.2's native path and one dependency; the defaults (0.1 sampling, 1m step) would drop most demo traces and make the dashboard feel dead; Docker Compose support overrides the endpoint in `bootRun`. Rejected: Brave/Zipkin bridge, Prometheus scrape registry, Java agent, separate compose file, a hosted backend.
+- **One OkHttp (major plan-check finding):** the OTLP OkHttp sender is excluded in every configuration (`configurations.configureEach { exclude(group = "io.opentelemetry", module = "opentelemetry-exporter-sender-okhttp") }`) and the JDK sender is added at runtime; `okhttp` stays at 4.12.0 and `okhttp-jvm` is absent on both runtime and test runtime classpath. *Why:* the sender drags in `okhttp-jvm` 5.x next to the Anthropic SDK's `okhttp` 4.12; a `NoSuchMethodError` would show only in `bootRun` because tests export nothing; the test starter pulls the main starter in again, so a per-dependency exclusion would not cover the test classpath. Pinning okhttp 5.x was rejected.
+- **`OtlpSenderOnClasspathTest`:** plain unit test that builds an OTLP exporter and waits for its `shutdown()`; `opentelemetry-exporter-otlp` is a `testImplementation` dependency for it. *Why:* the only automated guard that a sender is present; proven red with the sender removed.
+- **Content stays out of telemetry:** the content switches are written explicitly as `false` (chat model, chat client and vector store logging, tool `include-content`, six in all) and a test pins the committed values; a `VectorStoreObservationConvention` subclass drops `db.vector.query.content`. *Why:* the roadmap assumed vector store spans were safe, but the default convention puts the claimant's retrieval query into a span attribute; the convention also covers the later `sighting-bulletin` retrieval on the same store. The tool switch is the only one that puts content (arguments, results) into attributes. An `ObservationFilter` and "document the leak" were rejected.
+- **Reading the settings in tests:** sampling, metrics step and endpoint via `Binder.bindOrCreate` on Boot's own properties classes; content switches via `Environment.getProperty` that must equal "false". *Why:* all content switches default to false, so a typed read could never fail on a misspelled key; the `OtlpMetricsProperties` bean does not exist while the test starter switches export off.
+- **Test seam:** a `RecordingObservationHandler` bean in the shared `TestInfrastructure` plus an `ObservationRecorderReset` extension on `@IntegrationTest`, not a `TestObservationRegistry`. *Why:* one context (ADR-0004); `TestObservationRegistry` installs a validator that throws from production code on lifecycle anomalies, risky for the async SSE and Reactor cancel paths of the shared context; without a reset a stale observation would make "was recorded" pass for the wrong reason. `OTEL_*` variables are removed from the Gradle test environment next to `SPRING_AI_*`; `compose.yaml` and `compose/lgtm` are declared test inputs.
+- **Token usage in tests:** `FakeChatModel` takes an optional `ObservationRegistry` (default NOOP) and emits the model observation with a fixed usage of 7 input and 3 output tokens on successful blocking `call()`s only; scripted failures throw before it and streams report nothing. *Why:* only a real provider emits the model observation; ADR-0004 allows extending the fake; streaming usage would need `MessageAggregator` and nothing needs it. The spec scenario for a registry-less fake only says "it answers as before".
+- **Injected-builder rule:** an ArchUnit rule forbids every overload of `ChatClient.builder`, `ChatClient.create` and the static `ToolCallingAdvisor.builder()` in production code; customizing the injected `ToolCallingAdvisor.Builder<*>` goes through `.copy()` (a convention the rule cannot see). *Why:* those factories use a no-op registry, so a client built that way is silently unobserved; this makes later chat clients observed without extra work. Proven not vacuous with a temporary violation.
+- **Streamed-observation tests:** `chatAsClaimant` posts to `/chat`, reads the body, then waits (Awaitility, at most 5s, declared explicitly) for the observation whose user message holds the test's own unique text. The `/chat` leg of the marker test is a plain claimant message with the marker (no scripted `conversation_search`). *Why:* the SSE observation stops after the response is sent, and the test must match its own call; `session-memory` and `claim-intake` have not landed here. Assertions cover names and attributes, not span parent/child structure. The "recorder starts empty" test is one parameterised test with two runs (no `@TestMethodOrder`).
+- **Compose layout:** `compose/lgtm/` holds the Grafana files; no `backend/compose` symlink (Boot canonicalizes `backend/compose.yaml`, so mounts resolve from the repository root; hand-typed `docker compose` runs from the root); readiness check disabled on `lgtm` by label; ports `3300:3000`, `4317`, `4318`. *Why:* a symlink artifact is not worth it for a demo; port 3000 is a common dev-server port; a host port in use would make `bootRun` fail.
+- **Compose start skip:** README and ADR-0010 explain Boot's default `start.skip: if-running`: if the database already runs, `bootRun` does not start `lgtm`, so run `docker compose up -d` once; `docker compose stop lgtm` keeps it down; ports must be free and the first pull is slow. *Why:* found in the spring-boot-docker-compose sources; "bootRun starts lgtm" is only true when no compose service runs yet.
+- **Dashboard:** one dashboard with two panels, token usage (`sum by (gen_ai_token_type) (rate(gen_ai_client_token_usage_total{gen_ai_operation_name="chat"}[5m]))`, filtered to chat so embedding calls do not inflate it) and average latency from `spring_ai_chat_client_milliseconds_sum/_count`; provisioned into folder "Claims desk". *Why:* Micrometer OTLP timers publish no buckets by default, so an average is the honest figure. Names confirmed against Prometheus in the smoke. No alerting, no log export, no Prometheus endpoint, no custom observations.
+- **Stack check and smoke isolation:** `lgtm` ran alone under compose project `obs-check-track-c`, and `bootRun` ran on port 18080 against a throwaway pgvector container with Docker Compose support off; the shared `spring-ai-demo` project was never touched. *Why:* its fixed name and running database are shared with the other worktree; compose from here would recreate that container.
+- **Docs and spec shape:** ADR-0010 is new (ROADMAP section 6 assigned none; ADR-0007 to -0009 stay reserved), ADR-0004 gets a status note, the README gets an Observability section; plan changes are appended as "Implementation revisions" in design.md. The spec uses ADDED requirements only (new `backend-observability`, additions to `backend-test-harness` and `build-and-quality`).
+
+**Deviations from the roadmap entry**
+
+- The roadmap lists no ADR for this change; ADR-0010 was added. The roadmap assumed vector store spans were free of claimant text; they are not by default, hence the convention override above.
+- Manual smoke ran without an Anthropic key: the chat model span, chat token data and Boot's canonical-path proof through `bootRun` were not observed.
+
+**Declined review findings**
+
+- One review finding was dismissed as not confirmed.
+- Minor, not fixed: the `lgtm` ports bind all host interfaces and Grafana keeps the image's default login; the content-leak tests never seed the marker into the model's replies or the tool result, so a leak of those would still pass.
+
+**Follow-ups**
+
+- **Retrieval span is a separate root trace:** `RetrievalAugmentationAdvisor` runs retrieval on its own executor without context propagation; pass a Spring-managed executor with a `ContextPropagatingTaskDecorator` through `.taskExecutor(..)` in `RagConfiguration` (also resolves the policy-rag unmanaged-executor follow-up).
+- **Human check with a real Anthropic key:** chat model span, token usage panel with real data, and Boot resolving the lgtm mounts in a plain `bootRun` with Docker Compose support on.
+- **After merging `session-memory`, `claim-intake` and `mcp-tools-and-confirmation`:** re-run `ArchitectureTest` (`chat_clients_come_from_injected_builders`), fix violations in the new code rather than weakening the rule, and consider scripting a `conversation_search` call in the `/chat` leg of the marker test.
+- **Shared compose project name:** `spring-ai-demo` is shared across worktrees; `docker compose up -d` from another worktree recreates the database container because the init-script bind-mount path differs.
+- **Anthropic SDK span:** the SDK emits its own span (`POST`) under the model span; it held no message text in the smoke, but check no SDK option adds request or response content.
+- **Stale wording:** the archived tasks.md still says "Work only in the roadmap-track-b worktree".
 
 ### Wave 2 - `claim-intake`
 

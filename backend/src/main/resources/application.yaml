@@ -43,6 +43,9 @@ spring:
         dimensions: 768
         # Readable, stable chunk ids such as policy-wording/exclusions.md#0-0 instead of UUIDs.
         id-type: text
+      observations:
+        # Off by default, written down so the switch is visible: would log the retrieved clauses (ADR-0010).
+        log-query-response: false
     session:
       repository:
         jdbc:
@@ -50,6 +53,16 @@ spring:
           initialize-schema: never
           # Lets the conversation list find the claimant's sessions with findByMetadata(agentName, "claimant").
           indexed-attributes: agentName
+    # Content stays out of telemetry (ADR-0010). All of these are the library defaults; they are written down so
+    # turning one on is a visible, deliberate change. The retrieval query is dropped by ObservabilityConfiguration.
+    chat:
+      observations:
+        log-prompt: false
+        log-completion: false
+      client:
+        observations:
+          log-prompt: false
+          log-completion: false
     mcp:
       client:
         # Connect on the first adjuster request instead of at startup, so the backend starts without core-mcp.
@@ -60,11 +73,23 @@ spring:
               # The insurer core system (core-mcp, ADR-0003 port 8081); the default endpoint /mcp matches it.
               url: ${CORE_MCP_URL:http://localhost:8081}
     tools:
+      observations:
+        # The one switch that adds tool arguments and results to the spans as attributes.
+        include-content: false
       confirmation:
         # A payout waits for a human decision. By name, because MCP tools carry no requiresConfirmation flag.
         tools: issuePayout
 
 management:
+  tracing:
+    sampling:
+      # The default is 0.1: most demo traces would be missing.
+      probability: 1.0
+  otlp:
+    metrics:
+      export:
+        # The default is 1m: the dashboard would feel dead.
+        step: 10s
   endpoints:
     web:
       exposure:
@@ -72,3 +97,7 @@ management:
   endpoint:
     health:
       show-components: always
+  opentelemetry:
+    otlp:
+      # Fallback for a started jar; in bootRun Docker Compose support points the exporters at the lgtm container.
+      endpoint: http://localhost:4318

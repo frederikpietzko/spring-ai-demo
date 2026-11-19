@@ -1,0 +1,46 @@
+{
+  "uid": "claims-desk",
+  "title": "Claims desk",
+  "description": "Spring AI observations of the claims desk backend (ADR-0010).",
+  "tags": ["spring-ai"],
+  "schemaVersion": 39,
+  "editable": true,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Chat token usage per second",
+      "description": "Input, output and total tokens of chat model calls. Embedding calls report to the same counter and are filtered out.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 9 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (gen_ai_token_type) (rate(gen_ai_client_token_usage_total{gen_ai_operation_name=\"chat\"}[5m]))",
+          "legendFormat": "{{gen_ai_token_type}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Chat client latency (average)",
+      "description": "Average duration of a chat client call (spring.ai.chat.client), advisors and model included.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 9 },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(spring_ai_chat_client_milliseconds_sum[5m])) / sum(rate(spring_ai_chat_client_milliseconds_count[5m]))",
+          "legendFormat": "average"
+        }
+      ]
+    }
+  ]
+}

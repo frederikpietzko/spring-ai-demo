@@ -127,7 +127,7 @@ Filing SHALL go through a `ClaimFiling` port that returns either the new claim n
 - **THEN** their claim numbers are different and both are at least 4714
 
 ### Requirement: Claim actions belong to the claimant persona
-The actions `PREPARE_CLAIM` and `CONFIRM_CLAIM` SHALL be answered only for persona `CLAIMANT`; persona `ADJUSTER` SHALL still get the single "not available" error event and no model call, whatever the action. For persona `CLAIMANT` these actions SHALL bypass the claimant agent: only action `MESSAGE` is answered by the claimant agent as the model's streamed reply.
+The actions `PREPARE_CLAIM` and `CONFIRM_CLAIM` SHALL be answered only for persona `CLAIMANT`; persona `ADJUSTER` SHALL get a single error event that names the persona and no model call for these actions (its messages are answered by the adjuster agent). For persona `CLAIMANT` these actions SHALL bypass the claimant agent: only action `MESSAGE` is answered by the claimant agent as the model's streamed reply.
 
 #### Scenario: Confirm does not ask the claimant agent
 - **WHEN** a claimant confirm request is posted for a conversation without a prepared claim

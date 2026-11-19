@@ -1,0 +1,10 @@
+# Grafana dashboard provider for the lgtm service in compose.yaml (ADR-0010): loads the JSON mounted next to it.
+apiVersion: 1
+
+providers:
+  - name: "Claims desk"
+    folder: "Claims desk"
+    type: file
+    options:
+      path: /otel-lgtm/grafana/conf/provisioning/dashboards/custom
+      foldersFromFilesStructure: false
