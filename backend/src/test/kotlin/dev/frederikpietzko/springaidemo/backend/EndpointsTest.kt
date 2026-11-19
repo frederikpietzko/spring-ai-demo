@@ -33,13 +33,13 @@ class EndpointsTest {
     }
 
     @Test
-    fun `only actuator, error, chat and chat decision endpoints are mapped`() {
+    fun `only actuator, error, chat, chat decision and conversation endpoints are mapped`() {
         val patterns = context.getBeansOfType(RequestMappingInfoHandlerMapping::class.java).values
             .flatMap { it.handlerMethods.keys }
             .flatMap { it.pathPatternsCondition?.patternValues.orEmpty() }
 
         assertTrue(patterns.isNotEmpty(), "expected at least the actuator mappings")
-        val servedPaths: Set<String> = ["/error", "/chat", "/chat/decisions"]
-        assertTrue(patterns.all { it.startsWith("/actuator") || it in servedPaths }, patterns.toString())
+        val allowed = setOf("/error", "/chat", "/chat/decisions", "/conversations", "/conversations/{id}/messages")
+        assertTrue(patterns.all { it.startsWith("/actuator") || it in allowed }, patterns.toString())
     }
 }

@@ -111,7 +111,7 @@ Session creation metadata is `{agentName: "claimant", title: <first 60 chars of 
 
 ### D7. Compaction: turn count plus window, no summarizer, synchronous
 
-`MAX_TURNS = 10` (`TurnCountTrigger` fires when the turn count exceeds it) and `KEPT_TURNS = 5` (`WindowCompactionStrategy.lastTurns`), `internal const val` in `ChatConfiguration.kt` so tests share them. No `ChatModelSummarizer`: it adds a model call (a Haiku call in production, "script exhausted" under `FakeChatModel`). `asyncCompaction` stays off (default): compaction finishes before the reply completes, which is deterministic for tests. Compaction appends a boundary and never deletes, so `getMessages` and the transcript keep everything; only the prompt view (`getActiveMessages`) shrinks. That gap is the demo point of D8.
+`MAX_TURNS = 10` (`TurnCountTrigger` fires when the turn count exceeds it) and `KEPT_TURNS = 5` (`WindowCompactionStrategy.lastTurns`), top-level `const val` in `ChatConfiguration.kt` so tests share them (public, not `internal`: the project's Kotlin policy keeps `internal` out of application modules). No `ChatModelSummarizer`: it adds a model call (a Haiku call in production, "script exhausted" under `FakeChatModel`). `asyncCompaction` stays off (default): compaction finishes before the reply completes, which is deterministic for tests. Compaction appends a boundary and never deletes, so `getMessages` and the transcript keep everything; only the prompt view (`getActiveMessages`) shrinks. That gap is the demo point of D8.
 
 Rejected: token-count trigger (JTokkit dependency, harder to test), summarizing strategy (extra model call, makes the fake script depend on library internals).
 

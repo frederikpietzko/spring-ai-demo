@@ -206,6 +206,44 @@ Binding text: `openspec/changes/archive/2026-11-20-core-mcp-claims/design.md` (D
 - **N+1 in `ClaimService.toClaim`:** one query per claim for items and payout in `listForCustomer`; fine for demo-sized data.
 - **Wave 2 (`mcp-tools-and-confirmation`):** point the backend MCP client at `http://localhost:8081/mcp` with the legacy Streamable HTTP transport; the tool names, parameter names and JSON fields of design D12 are the contract.
 
+### Wave 2 - `session-memory`
+
+Review: clean (no confirmed blockers).
+
+Binding text: `openspec/changes/archive/2026-11-20-session-memory/design.md` (D1-D14, risks). This change wrote no new ADR; status notes were appended to `docs/adr/0002-technology-stack.md`, `0004-test-strategy.md`, `0005-chat-protocol.md` and `0006-vector-store-and-embeddings.md`.
+
+**Decisions**
+
+- **Conversation ids belong to the desktop:** `ChatRequest(persona, message, conversationId: String? = null)`; the desktop creates one id per conversation, the backend maps null or blank to a fresh id, and there is no new event. *Why:* ADR-0005's extension rule (the old wire form is unchanged) and no server-assigned id, which would need a `ConversationStarted` event and a fix of the view model's terminal-event handling. Ids over 255 characters are not validated and end as the generic error event.
+- **Session schema as hand-written DDL in `db/session`:** the library's PostgreSQL schema is copied verbatim into `V20261120120000__create_session_tables.sql`, `classpath:db/session` joins `spring.flyway.locations`, and `spring.ai.session.repository.jdbc.initialize-schema` is `never`; no Exposed tables. *Why:* ADR-0002 forbids startup DDL, the generator-owned `db/migration` stays empty, and it mirrors `db/vector` (ADR-0006).
+- **Advisor order unchanged, stored text is the retrieval-rewritten message:** audit 100, session turn advisor 200, retrieval 250, tool calling 300, session memory advisor 1000. The claimant's typed text rides on the user message as metadata `claimantText`; transcript, recall tool and title read it before the message text. *Why:* no ADR-0006 or `RagOrderTest` change; retrieval above memory would repeat retrieval on every tool round. Second-turn tests assert `contains`, not equality.
+- **Hand-written `conversation_search` tool:** a case-insensitive substring match over the whole stored log (user and assistant text), the five most recent matches as `role: text` lines, the conversation id read from `ToolContext`. *Why:* the 2.1.0-RC2 session jars have no recall tool, and compaction dropping turns from the prompt while the tool still finds them is the demo point. Community memory tools stay for ADR-0007; embedding recall would need a conversation vector store.
+- **Compaction without a summarizer:** a turn-count trigger (`MAX_TURNS = 10`) with a window strategy that keeps the last `KEPT_TURNS = 5` turns, synchronous. Compaction never deletes events, so the transcript and the tool still see every turn. *Why:* a summarizer adds a Haiku call and "script exhausted" under `FakeChatModel`; a token trigger is harder to test. The constants are public top-level `const val`s (the plan said `internal`, which the Kotlin policy forbids in application modules).
+- **Titles and list:** a session is created with metadata `agentName = claimant` and `title` = first typed message cut to 60 characters; `agentName` is an indexed attribute and `Conversations.list()` uses `findByMetadata`, newest first, `startedAt` as `Instant.toString()`. *Why:* the library has no list-all call and only indexed keys are searchable; other agents get their own list after the merge.
+- **Endpoints and DTOs:** `GET /conversations` and `GET /conversations/{id}/messages` with `ConversationSummary` and `ConversationMessage(role USER or ASSISTANT, text)` in the chat protocol; the transcript reads the whole log, drops blank and tool messages and answers 404 only when no session has the id. *Why:* the smallest protocol addition; a session of another agent is not filtered from the transcript, only from the list.
+- **Desktop:** `ChatApi.conversations()` and `messages(id)` are `suspend` and give an empty list on any failure (cancellation and JVM errors are rethrown); the list refreshes at start and after each ended answer; `newConversation` and `open` are ignored while sending; the current id is not persisted. A left 240 dp column with a "New conversation" button and ghost buttons for the titles, with no fill of its own (the render test samples the background there). *Why:* the app keeps running without a backend and has no second error channel; after a restart the list is the way back.
+- **Restart test inside the shared context:** the restart is simulated by building a new `DefaultSessionService`, repository and claimant client over the same data source (design D12), not by a second Spring context. *Why:* ADR-0004 forbids a second context; this deviates from the roadmap's "new context, same DB".
+- **Spec shape:** new capability `conversation-memory`; `backend-chat` and `backend-runtime` requirements renamed, `policy-rag` "Retrieval sits between memory and tools" now refers to the session turn advisor, `schema-migrations` renamed to "Generation is unaffected by hand-written directories", and `desktop-shell` modified for the conversation column. The merge into the main specs gave `conversation-memory` a Purpose section the delta did not have.
+- **Claimant prompt:** a "Memory" section (the conversation is remembered, long ones are shortened, use `conversation_search` before asking the claimant to repeat something); the "only the current message" bullet is gone.
+- **Test and code details:** fixed descriptive conversation ids in backend tests and scripted ids `c-1`, `c-2` in desktop tests (UUID.randomUUID is banned in tests); `testsupport/ChatPosts.kt` shares the POST helper; `ConversationMemoryTest` uses the JUnit `@Test` because its restart test is a `suspend fun`; `FakeChatApi` keeps `reply` as the last parameter and its list lambdas are `suspend`; `ChatState.conversationId` has no default; `@Suppress("LongParameterList")` on `claimantChatClient`; no ArchUnit rule for Exposed in `chat` (the existing tables-package rule already confines tables).
+- **Accepted gaps (design risks):** a failed or cancelled stream leaves a user message without a reply; stored user messages contain the retrieved clauses; no TTL cleanup (nothing calls `deleteExpiredSessions`); a storage failure while saving the reply turns a finished stream into an error event.
+
+**Descoped / deviations from the roadmap entry**
+
+- Out as planned: TTL cleanup, summarizing compaction, deleting or renaming conversations, pagination, long-term memory (`AutoMemoryTools`).
+- The restart test does not use a new Spring context (see above).
+- No run with a real Anthropic key; tests use the fakes.
+
+**Follow-ups**
+
+- **Merge with the parallel track:** the adjuster client should adopt the same session advisors, `ConversationSearch` and its own `agentName`. Merge hotspots: `ChatConfiguration`, `application.yaml` (`spring.flyway.locations`), `ChatController`, the protocol module, `ChatViewModel`, `App`.
+- **Client-supplied ids are trusted:** an id of another agent's session is appended to, and an id over 255 characters fails in the database as the generic error; `transcript(id)` ignores the session's agent.
+- **Race in the view model:** "New conversation" while `open()` awaits the transcript is not guarded; when the transcript arrives it silently undoes the new conversation.
+- **Title cut:** `take(60)` can split a surrogate pair and leave a lone surrogate.
+- **Missing test:** nothing asserts that the system message mentions `conversation_search` and no longer says only the current message is visible.
+- **Manual check:** `:desktop:run` against a running backend with a real key; the README conversation example is one `text` block holding two JSON arrays.
+- **Style warnings:** a few IDE warnings remain in touched test files (e.g. the `seedTurns` helper); detekt is clean.
+
 ### Wave 5 - `observability`
 
 Review: clean (no confirmed blockers).
@@ -247,6 +285,52 @@ Binding text: `openspec/changes/archive/2026-11-20-observability/design.md` (D1-
 - **Shared compose project name:** `spring-ai-demo` is shared across worktrees; `docker compose up -d` from another worktree recreates the database container because the init-script bind-mount path differs.
 - **Anthropic SDK span:** the SDK emits its own span (`POST`) under the model span; it held no message text in the smoke, but check no SDK option adds request or response content.
 - **Stale wording:** the archived tasks.md still says "Work only in the roadmap-track-b worktree".
+
+### Wave 2 - `claim-intake`
+
+Review: clean (no confirmed blockers).
+
+Binding text: `openspec/changes/archive/2026-11-20-claim-intake/design.md` (D1-D11). This change wrote no new ADR; `docs/adr/0005-chat-protocol.md` got a status note and an "Addendum 2026-11-20: claim-intake" section, and `docs/adr/0003-domain-and-module-topology.md` a data-ownership note.
+
+**Decisions**
+
+- **Explicit actions on the one `/chat` endpoint:** `ChatRequest(persona, message, conversationId, action)` with `ChatAction = MESSAGE | PREPARE_CLAIM | CONFIRM_CLAIM`; `MESSAGE` is the default and left out of the JSON, so the old wire form is unchanged; the message of a prepare or confirm request is ignored. The desktop gets a "Prepare claim" button. *Why:* the model is never asked to decide when to file, and the extension rule of ADR-0005 holds.
+- **Blocking structured-output intake call:** `ClaimIntake` builds a private `ChatClient` from the prototype `ChatClient.Builder` with no advisors, passes the stored conversation as plain user and assistant messages, adds today's date (UTC) as a system parameter and a fixed final instruction, and reads a `ClaimReport` with `entity<T>()` inside `flowOn(Dispatchers.IO)`. *Why:* a text-only history cannot carry a half tool call into the prompt, and advisors (audit, retrieval, memory) have no business in an extraction.
+- **Nullable draft, validated twin:** `ClaimReport` and `DamageItem` have nullable fields aligned with core-mcp `fileClaim`; `validate()` returns `Ready(ValidClaim)` or `NeedsDetails(details)`. A blank string, a missing damage item, a kaiju class outside 1 to 5 and an incident time without an offset are missing details. *Why:* the model may not invent facts; a missing fact becomes a follow-up question, and the non-null `ValidClaim` makes filing code free of `!!`.
+- **Sealed results, no exceptions for domain outcomes:** `IntakeResult` is `Ready | NeedsDetails | Unreadable`; only a `JacksonException` or a null entity is `Unreadable`, a provider failure still reaches the controller's generic `Error`. The follow-up wording is templated in the chat layer (`IntakeEvents.kt`); the `intake` package holds no wording and no protocol types, pinned by an ArchUnit rule. *Why:* wording and wire types are presentation.
+- **Prepared claim held in memory per conversation:** the validated claim waits in a map keyed by the conversation id session-memory resolves. Prepare drops the earlier one before it extracts and stores only `Ready` (so a follow-up, an unreadable reply, an empty conversation or a provider failure leaves nothing to confirm); confirm removes and files it and puts it back when the port refuses; nothing prepared is `Rejected("there is no prepared claim to confirm")`. A request without a conversation id gets a fresh id and so names nothing. *Why:* the simplest thing that gives a confirmation step; it is lost on restart.
+- **Filing behind a port:** `ClaimFiling.file(ValidClaim): FilingResult` with `InMemoryClaimFiling` (claim numbers from 4714, readable `filed` list, policies other than `KP-1001` to `KP-1004` and `KP-9000` are refused). *Why:* core-mcp's `fileClaim` exists, but the backend has no MCP client yet.
+- **Protocol additions:** `ClaimCard` event (`claim-card`, string district and category, ISO incident time with zero seconds kept, derived `totalMinor` that is not serialised) and `ChatEvent.isTerminal` from an exhaustive `when`; the desktop reads a stream until the first terminal event, so a card no longer ends a reply. *Why:* a new event cannot be added without deciding it.
+- **Desktop:** the card is a highlighted `DCard` with label and value rows, the total and a "Confirm" button; Confirm is enabled only on the newest message and while nothing streams; prepare and confirm reuse the shared exchange function and the conversation id of the current (new or reopened) conversation, and the conversation list is refreshed afterwards. *Why:* the backend files only the latest prepared claim.
+- **Claimant prompt:** a "Filing a claim" section points to the Prepare claim button; "What you cannot do yet" no longer says filing is impossible; the phrase "cannot look up the claimant's own policy" and the memory section stay. *Why:* the prompt must not contradict the feature.
+- **The intake call is not audited:** recorded as a deliberate deviation in the ADR-0005 addendum. *Why:* a blocking call does not pass the audit advisor; `injection-guardrails` decides it.
+- **Tests:** the shared `FakeChatModel` scripts the report JSON; one class per behaviour group (`ClaimIntakeTest`, `ClaimConfirmationTest`, `ClaimActionsEndpointTest`, `PrepareFromStoredConversationTest`); fixed conversation ids; fixtures `claimReportJson` and `claimJson`; a prompt-shape test proves no tool messages and no blank assistant message reach the intake prompt, and a compaction test proves extraction reads the whole stored log. *Why:* black-box through the HTTP boundary, offline.
+- **User-facing wording:** follow-up "To prepare your claim I still need: <details>. Please tell me and press Prepare claim again."; unreadable asks to describe what happened, what was damaged and the policy number; filed "Your claim has been filed. Your claim number is <n>."; rejected "Your claim was not filed: <reason>.".
+- **Extra JSON schema hints:** `@field:JsonPropertyDescription` on district, description and damage items too, several saying "null if unknown". *Why:* steers the model to null instead of an invented value.
+- **Proposed glossary addition (owner to accept at merge):** **Prepared claim**: a validated claim report that the backend holds for one conversation until the claimant confirms it; not a claim status (no claim number, not DRAFT, lost on restart).
+
+**Descoped / deviations from the roadmap entry**
+
+- **Filing through a port, not the MCP tool:** the roadmap wants confirmation then `fileClaim`; this change files into an in-memory adapter and the MCP wiring is a follow-up after the tracks merge.
+- **Photo (multimodal) input:** descoped.
+- **Intake call not audited:** see Decisions.
+- **Claim card is not restored on reopening:** the transcript holds text only, so a reopened conversation shows no card; press Prepare claim again. Accepted.
+- **No optional visual check:** `renderComposeScene` cannot click Prepare claim to put a card on screen, so layout is covered by semantics tests only.
+
+**Declined review findings**
+
+- Two review findings were dismissed as not confirmed. The minor findings listed under Follow-ups are accepted for the demo.
+
+**Follow-ups**
+
+- Replace `InMemoryClaimFiling` with an MCP adapter that calls core-mcp's `fileClaim` after the tracks merge; add `flowOn(Dispatchers.IO)` to the confirm flow then (the call blocks) and rewrite the refused-policy scenario against what the tool rejects.
+- Manual check with a real provider key and Ollama: the README curl sequence (message, `PREPARE_CLAIM`, `CONFIRM_CLAIM` with one conversation id), and how reliably Haiku returns valid JSON with prompt-based structured output; `useProviderStructuredOutput()` is an alternative.
+- Audit the blocking intake call when `injection-guardrails` lands.
+- Overlapping calls for one conversation are not ordered: an older prepare can re-insert its claim after a newer follow-up, a refused confirm can overwrite a newer prepared claim, and confirm removes the claim before `file()` runs, so a throwing adapter loses it. Prepare plus Confirm again files a duplicate. The claimant chat model never learns that a claim was filed.
+- Client-supplied conversation ids are trusted, and `GET /conversations` lists every id, so any client can prepare or confirm another conversation's claim (same follow-up as session-memory).
+- An empty user message can be stored and then sent as an empty `UserMessage` in the extraction prompt; a MESSAGE request with an empty message seems to fail before the stream starts (no Error event). Consider answering it with an Error event.
+- If `conversations.transcript()` throws during prepare, the old prepared card stays confirmable because it is only dropped inside `prepare()`.
+- CLAUDE.md's status line ("no features or tables yet") is out of date; out of scope here.
 
 ### Wave 2 - `mcp-tools-and-confirmation`
 

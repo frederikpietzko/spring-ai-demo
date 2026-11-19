@@ -7,11 +7,11 @@ Defines the baseline behavior of the desktop application: it opens a window with
 ## Requirements
 
 ### Requirement: Application opens the chat screen
-The desktop application SHALL open one titled window showing the chat screen: a themed full-window background, the application name and the persona switch in a header, a conversation area with a muted hint while the conversation is empty, and an input row with a text field and a send button at the bottom.
+The desktop application SHALL open one titled window showing the chat screen: a themed full-window background, the application name and the persona switch in a header, a conversation list column with a "New conversation" action, a conversation area with a muted hint while the conversation is empty, and an input row with a text field and a send button at the bottom.
 
 #### Scenario: Window shows the chat screen
 - **WHEN** the application is launched with its documented run task
-- **THEN** one window opens with the application name visible, a muted hint in the conversation area, a text input and a send button
+- **THEN** one window opens with the application name visible, the conversation list column, a muted hint in the conversation area, a text input and a send button
 
 #### Scenario: Screen keeps the themed background
 - **WHEN** the chat screen is rendered in a forced appearance
@@ -40,11 +40,11 @@ The desktop application SHALL provide a set of themed components (text, button, 
 - **THEN** none are found outside the theme package
 
 ### Requirement: Desktop application is independent of the backend
-The desktop application SHALL start and show its screen without a running backend or database. A missing backend SHALL only affect a message the user sends.
+The desktop application SHALL start and show its screen without a running backend or database. A missing backend SHALL only affect a message the user sends and leave the conversation list empty.
 
 #### Scenario: Starts with nothing else running
 - **WHEN** the application is launched while no backend and no database are running
-- **THEN** the window opens and shows the chat screen without error
+- **THEN** the window opens and shows the chat screen without error and the conversation list is empty
 
 ### Requirement: Appearance can be forced
 The chat screen SHALL be renderable in an explicitly chosen light or dark appearance independent of the operating system, while the default launch SHALL keep following the system appearance.

@@ -10,8 +10,9 @@ spring:
     # The schema is created by Flyway migrations only, never by Exposed at startup.
     generate-ddl: false
   flyway:
-    # db/migration is written by the Exposed generator; db/vector holds the hand-written pgvector DDL (ADR-0006).
-    locations: classpath:db/migration,classpath:db/vector
+    # db/migration is written by the Exposed generator; db/vector holds the hand-written pgvector DDL (ADR-0006) and
+    # db/session the hand-written DDL of the Session Memory store.
+    locations: classpath:db/migration,classpath:db/vector,classpath:db/session
   docker:
     compose:
       # No `file` here: Spring Boot finds compose.yaml in the working directory. The repo root has the real file and
@@ -71,3 +72,32 @@ spring:
             core:
               # The insurer core system (core-mcp, ADR-0003 port 8081); the default endpoint /mcp matches it.
               url: ${CORE_MCP_URL:http://localhost:8081}
+    session:
+      repository:
+        jdbc:
+          # Flyway owns the DDL (db/session, ADR-0002). The default (embedded) only skips PostgreSQL by accident.
+          initialize-schema: never
+          # Lets the conversation list find the claimant's sessions with findByMetadata(agentName, "claimant").
+          indexed-attributes: agentName
+
+management:
+  tracing:
+    sampling:
+      # The default is 0.1: most demo traces would be missing.
+      probability: 1.0
+  otlp:
+    metrics:
+      export:
+        # The default is 1m: the dashboard would feel dead.
+        step: 10s
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-components: always
+  opentelemetry:
+    otlp:
+      # Fallback for a started jar; in bootRun Docker Compose support points the exporters at the lgtm container.
+      endpoint: http://localhost:4318

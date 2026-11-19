@@ -257,13 +257,13 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
     - Claimant identity goes through `ToolContext`. Tool-name collision policy for local vs MCP tools.
   - Out: OAuth (wave 4).
   - Tests: tool loop with the fake model requesting `getClaim` then `issuePayout`, against a real `core-mcp` started for the test or a fake MCP server. A deny leads to no payout and an approve leads to exactly one. A desktop dialog state test.
-- [ ] **`session-memory`**
+- [x] **`session-memory`**
   - Scope:
     - Spring AI Session with the JDBC repository (database `backend`): `SessionTurnAdvisor` outside the tool loop, `SessionMemoryAdvisor` inside it, the `conversation_search` recall tool, a compaction strategy.
     - Conversation ids per desktop conversation, a conversation list, resume after a backend restart.
   - Out: long-term memory (`AutoMemoryTools`); a possible later change.
   - Tests: a second turn sees the first (fake model captures the prompt). A restart keeps the history (new context, same DB). Two conversations stay isolated.
-- [ ] **`claim-intake`**
+- [x] **`claim-intake`**
   - Scope:
     - Structured output: the claimant's free text becomes a `ClaimReport` via `entity<ClaimReport>()` with validation (missing fields make the agent ask a follow-up question).
     - The claim card is rendered in the desktop, and on confirmation the claim is filed through the `core-mcp` `fileClaim` tool. If `mcp-tools-and-confirmation` isn't merged yet, put filing behind a port and wire it later.
