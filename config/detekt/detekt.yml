@@ -4,3 +4,6 @@ naming:
   FunctionNaming:
     # Composable functions are PascalCase by Compose convention.
     ignoreAnnotated: ['Composable']
+  VariableNaming:
+    # ArchUnit uses the field name of an @ArchTest rule as the test name; snake_case reads as a sentence.
+    ignoreAnnotated: ['ArchTest']

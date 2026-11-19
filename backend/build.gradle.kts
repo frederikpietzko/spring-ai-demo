@@ -27,11 +27,12 @@ dependencies {
     developmentOnly(platform(libs.spring.boot.dependencies))
     developmentOnly("org.springframework.boot:spring-boot-docker-compose")
 
-    // Declared for the tests that follow; this change commits none.
-    testImplementation("org.springframework.boot:spring-boot-starter-test")
+    // Brings spring-boot-starter-test plus the Boot 4 web test modules (RestTestClient).
+    testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:testcontainers-postgresql")
-    testImplementation("org.testcontainers:testcontainers-junit-jupiter")
+    testImplementation(libs.archunit.junit6)
+    testImplementation(libs.exposed.migration.jdbc)
 }
 
 exposed {
@@ -41,3 +42,31 @@ exposed {
         fileDirectory.set(layout.projectDirectory.dir("src/main/resources/db/migration"))
     }
 }
+
+// A developer's provider credentials must never reach a test JVM (Spring AI and the SDK read them as fallbacks).
+tasks.withType<Test>().configureEach {
+    listOf("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL").forEach { environment.remove(it) }
+    // Spring relaxed binding maps SPRING_AI_ANTHROPIC_API_KEY and friends onto spring.ai.anthropic.*
+    environment.keys.filter { it.startsWith("SPRING_AI_") }.forEach { environment.remove(it) }
+}
+
+tasks.test {
+    // The repository scan has its own task (secretsScan) so it neither slows this Docker-backed task nor goes stale.
+    useJUnitPlatform { excludeTags("secrets-scan") }
+}
+
+// The scan reads the whole working tree, which no input declaration can describe exactly (Gradle's file trees apply
+// Ant default excludes that the scanner does not), so the task simply runs on every build; it takes about a second.
+val repositoryRoot = rootProject.projectDir.absolutePath
+
+val secretsScan = tasks.register<Test>("secretsScan") {
+    description = "Scans the text files of the repository's working tree for secrets."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("secrets-scan") }
+    doNotTrackState("scans the working tree, which is not a declarable input")
+    systemProperty("secrets.scan.root", repositoryRoot)
+}
+
+tasks.check { dependsOn(secretsScan) }

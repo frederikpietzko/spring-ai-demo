@@ -1,6 +1,6 @@
 # ADR-0002: Technology stack
 
-- Status: accepted
+- Status: accepted; partially superseded by ADR-0004 (test strategy): the section "Deferred tests", the paragraph on Anthropic in tests, the statement "no `api-key` property exists in any file" (tests commit a placeholder `spring.ai.anthropic.api-key`), and the consequences "`bootRun` and `generateMigrations` need Docker; `build` and `check` do not", "Without tests, regressions are caught only by the command checks ...", and the Quality gate statement "ArchUnit is not added yet; ..."
 - Date: 2026-11-19
 - Change: `scaffold-project`
 

@@ -29,23 +29,65 @@ The repository SHALL build all modules with one Gradle wrapper invocation from t
 - **WHEN** a developer runs `sdk env` in the repository root
 - **THEN** the shell selects a Java 25 distribution, the same major version the build toolchain uses
 
-### Requirement: Check gate per module
-Each module SHALL provide a `check` task that runs static analysis, and the root `check` SHALL run it for all modules.
+### Requirement: Local database via Docker Compose
+The repository SHALL provide a Docker Compose definition that starts a PostgreSQL instance with local-development credentials, a database named `backend` and a persistent volume, and the backend's default connection settings SHALL target that database.
 
-#### Scenario: Check passes on the scaffold
-- **WHEN** `./gradlew check` runs on the scaffolded repository
-- **THEN** it succeeds and the static analysis task of both modules is part of the run
+#### Scenario: Local database starts
+- **WHEN** a developer runs `docker compose up -d` in the repository root
+- **THEN** a PostgreSQL container becomes healthy and accepts connections with the documented local credentials, and the database `backend` exists
+
+#### Scenario: Default connection targets the compose database
+- **WHEN** the backend starts with default settings against the compose database
+- **THEN** it connects to the database `backend` and reports healthy
+
+#### Scenario: Existing volume migration is documented
+- **WHEN** the README is read
+- **THEN** it tells developers with a volume created before the rename how to recreate it
+
+### Requirement: Decisions are recorded
+The repository SHALL contain architecture decision records for the module layout, the technology stack, the domain and module topology and the test strategy, and the project guide SHALL describe the build once it exists. The README SHALL link the roadmap.
+
+#### Scenario: ADRs present
+- **WHEN** the `docs/adr/` directory is listed after this change
+- **THEN** it contains an ADR for the module layout, an ADR for the stack choices, an ADR for the domain and module topology and an ADR for the test strategy, each with context, decision and consequences
+
+#### Scenario: Project guide is current
+- **WHEN** the project guide is read after this change
+- **THEN** it no longer states that no Gradle build exists, no longer states that no tests exist, and lists the commands to build, check and run each module
+
+#### Scenario: README links the roadmap
+- **WHEN** the README is read
+- **THEN** it contains a link to `ROADMAP.md` and states that `check` needs Docker
+
+#### Scenario: Superseded decisions are marked
+- **WHEN** an ADR whose sections are superseded by a later ADR is read
+- **THEN** its status line names the superseding ADR and the superseded sections
+
+#### Scenario: Roadmap ADR numbers are unique
+- **WHEN** the roadmap's ADR table is read
+- **THEN** every ADR number appears once and none collides with an existing file in `docs/adr/`
+
+### Requirement: Check gate runs static analysis and tests
+Each module SHALL provide a `check` task that runs static analysis and the module's tests, and the root `check` SHALL run it for all modules. The backend tests need a running Docker daemon.
+
+#### Scenario: Check passes on the repository
+- **WHEN** `./gradlew check` runs on the repository with Docker available
+- **THEN** it succeeds and the static analysis task and the test task of both modules are part of the run
 
 #### Scenario: Static analysis violation fails the gate
 - **WHEN** a source file violates a configured detekt rule
 - **THEN** `check` fails and names the file and the rule
 
+#### Scenario: Failing test fails the gate
+- **WHEN** a test in either module fails
+- **THEN** `check` fails and names the test
+
 #### Scenario: Newest Kotlin syntax is analysed
 - **WHEN** a source file uses collection literals and name-based destructuring
 - **THEN** static analysis processes it without crashing
 
-### Requirement: Test tooling is declared
-Each module SHALL have its test tooling configured so that a test can be added without changing the build: JUnit 6 with `kotlin.test` and power-assert for both modules, the Spring Boot test support and PostgreSQL Testcontainers for the backend, and the Compose UI test dependency for the desktop module. No test SHALL be committed by this change.
+### Requirement: Test tooling is declared and used
+Each module SHALL have its test tooling configured so that a test can be added without changing the build: JUnit 6 with `kotlin.test` and power-assert for both modules, the Spring Boot test support, PostgreSQL Testcontainers and the architecture-test library for the backend, and the Compose UI test dependency for the desktop module. Both modules SHALL contain tests.
 
 #### Scenario: A test added later runs
 - **WHEN** a trivial test class is added to a module and `./gradlew :<module>:test` runs
@@ -55,24 +97,21 @@ Each module SHALL have its test tooling configured so that a test can be added w
 - **WHEN** the test runtime classpath of the backend and of the desktop module is resolved
 - **THEN** it contains the declared test libraries
 
-#### Scenario: No tests are committed
-- **WHEN** the repository is checked out after this change
-- **THEN** the test source directories contain no test class
+#### Scenario: Both modules contain tests
+- **WHEN** `./gradlew :backend:test :desktop:test` runs
+- **THEN** each task executes at least one test
 
-### Requirement: Local database via Docker Compose
-The repository SHALL provide a Docker Compose definition that starts a PostgreSQL instance with local-development credentials and a persistent volume.
+### Requirement: Repository files are scanned for secrets
+The backend `check` task (and so the root `check`) SHALL scan the text files of the working tree (configuration, source and documentation, tracked or not, excluding build output, tool directories, binary files and the local-only `.env`, `*.key` and `.claude/settings.local.json`) for provider keys, tokens, private keys and non-placeholder password values, and SHALL fail when it finds one. The documented local-development database defaults SHALL be allowed.
 
-#### Scenario: Local database starts
-- **WHEN** a developer runs `docker compose up -d` in the repository root
-- **THEN** a PostgreSQL container becomes healthy and accepts connections with the documented local credentials
+#### Scenario: Repository is clean
+- **WHEN** the scan runs on the repository
+- **THEN** it passes, and the only credential-like values it meets are the documented local-development defaults
 
-### Requirement: Decisions are recorded
-The repository SHALL contain architecture decision records for the module layout and the technology stack, and the project guide SHALL describe the build once it exists.
+#### Scenario: Planted key is detected
+- **WHEN** a file contains a string shaped like a provider API key
+- **THEN** the scan fails and names the file and the line
 
-#### Scenario: ADRs present
-- **WHEN** the `docs/adr/` directory is listed after this change
-- **THEN** it contains an ADR for the module layout and an ADR for the stack choices, each with context, decision and consequences
-
-#### Scenario: Project guide is current
-- **WHEN** the project guide is read after this change
-- **THEN** it no longer states that no Gradle build exists and lists the commands to build, check and run each module
+#### Scenario: Scan is not skipped as up to date
+- **WHEN** a scanned file changes and `check` runs again
+- **THEN** the scan runs again instead of being reported up to date

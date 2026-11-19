@@ -10,7 +10,7 @@ Development is spec-driven: behavior is specified in OpenSpec (`openspec/`) befo
 
 Demo domain, feature order and waves: **`ROADMAP.md`** (Kaiju insurance claims desk). Pick the next unticked change from the current wave.
 
-> Status: build scaffold in place, no features, tables or tests yet (see `openspec/changes/scaffold-project`). The Gradle hooks in `.claude/hooks/hooks.disabled.json` stay intentionally disabled (the build exposes `:<module>:detekt` and `:<module>:check`, so they can be enabled later).
+> Status: build scaffold and test harness in place (shared backend test context with a fake `ChatModel`, desktop tests, secrets scan; see `openspec/specs/backend-test-harness` and ADR-0004), no features or tables yet. `./gradlew check` runs the tests and needs Docker. The Gradle hooks in `.claude/hooks/hooks.disabled.json` stay intentionally disabled (the build exposes `:<module>:detekt` and `:<module>:check`, so they can be enabled later).
 
 Modules (one Gradle build, `./gradlew` wrapper):
 

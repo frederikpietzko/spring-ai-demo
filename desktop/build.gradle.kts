@@ -13,8 +13,12 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.ui)
 
-    // Declared for the tests that follow; this change commits none.
     testImplementation(libs.compose.uiTest)
+}
+
+tasks.test {
+    // Silences the JDK native-access warning from skiko's library loader.
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
 compose.desktop {

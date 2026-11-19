@@ -3,7 +3,7 @@ spring:
     name: spring-ai-demo-backend
   datasource:
     # Local-development defaults only; they match compose.yaml. Override with the environment in any other setup.
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/demo}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/backend}
     username: ${DB_USER:demo}
     password: ${DB_PASSWORD:demo}
   exposed:

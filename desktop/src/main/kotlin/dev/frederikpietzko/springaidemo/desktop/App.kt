@@ -14,11 +14,15 @@ import androidx.compose.ui.unit.dp
 import dev.frederikpietzko.springaidemo.desktop.components.DText
 import dev.frederikpietzko.springaidemo.desktop.theme.Demo
 import dev.frederikpietzko.springaidemo.desktop.theme.DemoTheme
+import dev.frederikpietzko.springaidemo.desktop.theme.ThemeMode
 
-/** The empty screen: a header with the application name and a muted placeholder in the content area. */
+/**
+ * The empty screen: a header with the application name and a muted placeholder in the content area.
+ * [themeOverride] forces the light or dark appearance; `null` follows the system.
+ */
 @Composable
-fun App() {
-    DemoTheme(override = null) {
+fun App(themeOverride: ThemeMode? = null) {
+    DemoTheme(override = themeOverride) {
         Column(Modifier.fillMaxSize().background(Demo.colors.background)) {
             Box(
                 modifier = Modifier

@@ -153,18 +153,19 @@ Each ADR is written by the change that first needs it, as part of that change.
 | ADR | Topic | Written by | Key questions |
 |---|---|---|---|
 | ADR-0003 | Demo domain and module topology | `test-foundation` (wave 0) | Adds `core-mcp` and `auth-server`. Data ownership (`backend` never touches the `core` DB). One Postgres instance with two databases. Top-level packages per module. Ports (proposal: backend 8080, core-mcp 8081, auth-server 9000) |
-| ADR-0004 | Backend-desktop chat protocol | `chat-streaming` | SSE event types (`TextDelta`, `TodoUpdate`, `ClaimCard`, `ToolCall`, `ConfirmationRequest`, `Done`, `Error`) as a sealed hierarchy. Shared `chat-protocol` module (kotlinx.serialization; ADR-0001 requires an ADR for shared code) or duplicated DTOs. Desktop HTTP client (proposal: Ktor client + SSE into `Flow`). How the persona is selected |
-| ADR-0005 | Vector store and its schema | `policy-rag` | pgvector table created by a hand-written Flyway migration or by `PgVectorStore` schema initialization (ADR-0002 forbids startup DDL for Exposed tables; the migration generator rejects the pgvector image). One store with a `corpus` metadata field, or two tables. Embedding model (Anthropic has none: pick a provider or a local ONNX/transformers model, decided here) |
-| ADR-0006 | Community libraries | `agent-todo-and-skills` (first user of spring-ai-agent-utils); amended by `mcp-security` | Pinned versions of `spring-ai-agent-utils` (`main` is on 2.1-SNAPSHOT, release line 0.14.x) and `mcp-security`. Depend on them or copy the patterns in. The Spring AI 2.0 fallback for `core-mcp` and `auth-server` |
-| ADR-0007 | Model routing | `subagents` | Default stays `claude-haiku-5-5`. Which agents get a larger model (proposal: adjuster orchestrator on Sonnet, subagents on Haiku). Where the routing is configured |
-| ADR-0008 | Security model | `mcp-security` | Clients per persona (`claimant-agent`, `adjuster-agent`), scopes (`policies:read`, `claims:read`, `claims:write`, `payout:write`, `analytics:read`), grant type (proposal: `client_credentials` per persona, with the claimant id passed in `ToolContext` and checked in `core-mcp`), token propagation, tool-side authorization |
+| ADR-0004 | Test strategy | `test-foundation` (wave 0) | One shared backend test context (`@IntegrationTest`) with real PostgreSQL and a scripted fake `ChatModel`; Docker is required for `check`; architecture rules, secrets scan and desktop test approach. Supersedes parts of ADR-0002 |
+| ADR-0005 | Backend-desktop chat protocol | `chat-streaming` | SSE event types (`TextDelta`, `TodoUpdate`, `ClaimCard`, `ToolCall`, `ConfirmationRequest`, `Done`, `Error`) as a sealed hierarchy. Shared `chat-protocol` module (kotlinx.serialization; ADR-0001 requires an ADR for shared code) or duplicated DTOs. Desktop HTTP client (proposal: Ktor client + SSE into `Flow`). How the persona is selected |
+| ADR-0006 | Vector store and its schema | `policy-rag` | pgvector table created by a hand-written Flyway migration or by `PgVectorStore` schema initialization (ADR-0002 forbids startup DDL for Exposed tables; the migration generator rejects the pgvector image). One store with a `corpus` metadata field, or two tables. Embedding model (Anthropic has none: pick a provider or a local ONNX/transformers model, decided here) |
+| ADR-0007 | Community libraries | `agent-todo-and-skills` (first user of spring-ai-agent-utils); amended by `mcp-security` | Pinned versions of `spring-ai-agent-utils` (`main` is on 2.1-SNAPSHOT, release line 0.14.x) and `mcp-security`. Depend on them or copy the patterns in. The Spring AI 2.0 fallback for `core-mcp` and `auth-server` |
+| ADR-0008 | Model routing | `subagents` | Default stays `claude-haiku-5-5`. Which agents get a larger model (proposal: adjuster orchestrator on Sonnet, subagents on Haiku). Where the routing is configured |
+| ADR-0009 | Security model | `mcp-security` | Clients per persona (`claimant-agent`, `adjuster-agent`), scopes (`policies:read`, `claims:read`, `claims:write`, `payout:write`, `analytics:read`), grant type (proposal: `client_credentials` per persona, with the claimant id passed in `ToolContext` and checked in `core-mcp`), token propagation, tool-side authorization |
 
 ## 7 Waves
 
 A wave is a set of changes that only depend on earlier waves, so agents can run them in parallel (one change per agent, ideally in its own git worktree). The next wave starts once every change in the current one is archived and merged.
 
 ```
-wave 0   test-foundation (+ ADR-0003)
+wave 0   test-foundation (+ ADR-0003, ADR-0004)
             |
             +---------------------+------------------------+
             v                     v                        v
@@ -211,10 +212,10 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
 
 ### Wave 0
 
-- [ ] **`test-foundation`**
-  - Scope: the deferred tests T1-T9 from ADR-0002 (health with Testcontainers, beans, Flyway state, ArchUnit rule, desktop semantics and render tests, secrets scan). A shared Spring test configuration with a **fake `ChatModel`** that every later backend test reuses (`spring.ai.model.chat=none` plus a scripted fake). Writes **ADR-0003** (domain and topology) and links this roadmap from the README.
+- [x] **`test-foundation`**
+  - Scope: the deferred tests T1-T9 from ADR-0002 (health with Testcontainers, beans, Flyway state, ArchUnit rule, desktop semantics and render tests, secrets scan). A shared Spring test configuration with a **fake `ChatModel`** that every later backend test reuses (`spring.ai.model.chat=none` plus a scripted fake). Writes **ADR-0003** (domain and topology) and **ADR-0004** (test strategy) and links this roadmap from the README.
   - Out: no features, no new modules yet.
-  - Tests: as listed in ADR-0002. The fake model can script text replies, structured JSON replies and tool-call requests, so later changes can test tool loops offline.
+  - Tests: as recorded in ADR-0004 (superseding ADR-0002 "Deferred tests"). The fake model can script text replies, structured JSON replies and tool-call requests, so later changes can test tool loops offline.
 
 ### Wave 1
 
@@ -233,7 +234,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
   - Scope:
     - Backend: chat endpoint streaming SSE (`ChatClient.stream()` `Flux` bridged to `Flow`), a claimant system prompt, and one small custom Kotlin advisor (for example audit metadata).
     - Desktop: a chat window rendering streamed deltas, plus the persona switch, with only `CLAIMANT` wired for now.
-    - Writes **ADR-0004**, including the protocol module decision.
+    - Writes **ADR-0005**, including the protocol module decision.
   - Out: memory (messages are lost on restart), tools, RAG.
   - Tests: SSE endpoint with the fake model (event order, `Done` and `Error` events). Protocol serialization round trip. Desktop view-model test feeding a fake event `Flow`.
 - [ ] **`policy-rag`**
@@ -241,7 +242,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
     - Fictional policy wording as Markdown under `backend/src/main/resources/corpus/policy-wording/`.
     - ETL ingestion (reader, splitter, embeddings, pgvector) and a retrieval advisor answering coverage questions with citations.
     - Testable through a backend service without the chat endpoint; hook it into the claimant chat if `chat-streaming` is already merged.
-    - Writes **ADR-0005**.
+    - Writes **ADR-0006**.
   - Out: sighting bulletins (wave 3), evaluators (wave 5).
   - Tests: ingestion is idempotent (`upsert`, a re-run adds nothing). Retrieval returns the exclusion clause for a class-5 question (against Testcontainers pgvector with a deterministic test embedding model). The advisor puts the retrieved context into the prompt (fake model captures the request).
 
@@ -282,7 +283,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
   - Scope:
     - `spring-ai-agent-utils`: `TodoWriteTool` for the adjuster, with todo changes streamed as `TodoUpdate` events into a desktop todo panel.
     - `SkillsTool` with `SKILL.md` skills `kaiju-classification` and `damage-estimation` under `backend/src/main/resources/skills/`.
-    - Writes **ADR-0006**.
+    - Writes **ADR-0007**.
   - Out: subagents.
   - Tests: the fake model writes and updates todos, and the SSE carries the matching `TodoUpdate`s. Only skill names and descriptions sit in the system prompt, and the full skill loads on demand.
 - [ ] **`agentic-rag-fraud`**
@@ -297,17 +298,17 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
 
 - [ ] **`mcp-security`**
   - Scope:
-    - New module `auth-server` (Spring Authorization Server via `mcp-authorization-server`) with clients and scopes per ADR-0008.
+    - New module `auth-server` (Spring Authorization Server via `mcp-authorization-server`) with clients and scopes per ADR-0009.
     - `core-mcp` becomes a resource server (`mcp-server-security`), and every tool checks its scope and, for claimant calls, ownership.
     - The backend MCP client uses OAuth (`mcp-client-security`) with one client per persona.
-    - Writes **ADR-0008** and amends **ADR-0006**. Apply the Spring AI 2.0 fallback only if 2.1 breaks.
+    - Writes **ADR-0009** and amends **ADR-0007**. Apply the Spring AI 2.0 fallback only if 2.1 breaks.
   - Out: end-user login in the desktop (the persona switch stands in for login).
   - Tests: a call without a token gets 401. A claimant token calling `issuePayout` gets 403 and no payout. A claimant reading another customer's claim is denied. An adjuster token works. These run against a real `auth-server` in the test.
 - [ ] **`subagents`**
   - Scope:
     - `TaskTools` with Markdown agent definitions: `fraud-investigator` (Haiku, read-only tools plus the sightings retrieval tool) and `damage-assessor` (the `damage-estimation` skill).
     - The adjuster orchestrator delegates. Subagent progress shows in the todo panel.
-    - Writes **ADR-0007**.
+    - Writes **ADR-0008**.
   - Out: background or async tasks beyond what the library gives, A2A.
   - Tests: the orchestrator delegates (fake models per agent). A subagent cannot call tools outside its allow-list. The subagent result reaches the main agent as structured output.
 
@@ -344,13 +345,13 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
 | # | Item | Plan |
 |---|---|---|
 | R1 | `mcp-security` targets Spring AI 2.0.x | Try it on 2.1 first; fall back to 2.0 in `core-mcp` and `auth-server` (decision 4) |
-| R2 | `spring-ai-agent-utils` is a community project tracking 2.1-SNAPSHOT | Pin a version in ADR-0006. If none fits 2.1 GA or RC, copy the tool patterns into `backend` |
+| R2 | `spring-ai-agent-utils` is a community project tracking 2.1-SNAPSHOT | Pin a version in ADR-0007. If none fits 2.1 GA or RC, copy the tool patterns into `backend` |
 | R3 | Tool confirmation for **MCP** tools: unknown whether `requiresConfirmation` applies to MCP tool callbacks | Spike in `mcp-tools-and-confirmation`. Fallback: a local `@Tool issuePayout` with confirmation that delegates to the MCP tool |
-| R4 | Anthropic has no embedding model | Decide in ADR-0005 (separate embedding provider or a local model). The test embedding model is deterministic either way |
-| R5 | The migration generator rejects the pgvector image (ADR-0002) | Decide in ADR-0005. A hand-written migration for the vector table is the likely answer |
-| R6 | Streaming and tool confirmation in one SSE stream: pausing a streaming tool loop for a human decision | Design in ADR-0004 and `mcp-tools-and-confirmation` (end the stream with `ConfirmationRequest`, resume with a new request, or keep it open) |
+| R4 | Anthropic has no embedding model | Decide in ADR-0006 (separate embedding provider or a local model). The test embedding model is deterministic either way |
+| R5 | The migration generator rejects the pgvector image (ADR-0002) | Decide in ADR-0006. A hand-written migration for the vector table is the likely answer |
+| R6 | Streaming and tool confirmation in one SSE stream: pausing a streaming tool loop for a human decision | Design in ADR-0005 and `mcp-tools-and-confirmation` (end the stream with `ConfirmationRequest`, resume with a new request, or keep it open) |
 | R7 | Spring AI 2.1 APIs differ from 1.x | Agents check the docs and sources (`spring-ai` skill, Gradle MCP sources, context7), never memory |
-| Q1 | Shared `chat-protocol` module or duplicated DTOs | ADR-0004 |
+| Q1 | Shared `chat-protocol` module or duplicated DTOs | ADR-0005 |
 | Q2 | Fictional setting names | Defaults in the glossary; swap freely |
 
 ## 10 Rules for the implementing agents

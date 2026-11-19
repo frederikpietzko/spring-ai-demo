@@ -1,6 +1,6 @@
 # ADR-0001: Multi-module Gradle layout
 
-- Status: accepted
+- Status: accepted; partially superseded by ADR-0004 (test strategy): the consequence "No test is committed by the scaffold ..."
 - Date: 2026-11-19
 - Change: `scaffold-project`
 
