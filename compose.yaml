@@ -1,3 +1,6 @@
+# Fixed project name so every start location (repo root, backend/ via symlink) shares one container and volume.
+name: spring-ai-demo
+
 services:
   postgres:
     image: pgvector/pgvector:pg18

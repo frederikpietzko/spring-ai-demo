@@ -11,7 +11,8 @@ spring:
     generate-ddl: false
   docker:
     compose:
-      file: ../compose.yaml
+      # No `file` here: Spring Boot finds compose.yaml in the working directory. The repo root has the real file and
+      # backend/compose.yaml is a symlink to it, so starting from either directory uses the same compose project.
       lifecycle-management: start_only
   ai:
     anthropic:

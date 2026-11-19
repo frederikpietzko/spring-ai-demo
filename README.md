@@ -28,6 +28,8 @@ docker compose up -d                 # local PostgreSQL (pgvector/pgvector:pg18)
 docker compose down                  # stop the database
 ```
 
+The backend starts the compose database itself (Spring Boot Docker Compose support), whether it is launched from the repo root (e.g. an IDE run configuration) or from `backend/` (e.g. `bootRun`): `backend/compose.yaml` is a symlink to the root `compose.yaml`, and the fixed project name `spring-ai-demo` makes both share one container and volume. On Windows, enable symlinks in Git (`core.symlinks=true`) for this to work.
+
 Health check: `curl localhost:8080/actuator/health`.
 
 ## Environment variables
