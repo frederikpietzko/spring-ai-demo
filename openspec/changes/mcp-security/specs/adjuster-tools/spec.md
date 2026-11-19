@@ -31,7 +31,7 @@ Every request of a connection to the core system SHALL carry the bearer token of
 
 #### Scenario: Each connection sends its persona's token
 - **WHEN** the adjuster provider and the claimant provider each list tools against a stub core system that records the `Authorization` header and answers 401, with a stub token endpoint that issues the token `t-<client id>`
-- **THEN** the first request of the adjuster connection carried `Bearer t-adjuster-agent` and that of the claimant connection `Bearer t-claimant-agent`
+- **THEN** the first request of the adjuster connection carried the adjuster agent token as a `Bearer` credential and that of the claimant connection the claimant agent token as a `Bearer` credential
 
 #### Scenario: Backend endpoints stay open
 - **WHEN** the shared backend test context (full auto-configuration) is started
