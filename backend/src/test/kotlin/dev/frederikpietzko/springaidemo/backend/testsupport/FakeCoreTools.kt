@@ -54,6 +54,9 @@ class FakeCoreTools {
             "claimNumber" to claimNumber,
             "policyNumber" to "KP-1001",
             "status" to "FILED",
+            "district" to "HARBOUR",
+            "incidentAt" to "2026-11-18T15:00:00Z",
+            "kaijuClass" to CLAIM_4711_KAIJU_CLASS,
             "totalEstimatedMinor" to CLAIM_4711_TOTAL_MINOR,
         )
     }
@@ -105,6 +108,9 @@ class FakeCoreTools {
     }
 
     private companion object {
+        /** Seed claim 4711 was a class 3 kaiju at the harbour (the claimed place and time of the fraud scenario). */
+        const val CLAIM_4711_KAIJU_CLASS = 3
+
         /** Seed claim 4711: damage items 800000 and 4500. */
         const val CLAIM_4711_TOTAL_MINOR = 804_500L
 

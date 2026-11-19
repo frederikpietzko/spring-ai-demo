@@ -1,5 +1,6 @@
 package dev.frederikpietzko.springaidemo.backend.adjuster
 
+import dev.frederikpietzko.springaidemo.backend.fraud.SightingBulletinSearch
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import kotlinx.coroutines.Dispatchers
@@ -47,11 +48,11 @@ private const val DENIED = "The adjuster did not approve this payout."
 private const val NOTHING_WAITING = "Nothing is waiting for this decision."
 
 /**
- * The adjuster agent: answers one adjuster message with the core tools, its skills and its own todo list, as a stream
- * of chat events: text deltas, a [ChatEvent.TodoUpdate] for every todo write, an [ChatEvent.AnalyticsTable] for each
- * successful `payoutStats` call of a turn (not one in a batch [decide] resumes), and a [ChatEvent.ConfirmationRequest]
- * when the reply calls a tool needing confirmation (`issuePayout`); the paused reply waits in [PendingConfirmations]
- * until [decide] runs or skips its tool calls and continues the reply.
+ * The adjuster agent: answers one adjuster message with the core tools, the sighting bulletin search, its skills and
+ * its own todo list, as a stream of chat events: text deltas, a [ChatEvent.TodoUpdate] for every todo write, an
+ * [ChatEvent.AnalyticsTable] for each successful `payoutStats` call of a turn (not one in a batch [decide] resumes),
+ * and a [ChatEvent.ConfirmationRequest] when the reply calls a tool needing confirmation (`issuePayout`); the paused
+ * reply waits in [PendingConfirmations] until [decide] runs or skips its tool calls and continues the reply.
  */
 @Service
 class AdjusterChat(
@@ -60,6 +61,7 @@ class AdjusterChat(
     @Qualifier("adjusterSkills") private val adjusterSkills: ToolCallback,
     private val toolCallingManager: ToolCallingManager,
     private val pendingConfirmations: PendingConfirmations,
+    private val sightingBulletinSearch: SightingBulletinSearch,
     private val json: JsonMapper,
 ) {
     /** Streams the reply to [message]: text deltas, todo updates, and a confirmation request if the reply pauses. */
@@ -91,8 +93,8 @@ class AdjusterChat(
     /**
      * Runs the tool calls of the [paused] reply and returns the conversation with their results: the calls that wait
      * for a decision run only when [approved], every other call runs as it would have without the pause. The loop
-     * keeps no state, so the prompt carries every adjuster tool (the core tools, [todoWrite] and the skills) and the
-     * tool context again.
+     * keeps no state, so the prompt carries every adjuster tool (the core tools, [todoWrite], the skills and the
+     * bulletin search) and the tool context again: a tool missing here fails with "No ToolCallback found".
      */
     private fun runToolCalls(paused: PausedTurn, approved: Boolean, todoWrite: TodoWriteTool): List<Message> {
         val keys = ToolCallDecisions.toolCallKeys(checkNotNull(paused.reply.result) { "paused reply" }.output)
@@ -101,7 +103,11 @@ class AdjusterChat(
             if (approved || key !in waiting) ToolCallDecision.allow(key) else ToolCallDecision.deny(key, DENIED)
         }
         val options = ToolCallingChatOptions.builder()
-            .toolCallbacks(*coreTools.toolCallbacks, *ToolCallbacks.from(todoWrite), adjusterSkills)
+            .toolCallbacks(
+                *coreTools.toolCallbacks,
+                *ToolCallbacks.from(todoWrite, sightingBulletinSearch),
+                adjusterSkills,
+            )
             .toolContext(ADJUSTER_IDENTITY)
             .build()
         return toolCallingManager
@@ -118,7 +124,8 @@ class AdjusterChat(
      * own todo tool sends each todo update, and the wrapped `payoutStats` ([coreToolsWithTables]) its table, into the
      * channel from the thread the tool runs on (the unlimited buffer means `trySend` never has to wait). The tool runs
      * before the next model round streams, so its table comes before the text the model writes after the call. The
-     * skills are a default tool of the client; the core tools and the todo tool come with each request.
+     * skills and the bulletin search are default tools of the client; the core tools and the todo tool come with each
+     * request.
      */
     private fun turn(conversation: List<Message>): Flow<ChatEvent> =
         channelFlow {

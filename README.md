@@ -132,6 +132,15 @@ The adjuster plans multi-step work with a todo list and loads task know-how on d
 - **Skills.** `kaiju-classification` (the class 1-5 scale) and `damage-estimation` (categories, districts, how to check an estimate) live in `backend/src/main/resources/skills/<name>/SKILL.md`. The model sees only their names and descriptions, in the description of the `Skill` tool; the text of a skill reaches it only when it calls `Skill` with that name. To add a skill, create another folder with a `SKILL.md` that starts with single-line `name:` and `description:` frontmatter between `---` lines, and restart the backend.
 
 Neither tool is offered to the claimant.
+## Fraud check
+
+Agentic RAG: retrieval is a tool the model decides to call, not a fixed step before every answer.
+
+- **Corpus.** Seven fictional sighting bulletins under `backend/src/main/resources/corpus/sighting-bulletins/`, one Markdown file each with a small header (`id`, `observedAt` as an ISO-8601 UTC instant, `place`), a blank line and the text, which names the kaiju class. At every start they are embedded and upserted into the shared vector table with the corpus `sighting-bulletin`, the ids `sighting-bulletin/<id>` and the metadata `bulletinId`, `place` and `observedAtEpochSecond` (ADR-0006). A malformed file fails startup with its name.
+- **Tool.** `searchSightingBulletins(query, from, to, place?)` returns at most five bulletins, most similar to the query first, observed between `from` and `to` (ISO-8601 instants, both included) and at `place` when one is given (one of the districts or `SALTMARSH`, the neighbouring town; a blank place means every place). Time and place are metadata filters on the vector store; the model writes the query itself and is told to search again, rephrased or at another place, when nothing useful comes back. The adjuster agent is offered the tool next to the core tools; the claimant is not.
+- **Verdict.** `FraudCheck.assess(claimNumber)` runs one blocking chat call with a tool loop over the read-only `getClaim` and the bulletin search (never `issuePayout`) and answers a typed `FraudAssessment`: the verdict `CLEAR`, `FLAGGED` or `INCONCLUSIVE`, the evidence as bulletin ids with a finding, and a confidence from 0 to 1. A reply that is no assessment is the result `Unreadable`. The fraud check is a backend service only: it has no HTTP endpoint and the desktop does not show it yet.
+
+The 4711 scenario: claim 4711 says a class 3 kaiju hit the harbour at `2026-11-18T15:00:00Z`. A search at `HARBOUR` between 13:00 and 17:00 finds nothing; a second search at `SALTMARSH` finds `SB-102`, which places the kaiju on the Saltmarsh mudflats, about 40 km up the coast, at 14:45. The model cites `SB-102` and flags the claim. The tests script exactly these two retrievals with the fake model against the real pgvector store; whether a real model finds them is left to the `evaluation` change.
 
 ## Conversation endpoints
 
