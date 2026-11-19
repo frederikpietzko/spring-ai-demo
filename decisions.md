@@ -41,6 +41,14 @@ Run started 2026-11-20. Each archived change is one local commit on the run's br
   - `agent-todo-and-skills` waits until A's MCP work has been merged into track B, because it needs the ADJUSTER persona that `mcp-tools-and-confirmation` creates. Building it earlier would mean two competing adjuster wirings.
   - `observability` comes before the roadmap's "best after wave 4". Spring AI's built-in observations also cover the chat clients, advisors, tools and vector stores added later.
 
+- **O10 Up to four tracks (the owner raised the limit to four "if it makes sense").** Track C (`roadmap-track-c`) took `observability` while `mcp-tools-and-confirmation` (track A) and `session-memory`/`claim-intake` (track B) ran. All other remaining changes depend on `mcp-tools-and-confirmation`. When it lands, four changes become ready at once:
+  - A: `mcp-security`, then `injection-guardrails` (after `claim-intake`).
+  - B: `agent-todo-and-skills`, then `subagents`.
+  - C: `claims-analytics`.
+  - D: `agentic-rag-fraud`, then `evaluation`.
+
+  A shell watcher starts track D. It costs no tokens, and no agent is left waiting. Before every change, each track merges the other tracks' new commits and runs `check`. *Why:* the parallelism follows the dependency graph, so no track has nothing to do. Two more changes: a track stops after 3 agent failures in a row (usage limit or API outage), and plans are written just before each change is implemented, which removes the plan-refresh step.
+
 ## Per change
 
 Sections are added in landing order.
