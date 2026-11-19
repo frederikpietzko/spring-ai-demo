@@ -1,6 +1,6 @@
 # ADR-0003: Domain and module topology
 
-- Status: accepted; extended by ADR-0005 (chat protocol): the module and package tables gain the shared library module `chat-protocol` (package `chatprotocol`), which is not a runtime module and has no port
+- Status: accepted; extended by ADR-0005 (chat protocol): the module and package tables gain the shared library module `chat-protocol` (package `chatprotocol`), which is not a runtime module and has no port; updated by the change `core-mcp-claims`: the `core-mcp` row's status "planned" (the module exists), the sentence "`core-mcp` and `auth-server` do not exist yet" (now true for `auth-server` only), "Pending" for the database `core` (it exists) and the consequence "Only `backend` and `desktop` exist; no code, ports or database named `core` are created" (see the addendum)
 - Date: 2026-11-19
 - Change: `test-foundation`
 
@@ -67,3 +67,10 @@ PostgreSQL stays on 5432.
 - Later changes add modules and the `core` database without revisiting this decision; changing ownership, ports or the database split needs a superseding ADR.
 - Only `backend` and `desktop` exist; no code, ports or database named `core` are created by this ADR.
 - Developers with a local volume created before the rename must recreate it once (see README).
+
+## Addendum 2026-11-20: `core-mcp-claims`
+
+- The module `core-mcp` (package `coremcp`) exists: a Spring Boot application with the Spring AI MCP server starter, serving MCP over Streamable HTTP at `/mcp` on port 8081, which is now in use. It depends on no other module and none depends on it.
+- The database `core` exists in the same PostgreSQL. `compose.yaml` creates it on a fresh volume through an init script in `compose/postgres-init`; an existing volume gets it with the README's `createdb` one-off. `core-mcp` owns its tables, migrations and seed fixtures; `backend` still never reads it.
+- `core-mcp` has no Docker Compose lifecycle support (no `spring-boot-docker-compose`): Boot would take the connection details from the compose service, whose database is `backend`, and override the `core` URL. Developers start the database with `docker compose up -d` before `:core-mcp:bootRun`.
+

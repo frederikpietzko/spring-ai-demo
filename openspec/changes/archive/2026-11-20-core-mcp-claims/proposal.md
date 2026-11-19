@@ -2,7 +2,7 @@
 
 ## Why
 
-The kaiju claims desk needs an insurer core system that the agent can only reach through MCP (ROADMAP.md sections 2 and 4, ADR-0003: "claims data reaches the agent only through MCP"). Every later wave builds on it: the adjuster agent calls its tools (`mcp-tools-and-confirmation`), analytics and fraud checks read its data (`claims-analytics`, `agentic-rag-fraud`), and it becomes the OAuth resource server in `mcp-security`. It also is the repository's first Spring AI MCP server, so it demonstrates `@McpTool` and `@McpResource` over Streamable HTTP. It lands first in wave 1 and has no dependency on the other wave 1 changes.
+The kaiju claims desk needs an insurer core system that the agent can only reach through MCP (ROADMAP.md sections 2 and 4, ADR-0003: "claims data reaches the agent only through MCP"). Every later wave builds on it: the adjuster agent calls its tools (`mcp-tools-and-confirmation`), analytics and fraud checks read its data (`claims-analytics`, `agentic-rag-fraud`), and it becomes the OAuth resource server in `mcp-security`. It also is the repository's first Spring AI MCP server, so it demonstrates `@McpTool` and `@McpResource` over Streamable HTTP. It is the last change of wave 1: `chat-streaming` and `policy-rag` are merged, and this change needs no code of either (it only has to agree with the policy wording's vocabulary, see design D14).
 
 ## What Changes
 
@@ -13,7 +13,7 @@ The kaiju claims desk needs an insurer core system that the agent can only reach
 - A test harness for the module analogous to ADR-0004: one shared application context on a real PostgreSQL (Testcontainers), MCP tools and resources tested end to end through the MCP SDK client against the running server on a real port. No chat model exists in this module, so no fake is needed.
 - `compose.yaml` creates the second database `core` in the same PostgreSQL through an init script; the README explains the one-off `createdb` for an existing volume and that a fresh volume must be started from the repository root (from the symlinked `backend/` directory Compose does not find the init directory).
 - `backend` and `core-mcp` stay independent of each other (no module edge in either direction), checked once by inspecting the module dependencies; no ArchUnit rule, because it could only fail through a contrived probe.
-- Docs: README (module, commands, ports, variables, seed data, schema workflow per module), ADR-0003 and ADR-0004 get short dated addenda (module now exists, `core` database now exists, no Docker Compose lifecycle support in `core-mcp`, module test harness), `CLAUDE.md` module list, ROADMAP checkbox.
+- Docs: README (module, commands, ports, variables, seed data, schema workflow per module, and the two sentences that were only true for the backend), ADR-0003 and ADR-0004 get a status-line note and a short dated addendum each (module now exists, `core` database now exists, no Docker Compose lifecycle support in `core-mcp`, module test harness), `CLAUDE.md` module list and status line, ROADMAP checkbox.
 
 ## Capabilities
 

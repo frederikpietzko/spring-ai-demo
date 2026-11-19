@@ -1,0 +1,26 @@
+server:
+  # ADR-0003: the backend uses 8080, the insurer core system 8081.
+  port: 8081
+
+spring:
+  application:
+    name: core-mcp
+  datasource:
+    # Local-development defaults only; the database `core` lives in the PostgreSQL of compose.yaml (ADR-0003).
+    url: ${CORE_DB_URL:jdbc:postgresql://localhost:5432/core}
+    username: ${DB_USER:demo}
+    password: ${DB_PASSWORD:demo}
+  exposed:
+    # The schema is created by Flyway migrations only, never by Exposed at startup.
+    generate-ddl: false
+  ai:
+    mcp:
+      server:
+        # Without this the auto-configuration picks the deprecated SSE transport. Endpoint: /mcp (the default).
+        protocol: STREAMABLE
+        name: core-mcp
+        version: 1.0.0
+        type: SYNC
+        instructions: >-
+          Insurer core system of the kaiju claims desk: look up policies, read, file and update claims, issue payouts.
+          All amounts are whole minor units of one fictional currency.
