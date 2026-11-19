@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines how the adjuster agent works with the insurer core system: it calls the core tools through the MCP client, the caller identity travels in the tool context and never in a message, the tool names are not rewritten, and the payout needs a human decision that pauses and then resumes or stops the tool loop.
+Defines how the adjuster agent works with the insurer core system: it calls the core tools through the MCP client, the caller identity travels in the tool context and never in a message, the tool names are not rewritten, and the payout and the approval of a claim need a human decision that pauses and then resumes or stops the tool loop.
 
 ## Requirements
 
@@ -44,7 +44,7 @@ The core tools SHALL be offered to the model under exactly the names the core sy
 - **THEN** the request fails with an error naming the duplicate tool and the model receives no prompt
 
 ### Requirement: The core connection is configured by property and starts lazily
-The backend SHALL connect to the core system over Streamable HTTP with one connection per persona, `core-adjuster` and `core-claimant`, at `http://localhost:8081` by default (`CORE_MCP_URL`), and SHALL offer each connection's tools as its own provider, `adjusterCoreTools` and `claimantCoreTools`. It SHALL start without the core system and the auth-server and connect on the first request that needs the tools. Only the adjuster agent uses a provider.
+The backend SHALL connect to the core system over Streamable HTTP with one connection per persona, `core-adjuster` and `core-claimant`, at `http://localhost:8081` by default (`CORE_MCP_URL`), and SHALL offer each connection's tools as its own provider, `adjusterCoreTools` and `claimantCoreTools`. It SHALL start without the core system and the auth-server and connect on the first request that needs the tools. Only the adjuster agent uses a provider; the claim intake files confirmed claims over the `core-claimant` connection directly (claim-intake).
 
 #### Scenario: Committed configuration points at the core
 - **WHEN** the committed configuration is loaded with the MCP client auto-configurations
@@ -73,12 +73,31 @@ A model reply that requests the tool `issuePayout` SHALL NOT run any tool call o
 - **WHEN** the committed configuration is loaded with the tool-calling auto-configuration and its tool calling manager is asked to execute a reply with an `issuePayout` call and, in another run, a reply with a `getClaim` call, with callbacks for both tools in the prompt options
 - **THEN** the manager refuses the `issuePayout` reply because it needs a confirmation and runs the `getClaim` call
 
+### Requirement: Approving a claim waits for a human decision
+A model reply that requests `updateClaimStatus` with the status `APPROVED` SHALL pause exactly like a payout request: no tool call of the reply runs, and the stream ends with one confirmation-request event naming `updateClaimStatus` with its arguments. A `updateClaimStatus` call to any other status SHALL run without a confirmation. Arguments that cannot be read SHALL count as an approval. Denying an approval SHALL give the model the text "The adjuster did not approve this call." as the tool result (a denied payout keeps its own text), so the model cannot make a claim payable on its own.
+
+#### Scenario: Approving pauses the loop
+- **WHEN** the model requests `updateClaimStatus` with `{"claimNumber":4711,"status":"APPROVED"}` and a client posts an adjuster request
+- **THEN** the events are exactly one confirmation-request event naming `updateClaimStatus` with those arguments, and no core tool ran
+
+#### Scenario: Moving a claim to review needs no confirmation
+- **WHEN** the model requests `updateClaimStatus` with `{"claimNumber":4711,"status":"UNDER_REVIEW"}` and then replies "Claim 4711 is under review."
+- **THEN** `updateClaimStatus` ran once with the adjuster identity and the events are that text delta and done
+
+#### Scenario: Denying an approval
+- **WHEN** an approval of claim 4711 is pending, the model is scripted to reply "Not approved." and a client posts a decision with that id and approved false
+- **THEN** no core tool ran, the last prompt received by the model holds the tool result "The adjuster did not approve this call.", and the events are the text delta "Not approved." and done
+
 ### Requirement: Approving runs the payout exactly once and continues the answer
-A decision request that approves a pending confirmation SHALL run the paused tool calls once (the calls that wait for the decision on its approval, every other call of the paused reply as it would run without a pause), hand the results to the model and stream its answer, ending with done. The pending confirmation SHALL be consumed by the decision, so the same id cannot run the tools again.
+A decision request that approves a pending confirmation SHALL run the paused tool calls once (the calls that wait for the decision on its approval, every other call of the paused reply as it would run without a pause), hand the results to the model and stream its answer, ending with done. The continuation SHALL be the whole turn so far: the user message, every tool round that ran before the pause in the same turn (the model's tool calls and their results), the paused reply and its tool results. The pending confirmation SHALL be consumed by the decision, so the same id cannot run the tools again.
 
 #### Scenario: Approve runs the payout once
 - **WHEN** a payout confirmation is pending, the model is scripted to reply with the chunks "Paid " and "out" and a client posts a decision with that id and approved true
 - **THEN** `issuePayout` ran exactly once, the events are text delta "Paid ", text delta "out" and done, and the prompt of the continuation contains the tool result of the payout
+
+#### Scenario: The continuation sees the tool rounds before the pause
+- **WHEN** the model first requests `getClaim` for claim 4711, then `issuePayout` for claim 4711, the request pauses, the model is scripted to reply "Paid out." and a client approves
+- **THEN** the prompt of the continuation holds one system message, the user message "Pay out claim 4711" once, the assistant tool calls `getClaim` and `issuePayout` in that order and a tool result for each of them
 
 #### Scenario: Replaying a decision does nothing
 - **WHEN** the same decision is posted a second time
@@ -151,7 +170,7 @@ When a `payoutStats` call of the model succeeds, the backend SHALL emit one `Ana
 
 #### Scenario: Core tools are offered once
 - **WHEN** an adjuster request is answered
-- **THEN** the tool callbacks in the options of the prompt received by the model are named exactly `getClaim`, `issuePayout`, `countClaims`, `payoutStats`, `searchSightingBulletins`, `Skill`, `TodoWrite` and `Task`, each once
+- **THEN** the tool callbacks in the options of the prompt received by the model are named exactly `getClaim`, `updateClaimStatus`, `issuePayout`, `countClaims`, `payoutStats`, `searchSightingBulletins`, `Skill`, `TodoWrite` and `Task`, each once
 
 ### Requirement: The adjuster knows today's date and takes numbers from the analytics tools
 The adjuster system prompt SHALL state today's date (UTC, ISO format) on every request, so "this month" and "yesterday" can be turned into a period, and SHALL tell the model to answer questions about counts, payouts and statistics with `countClaims` and `payoutStats` and never to compute or estimate them itself.

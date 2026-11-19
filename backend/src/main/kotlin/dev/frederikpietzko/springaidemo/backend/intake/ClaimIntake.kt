@@ -58,13 +58,18 @@ class ClaimIntake(
 
     /**
      * Files the prepared claim of conversation [conversationId] and forgets it. Nothing prepared is rejected; a claim
-     * the filing refuses stays prepared.
+     * the filing refuses stays prepared, and so does one whose filing fails (the core system is unreachable), which
+     * then throws.
      */
     fun confirm(conversationId: String): FilingResult {
         val claim = preparedClaims.remove(conversationId) ?: return FilingResult.Rejected(NO_PREPARED_CLAIM)
-        val result = claimFiling.file(claim)
-        if (result is FilingResult.Rejected) preparedClaims[conversationId] = claim
-        return result
+        var filed = false
+        try {
+            return claimFiling.file(claim).also { filed = it is FilingResult.Filed }
+        } finally {
+            // Refused or failed: the claim stays prepared, unless a prepare that ran meanwhile made a newer card.
+            if (!filed) preparedClaims.putIfAbsent(conversationId, claim)
+        }
     }
 
     private fun extractAndValidate(history: List<Message>): IntakeResult {

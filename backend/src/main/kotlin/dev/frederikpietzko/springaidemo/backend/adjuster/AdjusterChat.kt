@@ -15,7 +15,13 @@ import kotlinx.coroutines.reactive.asFlow
 import kotlinx.coroutines.withContext
 import org.springaicommunity.agent.tools.TodoWriteTool
 import org.springframework.ai.chat.client.ChatClient
+import org.springframework.ai.chat.client.ChatClientRequest
+import org.springframework.ai.chat.client.ChatClientResponse
+import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor
+import org.springframework.ai.chat.client.advisor.api.StreamAdvisor
+import org.springframework.ai.chat.client.advisor.api.StreamAdvisorChain
 import org.springframework.ai.chat.messages.Message
+import org.springframework.ai.chat.messages.SystemMessage
 import org.springframework.ai.chat.messages.UserMessage
 import org.springframework.ai.chat.model.ChatResponse
 import org.springframework.ai.chat.prompt.Prompt
@@ -29,6 +35,7 @@ import org.springframework.ai.tool.ToolCallbackProvider
 import org.springframework.beans.factory.annotation.Qualifier
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import reactor.core.publisher.Flux
 import tools.jackson.databind.json.JsonMapper
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -43,7 +50,13 @@ private val log = LoggerFactory.getLogger(AdjusterChat::class.java)
 val ADJUSTER_IDENTITY: Map<String, Any> = mapOf("actor" to "adjuster-agent")
 
 /** What the model receives as the result of a payout the adjuster denied. */
-private const val DENIED = "The adjuster did not approve this payout."
+private const val DENIED_PAYOUT = "The adjuster did not approve this payout."
+
+/** What the model receives as the result of any other call the adjuster denied (approving a claim). */
+private const val DENIED = "The adjuster did not approve this call."
+
+/** The core tool that pays out a claim. */
+private const val ISSUE_PAYOUT = "issuePayout"
 
 /** The answer to a decision on an unknown id, or on one that was decided already. */
 private const val NOTHING_WAITING = "Nothing is waiting for this decision."
@@ -53,8 +66,8 @@ private const val NOTHING_WAITING = "Nothing is waiting for this decision."
  * `Task` tool that delegates to its subagents and its own todo list, as a stream of chat events: text deltas, a
  * [ChatEvent.TodoUpdate] for every todo write, an [ChatEvent.AnalyticsTable] for each successful `payoutStats` call of
  * a turn (not one in a batch [decide] resumes), and a [ChatEvent.ConfirmationRequest] when the reply calls a tool
- * needing confirmation (`issuePayout`); the paused reply waits in [PendingConfirmations] until [decide] runs or skips
- * its tool calls and continues the reply.
+ * needing confirmation (`issuePayout`, or `updateClaimStatus` to `APPROVED`); the paused reply waits in
+ * [PendingConfirmations] until [decide] runs or skips its tool calls and continues the reply.
  */
 @Service
 class AdjusterChat(
@@ -100,10 +113,15 @@ class AdjusterChat(
      * bulletin search and `Task`) and the tool context again: a tool missing here fails with "No ToolCallback found".
      */
     private fun runToolCalls(paused: PausedTurn, approved: Boolean, todoWrite: TodoWriteTool): List<Message> {
-        val keys = ToolCallDecisions.toolCallKeys(checkNotNull(paused.reply.result) { "paused reply" }.output)
+        val reply = checkNotNull(paused.reply.result) { "paused reply" }.output
+        val keys = ToolCallDecisions.toolCallKeys(reply)
         val waiting = ToolCallDecisions.awaitingDecision(paused.reply)
-        val decisions = keys.map { key ->
-            if (approved || key !in waiting) ToolCallDecision.allow(key) else ToolCallDecision.deny(key, DENIED)
+        val decisions = keys.mapIndexed { index, key ->
+            when {
+                approved || key !in waiting -> ToolCallDecision.allow(key)
+                reply.toolCalls[index].name() == ISSUE_PAYOUT -> ToolCallDecision.deny(key, DENIED_PAYOUT)
+                else -> ToolCallDecision.deny(key, DENIED)
+            }
         }
         val options = ToolCallingChatOptions.builder()
             .toolCallbacks(
@@ -133,18 +151,20 @@ class AdjusterChat(
      */
     private fun turn(conversation: List<Message>): Flow<ChatEvent> =
         channelFlow {
+            val rounds = RoundCapture()
             adjusterChatClient.prompt()
                 .system { it.param("today", LocalDate.now(ZoneOffset.UTC).toString()) }
                 .messages(conversation)
                 .tools(coreToolsWithTables(), todoWriteTool(channel))
                 .toolContext(ADJUSTER_IDENTITY)
+                .advisors(rounds)
                 .stream()
                 .chatResponse()
                 .asFlow()
                 .collect { response ->
                     val text = response.result?.output?.text
                     when {
-                        ToolCallDecisions.isAwaitingDecision(response) -> send(pause(conversation, response))
+                        ToolCallDecisions.isAwaitingDecision(response) -> send(pause(rounds.conversation, response))
                         !text.isNullOrEmpty() -> send(ChatEvent.TextDelta(text))
                     }
                 }
@@ -177,7 +197,10 @@ class AdjusterChat(
         trySend(table).onFailure { log.warn("The analytics table did not reach the reply", it) }
     }
 
-    /** Keeps the paused [reply] and names the first tool call that waits for a decision. */
+    /**
+     * Keeps the paused [reply] with the [conversation] it answers (the tool rounds of the turn before the pause
+     * included) and names the first tool call that waits for a decision.
+     */
     private fun pause(conversation: List<Message>, reply: ChatResponse): ChatEvent.ConfirmationRequest {
         val toolCalls = checkNotNull(reply.result) { "a paused reply has a generation" }.output
         val waiting = ToolCallDecisions.toolCallKeys(toolCalls)
@@ -185,5 +208,29 @@ class AdjusterChat(
         val call = toolCalls.toolCalls[waiting]
         val confirmationId = pendingConfirmations.add(PausedTurn(conversation, reply))
         return ChatEvent.ConfirmationRequest(confirmationId, call.name(), call.arguments())
+    }
+}
+
+/**
+ * Records what the model is asked in each round of one adjuster turn. It sits inside the tool-calling loop, which runs
+ * every round through the rest of the chain with the conversation so far: the user message, then each earlier reply
+ * with its tool calls and their results. So the last round's messages are the conversation a paused reply answers;
+ * without them a resumed turn would see only the original message and the paused calls, and the model would describe
+ * the earlier tool rounds as never having happened. One instance per turn: it holds that turn's state.
+ */
+private class RoundCapture : StreamAdvisor {
+    @Volatile
+    private var instructions: List<Message> = []
+
+    /** The messages of the latest round without the system message, which every turn adds again itself. */
+    val conversation: List<Message> get() = instructions.filterNot { it is SystemMessage }
+
+    override fun getName(): String = "RoundCapture"
+
+    override fun getOrder(): Int = ToolCallingAdvisor.DEFAULT_ORDER + 1
+
+    override fun adviseStream(request: ChatClientRequest, chain: StreamAdvisorChain): Flux<ChatClientResponse> {
+        instructions = request.prompt().instructions
+        return chain.nextStream(request)
     }
 }

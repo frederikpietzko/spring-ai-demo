@@ -81,7 +81,7 @@ class AdjusterTodoTest {
         assertEquals(
             [
                 "Skill", "Task", "TodoWrite", "countClaims", "getClaim", "issuePayout", "payoutStats",
-                "searchSightingBulletins",
+                "searchSightingBulletins", "updateClaimStatus",
             ],
             toolNames(0).sorted(),
         )

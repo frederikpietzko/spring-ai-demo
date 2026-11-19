@@ -95,7 +95,7 @@ class AdjusterAnalyticsTest {
         assertEquals(
             [
                 "Skill", "Task", "TodoWrite", "countClaims", "getClaim", "issuePayout", "payoutStats",
-                "searchSightingBulletins",
+                "searchSightingBulletins", "updateClaimStatus",
             ],
             options.toolCallbacks.orEmpty().map { it.toolDefinition.name() }.sorted(),
         )

@@ -105,7 +105,7 @@ When a claimant request has the action `CONFIRM_CLAIM`, the backend SHALL file t
 
 #### Scenario: Prepared claim is filed
 - **WHEN** a conversation is prepared to a claim card and then confirmed
-- **THEN** the filing port received exactly the claim of the card once, and the events are one text delta containing the claim number, then done
+- **THEN** the core system received exactly the claim of the card once, and the events are one text delta containing the claim number the core assigned, then done
 
 #### Scenario: Nothing to confirm
 - **WHEN** a conversation without a prepared claim is confirmed, or a filed claim is confirmed a second time
@@ -115,16 +115,28 @@ When a claimant request has the action `CONFIRM_CLAIM`, the backend SHALL file t
 - **WHEN** one conversation is prepared and another conversation is confirmed
 - **THEN** the second confirmation files nothing and the first claim is still prepared
 
-### Requirement: Filing is behind a port with a local adapter
-Filing SHALL go through a `ClaimFiling` port that returns either the new claim number or a refusal reason. The only adapter in this change SHALL keep filed claims in memory, assign claim numbers from 4714 upward, and refuse the one obviously fake policy number marker: a policy number ending in `-0000`. A refused claim SHALL stay prepared and the answer SHALL be one text delta with the reason, then done.
+### Requirement: Filing goes to the core system
+Filing SHALL go through a `ClaimFiling` port that returns either the new claim number or a refusal reason. Its adapter SHALL file the claim in the core system with the `fileClaim` MCP tool over the claimant agent's own connection `core-claimant` (so the call carries the claimant's token), with the arguments policy number, district, incident time (ISO-8601 with offset), kaiju class, description and the damage items (category, description, estimated amount in minor units), and with the request `_meta` `actor` `claimant-agent` and `claimantId` 1, the fixed demo claimant (customer 1, owner of `KP-1001`) until end-user login exists. The claim number SHALL be the one the core assigns. A tool result marked as an error SHALL be a refusal whose reason is the core's text; a refused claim SHALL stay prepared and the answer SHALL be one text delta with the reason, then done. When the core cannot be reached, the confirmation SHALL fail with the chat endpoint's generic error event and the claim SHALL stay prepared.
+
+#### Scenario: The core files the claim of the card
+- **WHEN** a claim card for policy `KP-1001`, district `HARBOUR`, incident `2026-11-19T15:00:00Z`, kaiju class 3 and one `VEHICLE` item "Car roof" of 800000 is confirmed
+- **THEN** the core's `fileClaim` tool received exactly those arguments, with the incident time `2026-11-19T15:00:00Z`, and the `_meta` `actor` `claimant-agent` and `claimantId` 1, and the claim number of the answer is the one the core returned
 
 #### Scenario: Refused policy
-- **WHEN** a claim for policy `KP-0000` is prepared and confirmed
-- **THEN** nothing is filed, the answer is one text delta that mentions `KP-0000`, and confirming again gives the same refusal instead of "no prepared claim"
+- **WHEN** a claim for policy `KP-0000`, which the core does not know, is prepared and confirmed
+- **THEN** nothing is filed, the answer is one text delta that holds the core's reason "Policy KP-0000 not found", and confirming again gives the same refusal instead of "no prepared claim"
 
-#### Scenario: Claim numbers are distinct
+#### Scenario: Claim numbers come from the core
 - **WHEN** two claims are filed
-- **THEN** their claim numbers are different and both are at least 4714
+- **THEN** their claim numbers are the two different numbers the core assigned
+
+#### Scenario: The core is unreachable
+- **WHEN** a prepared claim is confirmed while the core system cannot be reached, and confirmed again once it can
+- **THEN** the first answer is only the generic error event, which does not contain the failure's text, and the second answer holds the claim number the core assigned
+
+#### Scenario: Claims go over the claimant connection
+- **WHEN** the committed MCP client configuration files a claim against a stub core system that records the `Authorization` header
+- **THEN** the request carried the bearer token of `claimant-agent`
 
 ### Requirement: Claim actions belong to the claimant persona
 The actions `PREPARE_CLAIM` and `CONFIRM_CLAIM` SHALL be answered only for persona `CLAIMANT`; persona `ADJUSTER` SHALL get a single error event that names the persona and no model call for these actions (its messages are answered by the adjuster agent). For persona `CLAIMANT` these actions SHALL bypass the claimant agent: only action `MESSAGE` is answered by the claimant agent as the model's streamed reply.

@@ -30,6 +30,8 @@ The demo is a fictional kaiju insurance claims desk: claimants report damage in 
 `backend` never reads the core database. Claims data reaches the agent only through MCP tools and resources served by `core-mcp`. The security story relies on this boundary: the core system, not the agent, enforces what a token may do.
 
 > Note 2026-11-20 (`claim-intake`): `InMemoryClaimFiling` keeps the claims the claimant confirmed in the backend's memory and numbers them itself. It is a temporary stand-in behind the `ClaimFiling` port, until the backend has an MCP client: after the tracks merge it is replaced by an adapter that calls the `fileClaim` MCP tool of `core-mcp`, and this boundary holds again.
+>
+> Note 2026-11-20 (end-to-end fixes): done. `CoreClaimFiling` files a confirmed claim with `fileClaim` over the claimant connection `core-claimant` (ADR-0009); the core assigns the claim number. `InMemoryClaimFiling` is gone.
 
 ### One PostgreSQL, two databases
 

@@ -5,7 +5,10 @@ import dev.frederikpietzko.springaidemo.backend.testsupport.FakeCoreTools
 import dev.frederikpietzko.springaidemo.backend.testsupport.IntegrationTest
 import dev.frederikpietzko.springaidemo.backend.testsupport.sseEvents
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
+import org.springframework.ai.chat.messages.AssistantMessage
+import org.springframework.ai.chat.messages.SystemMessage
 import org.springframework.ai.chat.messages.ToolResponseMessage
+import org.springframework.ai.chat.messages.UserMessage
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -44,6 +47,42 @@ class AdjusterConfirmationTest {
     }
 
     @Test
+    fun `approving a claim pauses the loop like a payout and changes no status`() {
+        fake.requestTool("updateClaimStatus", APPROVE_4711)
+
+        val events = postChat(ADJUSTER_PAY_4711)
+
+        val pause = assertIs<ChatEvent.ConfirmationRequest>(events.single())
+        assertEquals("updateClaimStatus", pause.toolName)
+        assertEquals(APPROVE_4711, pause.arguments)
+        assertEquals([], coreTools.calls)
+    }
+
+    @Test
+    fun `moving a claim to review needs no confirmation`() {
+        fake.requestTool("updateClaimStatus", """{"claimNumber":4711,"status":"UNDER_REVIEW"}""")
+        fake.replyChunks("Claim 4711 is under review.")
+
+        val events = postChat(ADJUSTER_PAY_4711)
+
+        assertEquals([ChatEvent.TextDelta("Claim 4711 is under review."), ChatEvent.Done], events)
+        assertEquals([FakeCoreTools.Call("updateClaimStatus", 4711, IDENTITY)], coreTools.calls)
+    }
+
+    @Test
+    fun `denying an approval changes no status and tells the model it was not approved`() {
+        fake.requestTool("updateClaimStatus", APPROVE_4711)
+        val pause = assertIs<ChatEvent.ConfirmationRequest>(postChat(ADJUSTER_PAY_4711).single())
+        fake.reply("Not approved.")
+
+        val events = decide(pause.confirmationId, approved = false)
+
+        assertEquals([ChatEvent.TextDelta("Not approved."), ChatEvent.Done], events)
+        assertEquals([], coreTools.calls)
+        assertEquals("The adjuster did not approve this call.", lastToolResult())
+    }
+
+    @Test
     fun `a read-only tool runs without a confirmation`() {
         fake.requestTool("getClaim", CLAIM_4711)
         fake.replyChunks("Claim 4711 is filed.")
@@ -66,6 +105,23 @@ class AdjusterConfirmationTest {
         val payouts = coreTools.calls.filter { it.tool == "issuePayout" }
         assertEquals([FakeCoreTools.Call("issuePayout", 4711, IDENTITY)], payouts)
         assertTrue(lastToolResult().contains("754500"), lastToolResult())
+    }
+
+    @Test
+    fun `the continuation after a decision carries the tool rounds before the pause`() {
+        fake.requestTool("getClaim", CLAIM_4711)
+        val confirmationId = pauseForPayout()
+        fake.reply("Paid out.")
+
+        val _ = decide(confirmationId, approved = true)
+
+        val continuation = fake.prompts.last().instructions
+        val toolCalls = continuation.filterIsInstance<AssistantMessage>().flatMap { it.toolCalls.map { it.name() } }
+        val toolResults = continuation.filterIsInstance<ToolResponseMessage>().flatMap { it.responses.map { it.name } }
+        assertEquals(["getClaim", "issuePayout"], toolCalls)
+        assertEquals(["getClaim", "issuePayout"], toolResults)
+        assertEquals(1, continuation.filterIsInstance<SystemMessage>().size, continuation.toString())
+        assertEquals(["Pay out claim 4711"], continuation.filterIsInstance<UserMessage>().map { it.text })
     }
 
     @Test
@@ -192,6 +248,7 @@ class AdjusterConfirmationTest {
     private companion object {
         const val ADJUSTER_PAY_4711 = """{"persona":"ADJUSTER","message":"Pay out claim 4711"}"""
         const val CLAIM_4711 = """{"claimNumber":4711}"""
+        const val APPROVE_4711 = """{"claimNumber":4711,"status":"APPROVED"}"""
         const val SALTMARSH_SEARCH = """{"query":"kaiju sighting","from":"2026-11-18T13:00:00Z",""" +
             """"to":"2026-11-18T17:00:00Z","place":"SALTMARSH"}"""
         val IDENTITY: Map<String, Any?> = mapOf("actor" to "adjuster-agent")

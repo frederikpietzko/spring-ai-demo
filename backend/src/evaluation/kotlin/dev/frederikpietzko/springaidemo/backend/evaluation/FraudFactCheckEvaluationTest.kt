@@ -23,7 +23,7 @@ import kotlin.test.fail
 /**
  * The real fraud check assesses the three seed claims; a judge model checks every cited finding against the claim's
  * facts and the full text of the cited bulletin (its header holds the time and place). The evaluator gives no
- * feedback, so the messages carry the claim, the bulletin id and the finding.
+ * feedback, so the messages carry the claim, the bulletin id, the finding and the judge's raw answer ([JudgeAnswers]).
  */
 @RealModelEvaluation
 class FraudFactCheckEvaluationTest {
@@ -36,12 +36,15 @@ class FraudFactCheckEvaluationTest {
     @Autowired
     private lateinit var factChecking: FactCheckingEvaluator
 
+    @Autowired
+    private lateinit var judgeAnswers: JudgeAnswers
+
     @ParameterizedTest
     @ValueSource(longs = [4711, 4712, 4713])
     fun `every cited finding is supported by the cited bulletin`(claimNumber: Long) {
         val assessment = assessed(claimNumber)
 
-        val unsupported = assessment.evidence.filterNot { supported(claimNumber, it) }
+        val unsupported = assessment.evidence.mapNotNull { unsupported(claimNumber, it) }
 
         assertTrue(unsupported.isEmpty(), "Claim $claimNumber, findings not supported by their bulletin: $unsupported")
     }
@@ -67,16 +70,21 @@ class FraudFactCheckEvaluationTest {
 
         val evaluation = factChecking.evaluate(EvaluationRequest(documents(4711, "SB-102"), falseFinding))
 
-        assertFalse(evaluation.isPass, "Judged supported.\nClaim: 4711\nFinding: $falseFinding")
+        assertFalse(
+            evaluation.isPass,
+            "Judged supported.\nClaim: 4711\nFinding: $falseFinding\nJudge: ${judgeAnswers.last}",
+        )
     }
 
     private fun assessed(claimNumber: Long): FraudAssessment =
         assertIs<FraudCheckResult.Assessed>(fraudCheck.assess(claimNumber), "Claim $claimNumber: unreadable").assessment
 
-    private fun supported(claimNumber: Long, evidence: Evidence): Boolean {
+    /** `null` when the judge supports [evidence], else the evidence with the judge's raw answer. */
+    private fun unsupported(claimNumber: Long, evidence: Evidence): String? {
         val (bulletinId, finding) = evidence
         val claim = "$bulletinId: $finding"
-        return factChecking.evaluate(EvaluationRequest(documents(claimNumber, bulletinId), claim)).isPass
+        val evaluation = factChecking.evaluate(EvaluationRequest(documents(claimNumber, bulletinId), claim))
+        return if (evaluation.isPass) null else "$evidence (judge: ${judgeAnswers.last})"
     }
 
     /** The claim's facts and the complete text of the cited bulletin file; a cited id without a file fails. */

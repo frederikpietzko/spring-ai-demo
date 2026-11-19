@@ -43,7 +43,8 @@ class FakeCoreToolsTest {
         assertTrue(context.getBeansOfType(McpSyncClient::class.java).isEmpty())
         assertFalse(context.containsBean("mcpSyncClients"))
         assertFalse(adjusterCoreTools is SyncMcpToolCallbackProvider)
-        val coreToolNames: Set<String> = ["getClaim", "issuePayout", "countClaims", "payoutStats"]
+        val coreToolNames: Set<String> =
+            ["getClaim", "updateClaimStatus", "issuePayout", "countClaims", "payoutStats"]
         assertEquals(coreToolNames, adjusterCoreTools.toolCallbacks.map { it.toolDefinition.name() }.toSet())
     }
 

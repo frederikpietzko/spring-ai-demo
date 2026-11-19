@@ -3,6 +3,7 @@ package dev.frederikpietzko.springaidemo.backend.fraud
 import dev.frederikpietzko.springaidemo.backend.springai.entity
 import org.slf4j.LoggerFactory
 import org.springframework.ai.chat.client.ChatClient
+import org.springframework.ai.chat.client.advisor.StructuredOutputValidationAdvisor
 import org.springframework.ai.tool.ToolCallbackProvider
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
@@ -18,6 +19,12 @@ private val log = LoggerFactory.getLogger(FraudCheck::class.java)
  * tools are the adjuster connection's, whose token proves the persona to the core (ADR-0009).
  */
 private val ADJUSTER_IDENTITY: Map<String, Any> = mapOf("actor" to "adjuster-agent")
+
+/**
+ * How often a final reply that does not match the assessment's JSON schema (a missing `verdict`, say) is asked for
+ * again, with the validation error appended to the user message. One retry: the error names the missing field.
+ */
+private const val ASSESSMENT_RETRIES = 1
 
 /** The only core tool the fraud check may call: it reads, it never changes a claim or pays. */
 private const val READ_ONLY_CORE_TOOL = "getClaim"
@@ -39,14 +46,24 @@ class FraudCheck(
         coreTools.toolCallbacks.filter { it.toolDefinition.name() == READ_ONLY_CORE_TOOL }.toTypedArray()
     }
 
+    /**
+     * The schema check sits inside the tool loop (its default order), so it sees each round, lets tool-call rounds
+     * through and checks only the final reply.
+     */
     private val chatClient = builder
         .defaultSystem(systemPrompt, Charsets.UTF_8)
         .defaultTools(readOnlyCoreTools, sightingBulletinSearch)
+        .defaultAdvisors(
+            StructuredOutputValidationAdvisor.builder()
+                .outputType(FraudAssessment::class.java)
+                .maxRepeatAttempts(ASSESSMENT_RETRIES)
+                .build(),
+        )
         .build()
 
     /**
-     * Assesses claim [claimNumber]. A reply that is no fraud assessment is [FraudCheckResult.Unreadable]; a failing
-     * model call throws.
+     * Assesses claim [claimNumber]. A final reply that does not match the assessment's schema is asked for once more;
+     * one that is still no fraud assessment is [FraudCheckResult.Unreadable]. A failing model call throws.
      */
     fun assess(claimNumber: Long): FraudCheckResult {
         val assessment = try {

@@ -2,6 +2,7 @@ package dev.frederikpietzko.springaidemo.backend.adjuster
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import dev.frederikpietzko.springaidemo.backend.intake.ClaimantCore
 import dev.frederikpietzko.springaidemo.backend.testsupport.FakeCoreTools
 import io.modelcontextprotocol.spec.McpSchema
 import org.springframework.ai.chat.messages.AssistantMessage
@@ -124,6 +125,19 @@ class McpClientWiringTest {
 
                 assertEquals("Bearer t-$ADJUSTER", adjusterRequests.firstOrNull())
                 assertEquals("Bearer t-$CLAIMANT", claimantRequests.firstOrNull())
+            }
+        }
+    }
+
+    @Test
+    fun `claims are filed over the claimant connection with the claimant's token`() {
+        StubAuthServerAndCore().use { stub ->
+            runner.withPropertyValues(*stub.urls).run { context ->
+                val core = context.getBean(ClaimantCore::class.java)
+
+                assertFails { core.callTool(McpSchema.CallToolRequest.builder("fileClaim").build()) }
+
+                assertEquals("Bearer t-$CLAIMANT", stub.coreAuthorizations.firstOrNull())
             }
         }
     }

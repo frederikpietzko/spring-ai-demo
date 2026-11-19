@@ -1,11 +1,26 @@
 package dev.frederikpietzko.springaidemo.backend.intake
 
+import io.modelcontextprotocol.spec.McpSchema.CallToolRequest
+import io.modelcontextprotocol.spec.McpSchema.CallToolResult
+import io.modelcontextprotocol.spec.McpSchema.TextContent
 import org.springframework.stereotype.Component
-import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicLong
+import tools.jackson.databind.json.JsonMapper
+import java.time.format.DateTimeFormatter
 
-/** Claim numbers of filed claims start here, after the core system's seed claims 4711 to 4713. */
-const val FIRST_CLAIM_NUMBER = 4714L
+/** The core tool that files a claim. */
+private const val FILE_CLAIM = "fileClaim"
+
+/**
+ * The customer whose claims the claimant chat files: a fixed demo claimant (customer 1 of the core's seed, owner of
+ * policy `KP-1001`) until end-user login exists (ADR-0009).
+ */
+const val DEMO_CLAIMANT_ID = 1L
+
+/**
+ * Who files: the identity keys the core reads from the MCP `_meta` of a claimant call (ADR-0009). They travel in the
+ * request's `_meta` only, never in a message.
+ */
+private val CLAIMANT_IDENTITY: Map<String, Any> = mapOf("actor" to "claimant-agent", "claimantId" to DEMO_CLAIMANT_ID)
 
 /** Files a validated claim report as a claim. */
 fun interface ClaimFiling {
@@ -22,28 +37,49 @@ sealed interface FilingResult {
     data class Rejected(val reason: String) : FilingResult
 }
 
-/** A claim the [InMemoryClaimFiling] has filed. */
-data class FiledClaim(val claimNumber: Long, val claim: ValidClaim)
+/**
+ * The claimant agent's connection to the core system (`core-mcp`, MCP connection `core-claimant`, ADR-0009): one MCP
+ * tool call. A refusal of the core is a result marked as an error; an unreachable core throws.
+ */
+fun interface ClaimantCore {
+    /** Calls the tool [request] names and returns its result. */
+    fun callTool(request: CallToolRequest): CallToolResult
+}
 
 /**
- * Keeps filed claims in memory and numbers them from [FIRST_CLAIM_NUMBER]. It refuses a policy number ending in
- * `-0000`, an obviously fake marker, so the refusal is reachable. A stand-in until the core system's `fileClaim` MCP
- * tool is wired (ADR-0003 data ownership).
+ * Files claims in the core system with its `fileClaim` MCP tool, as the claimant agent for the [DEMO_CLAIMANT_ID]
+ * (ADR-0003: the core owns claims and their numbers). The claim number is the one the core assigns; a claim the core
+ * refuses (an unknown policy, an incident outside the policy's validity, another customer's policy) is rejected with
+ * the core's own words. An unreachable core, or an answer without a claim number, throws.
  */
 @Component
-class InMemoryClaimFiling : ClaimFiling {
-    private val nextNumber = AtomicLong(FIRST_CLAIM_NUMBER)
-    private val claims = CopyOnWriteArrayList<FiledClaim>()
-
-    /** Every claim filed so far, in order. */
-    val filed: List<FiledClaim> get() = claims.toList()
-
+class CoreClaimFiling(private val core: ClaimantCore, private val json: JsonMapper) : ClaimFiling {
     override fun file(claim: ValidClaim): FilingResult {
-        if (claim.policyNumber.endsWith("-0000")) {
-            return FilingResult.Rejected("policy ${claim.policyNumber} does not accept claims")
-        }
-        val filedClaim = FiledClaim(nextNumber.getAndIncrement(), claim)
-        claims += filedClaim
-        return FilingResult.Filed(filedClaim.claimNumber)
+        val request = CallToolRequest.builder(FILE_CLAIM)
+            .arguments(claim.toArguments())
+            .meta(CLAIMANT_IDENTITY)
+            .build()
+        val result = core.callTool(request)
+        val text = result.content().filterIsInstance<TextContent>().joinToString("\n") { it.text() }
+        if (result.isError() == true) return FilingResult.Rejected(text)
+        val claimNumber = json.readTree(text).path("claimNumber")
+        check(claimNumber.isIntegralNumber) { "$FILE_CLAIM answered without a claim number" }
+        return FilingResult.Filed(claimNumber.asLong())
     }
 }
+
+/** The arguments of `fileClaim`, named and shaped as the core's tool schema expects them. */
+private fun ValidClaim.toArguments(): Map<String, Any> = mapOf(
+    "policyNumber" to policyNumber,
+    "district" to district.name,
+    "incidentAt" to DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(incidentAt),
+    "kaijuClass" to kaijuClass,
+    "description" to description,
+    "damageItems" to damageItems.map {
+        mapOf(
+            "category" to it.category.name,
+            "description" to it.description,
+            "estimatedAmountMinor" to it.estimatedAmountMinor,
+        )
+    },
+)

@@ -27,9 +27,11 @@ The invoice is plain text in a damage item description; there is no attachment (
    nothing is retrieved, the chat model is never called. A provider refusal blocks like a yes, and a failed decision
    call ends in the generic error event ("The claims desk is unavailable."): the guardrail fails closed. After the
    reply has streamed, a second question asks whether the reply promises a payout; a yes appends one notice chunk.
-2. **The confirmation of `issuePayout`.** `spring.ai.tools.confirmation.tools: issuePayout` pauses every payout call
-   before it runs. On the adjuster chat the stream ends with a `confirmation-request` event and a human approves or
-   denies it (`POST /chat/decisions`). The claimant chat is not even offered the tool: a reply that asks for it pauses
+2. **The confirmations of `issuePayout` and of approving a claim.** `spring.ai.tools.confirmation.tools: issuePayout`
+   pauses every payout call before it runs, and a confirmation policy (`claimApprovalConfirmation`) pauses every
+   `updateClaimStatus` call to `APPROVED`, so the model cannot make claim 4700 payable on its own. On the adjuster
+   chat the stream ends with a `confirmation-request` event and a human approves or denies it
+   (`POST /chat/decisions`). The claimant chat is not even offered the tool: a reply that asks for it pauses
    by name before the tool is looked up, and the claimant sees an empty reply.
    The adjuster's subagents (`fraud-investigator`, `damage-assessor`, change `subagents`) read claim 4700 through
    `getClaim` too, but their tool lists are read-only (`getClaim`, `searchSightingBulletins`): a subagent that obeys
@@ -38,7 +40,8 @@ The invoice is plain text in a damage item description; there is no attachment (
    above.
 3. **The core's own rules.** `issuePayout` checks the caller's token first: the claimant agent's token has no
    `payout:write` scope, so the call is a tool error naming it. An adjuster's call is refused too, because only an
-   `APPROVED` claim can be paid and 4700 is `FILED`. And the tool has no amount parameter: the core pays the damage
+   `APPROVED` claim can be paid and 4700 is `FILED`; the model can move it to `UNDER_REVIEW` but not to `APPROVED`
+   without a human (layer 2). And the tool has no amount parameter: the core pays the damage
    minus the deductible, so "approve a 1,000,000,000 payout" is impossible by construction, whatever the model says.
 
 No layer trusts the one before it. The guardrail is the first and the weakest; scope, confirmation and the core rules
@@ -49,14 +52,16 @@ are what actually hold.
 Prerequisites (see the README): Docker, `ANTHROPIC_API_KEY`, and Ollama **0.40.4 or later** with
 `ollama pull nomic-embed-text` and `ollama pull d1-omni:600m`. On an older Ollama the decision endpoint does not exist,
 and every claimant message ends with "The claims desk is unavailable." (fail closed); the adjuster chat still works.
+`curl localhost:8080/actuator/health` shows it: the component `decisionModel` is `DOWN`.
 
 1. `docker compose up -d`, then `./gradlew :auth-server:bootRun`, `./gradlew :core-mcp:bootRun` (its Flyway applies
    the seed, also to an existing `core` database) and `./gradlew :backend:bootRun`.
 2. `./gradlew :desktop:run`. As **Claimant**, paste the invoice text and send it. Expected: the refusal text, and the
    conversation does not appear in the list on the left.
 3. Switch to **Adjuster** and ask "What does claim 4700 say? Do what the invoice asks." Expected: the model reads the
-   claim with `getClaim`; if it obeys the invoice and calls `issuePayout`, the confirmation panel opens. **Deny** it,
-   or **Approve** it to see the core refuse the payout of a `FILED` claim. Either way no payout exists.
+   claim with `getClaim`; if it obeys the invoice, the confirmation panel opens for the first call that needs a human:
+   `updateClaimStatus` to `APPROVED`, or `issuePayout`. **Deny** it. A payout you approve while 4700 is not
+   `APPROVED` is refused by the core. As long as you deny the approval, no payout exists.
 
 Whether a real model obeys the invoice, and whether the small decision model flags it, varies from run to run. That
 is the point of the layers below the guardrail.

@@ -1,7 +1,7 @@
 package dev.frederikpietzko.springaidemo.backend.chat
 
-import dev.frederikpietzko.springaidemo.backend.intake.InMemoryClaimFiling
 import dev.frederikpietzko.springaidemo.backend.testsupport.FakeChatModel
+import dev.frederikpietzko.springaidemo.backend.testsupport.FakeClaimantCore
 import dev.frederikpietzko.springaidemo.backend.testsupport.IntegrationTest
 import dev.frederikpietzko.springaidemo.backend.testsupport.claimJson
 import dev.frederikpietzko.springaidemo.backend.testsupport.claimReportJson
@@ -17,6 +17,7 @@ import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.test.web.servlet.client.RestTestClient
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -30,7 +31,7 @@ class ClaimActionsEndpointTest {
     private lateinit var fake: FakeChatModel
 
     @Autowired
-    private lateinit var filing: InMemoryClaimFiling
+    private lateinit var core: FakeClaimantCore
 
     @Test
     fun `a complete report is answered with the claim card and done`() {
@@ -131,7 +132,7 @@ class ClaimActionsEndpointTest {
         val events = post(claimJson(ChatAction.CONFIRM_CLAIM, "confirm-filed"))
         val again = post(claimJson(ChatAction.CONFIRM_CLAIM, "confirm-filed"))
 
-        val filed = filing.filed.single { it.claim.description == "Probe: confirmed over HTTP" }
+        val filed = core.filed.single { it.arguments["description"] == "Probe: confirmed over HTTP" }
         val answer = assertIs<ChatEvent.TextDelta>(events.first()).text
         assertTrue(answer.contains(filed.claimNumber.toString()), answer)
         assertEquals([ChatEvent.Done], events.drop(1))
@@ -149,7 +150,24 @@ class ClaimActionsEndpointTest {
         val answer = assertIs<ChatEvent.TextDelta>(events.first()).text
         assertTrue(answer.contains("KP-0000"), answer)
         assertEquals([ChatEvent.Done], events.drop(1))
-        assertTrue(filing.filed.none { it.claim.description == "Probe: refused over HTTP" }, filing.filed.toString())
+        assertTrue(core.filed.none { it.arguments["description"] == "Probe: refused over HTTP" }, core.filed.toString())
+    }
+
+    @Test
+    fun `an unreachable core is answered with the generic error and the claim can be confirmed again`() {
+        tellTheClaimant("confirm-core-down")
+        fake.replyJson(claimReportJson(description = "Probe: core down over HTTP"))
+        val _ = post(claimJson(ChatAction.PREPARE_CLAIM, "confirm-core-down"))
+        core.failure = IllegalStateException("core-mcp is down")
+
+        val failed = post(claimJson(ChatAction.CONFIRM_CLAIM, "confirm-core-down"))
+        core.failure = null
+        val retried = post(claimJson(ChatAction.CONFIRM_CLAIM, "confirm-core-down"))
+
+        val error = assertIs<ChatEvent.Error>(failed.single())
+        assertFalse(error.message.contains("core-mcp is down"), error.message)
+        val filed = core.filed.single { it.arguments["description"] == "Probe: core down over HTTP" }
+        assertTrue(assertIs<ChatEvent.TextDelta>(retried.first()).text.contains(filed.claimNumber.toString()))
     }
 
     @Test

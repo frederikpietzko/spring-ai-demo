@@ -8,7 +8,8 @@ import org.springframework.ai.util.JsonHelper
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * Stand-in for the core tools `getClaim`, `issuePayout`, `countClaims` and `payoutStats` of `core-mcp` (same names,
+ * Stand-in for the core tools `getClaim`, `updateClaimStatus`, `issuePayout`, `countClaims` and `payoutStats` of
+ * `core-mcp` (same names,
  * parameters and JSON fields as the core's tool contract), so the adjuster runs without an MCP server. `getClaim`
  * answers claim 4700 with the poisoned invoice and every other number like claim 4711. The analytics
  * tools answer in the MCP wire shape ([mcpWireShape]), because the backend parses their result. Records every call
@@ -27,7 +28,7 @@ class FakeCoreTools {
     private val received = CopyOnWriteArrayList<Call>()
     private val receivedAnalytics = CopyOnWriteArrayList<AnalyticsCall>()
 
-    /** Every `getClaim` and `issuePayout` call so far, in order. */
+    /** Every `getClaim`, `updateClaimStatus` and `issuePayout` call so far, in order. */
     val calls: List<Call> get() = received.toList()
 
     /** Every `countClaims` and `payoutStats` call so far, in order. */
@@ -61,6 +62,16 @@ class FakeCoreTools {
             "kaijuClass" to CLAIM_4711_KAIJU_CLASS,
             "totalEstimatedMinor" to CLAIM_4711_TOTAL_MINOR,
         )
+    }
+
+    @Tool(description = "Changes the status of a claim: FILED to UNDER_REVIEW or REJECTED, UNDER_REVIEW to APPROVED")
+    fun updateClaimStatus(
+        @ToolParam(description = "Claim number, for example 4711") claimNumber: Long,
+        @ToolParam(description = "The new status") status: String,
+        toolContext: ToolContext,
+    ): Map<String, Any> {
+        received.add(Call("updateClaimStatus", claimNumber, toolContext.context.toMap()))
+        return mapOf("claimNumber" to claimNumber, "status" to status)
     }
 
     @Tool(description = "Pays an APPROVED claim: total estimated damage minus the policy deductible")

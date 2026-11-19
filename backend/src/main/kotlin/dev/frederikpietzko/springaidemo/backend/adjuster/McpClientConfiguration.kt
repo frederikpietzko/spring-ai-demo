@@ -1,5 +1,6 @@
 package dev.frederikpietzko.springaidemo.backend.adjuster
 
+import dev.frederikpietzko.springaidemo.backend.intake.ClaimantCore
 import io.modelcontextprotocol.client.McpSyncClient
 import org.springframework.ai.chat.model.ToolContext
 import org.springframework.ai.mcp.McpToolNamePrefixGenerator
@@ -21,8 +22,9 @@ fun identityMeta(toolContext: ToolContext?): Map<String, Any> =
 
 /**
  * Wiring of the MCP client that connects the agents to the core system (`core-mcp`): one connection and one tool
- * provider per persona (ADR-0009), so each persona's tools reach the core with that persona's token. The provider
- * beans exist only while the MCP client is on (the shared test context switches it off and fakes the tools).
+ * provider per persona (ADR-0009), so each persona's tools reach the core with that persona's token, and the claimant's
+ * direct calls for filing claims. These beans exist only while the MCP client is on (the shared test context switches
+ * it off and fakes them).
  */
 @Configuration(proxyBeanMethods = false)
 class McpClientConfiguration {
@@ -42,6 +44,15 @@ class McpClientConfiguration {
         toolNames: McpToolNamePrefixGenerator,
     ): SyncMcpToolCallbackProvider = personaTools(clients, "core-adjuster", toolNames)
 
+    /**
+     * The claimant agent's direct calls to the core (connection `core-claimant`, so they carry the claimant's token):
+     * the claim intake files a confirmed claim through them with `fileClaim`. The client connects on the first call.
+     */
+    @Bean
+    @ConditionalOnBooleanProperty("spring.ai.mcp.client.enabled", matchIfMissing = true)
+    fun claimantCore(@Qualifier("mcpSyncClients") clients: List<McpSyncClient>): ClaimantCore =
+        ClaimantCore(personaClient(clients, "core-claimant")::callTool)
+
     /** The core tools as the claimant agent sees them (connection `core-claimant`); no chat client uses them yet. */
     @Bean
     @ConditionalOnBooleanProperty("spring.ai.mcp.client.enabled", matchIfMissing = true)
@@ -50,14 +61,18 @@ class McpClientConfiguration {
         toolNames: McpToolNamePrefixGenerator,
     ): SyncMcpToolCallbackProvider = personaTools(clients, "core-claimant", toolNames)
 
-    /** The tools of the one client of [connection] (the auto-configuration puts the connection name in the title). */
+    /** The one client of [connection] (the auto-configuration puts the connection name in the title). */
+    private fun personaClient(clients: List<McpSyncClient>, connection: String): McpSyncClient =
+        clients.single { it.clientInfo.title() == connection }
+
+    /** The tools of the one client of [connection]. */
     private fun personaTools(
         clients: List<McpSyncClient>,
         connection: String,
         toolNames: McpToolNamePrefixGenerator,
     ): SyncMcpToolCallbackProvider =
         SyncMcpToolCallbackProvider.builder()
-            .mcpClients(clients.single { it.clientInfo.title() == connection })
+            .mcpClients(personaClient(clients, connection))
             .toolNamePrefixGenerator(toolNames)
             .toolContextToMcpMetaConverter(::identityMeta)
             .build()

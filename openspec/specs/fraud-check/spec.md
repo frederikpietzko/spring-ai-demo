@@ -22,7 +22,7 @@ The backend SHALL provide a fraud check that takes a claim number and runs one b
 - **THEN** the system message received by the model says to compare the claim's place and incident time with the bulletins, to search again with a rephrased query or another place when a search finds nothing, to cite bulletin ids as evidence, and that a verdict is `FLAGGED` only when a bulletin contradicts the claim
 
 ### Requirement: The fraud assessment is structured output
-The fraud check SHALL ask for a fraud assessment as structured output: a verdict (`CLEAR`, `FLAGGED` or `INCONCLUSIVE`), evidence as a list of bulletin id with a finding, and a confidence between 0 and 1. The JSON format instructions SHALL be part of the user message of every model call of the loop. A reply that is no fraud assessment SHALL be reported as an unreadable result and not thrown.
+The fraud check SHALL ask for a fraud assessment as structured output: a verdict (`CLEAR`, `FLAGGED` or `INCONCLUSIVE`), evidence as a list of bulletin id with a finding, and a confidence between 0 and 1. The JSON format instructions SHALL be part of the user message of every model call of the loop. A final reply that does not match the assessment's JSON schema (not JSON, or a required field such as `verdict` missing) SHALL be asked for once more, with the validation error appended to the user message; a reply that is still no fraud assessment SHALL be reported as an unreadable result and not thrown.
 
 #### Scenario: Format instructions reach the model
 - **WHEN** a fraud check runs
@@ -33,8 +33,12 @@ The fraud check SHALL ask for a fraud assessment as structured output: a verdict
 - **THEN** the result is an assessed result with the verdict `CLEAR`, no evidence and confidence 0.8
 
 #### Scenario: Unreadable reply
-- **WHEN** the model replies with the text `not json`
-- **THEN** the result is the unreadable result
+- **WHEN** the model replies with the text `not json` and, asked again, with `still not json`
+- **THEN** the model received two prompts and the result is the unreadable result
+
+#### Scenario: A reply without a verdict is asked for again
+- **WHEN** the model replies with `{"evidence":[],"confidence":0.8}` and, asked again, with `{"verdict":"CLEAR","evidence":[],"confidence":0.8}`
+- **THEN** the last user message received by the model contains the validation error naming `verdict`, and the result is an assessed result with the verdict `CLEAR`
 
 ### Requirement: Claim 4711 is flagged by two retrievals
 For seed claim 4711 (`HARBOUR`, `2026-11-18T15:00:00Z`) the fraud check SHALL let the model search the bulletins more than once against the real vector store, so that the neighbouring-town bulletin reaches the model as a tool result, and SHALL return the assessment the model replies with, with the bulletin ids it cites.

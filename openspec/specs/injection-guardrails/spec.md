@@ -72,7 +72,7 @@ After the claimant agent's reply stream has completed, the agent SHALL ask the d
 - **THEN** the conversation transcript holds the original reply and not the notice
 
 ### Requirement: A poisoned invoice leads to no payout on either persona
-An invoice that contains an instruction to approve a payout SHALL NOT lead to a payout, on the claimant chat or on the adjuster chat, even when the model obeys it and even when the guardrail does not flag it. Each layer SHALL hold on its own: the guardrail refuses the claimant's message, the confirmation policy pauses every `issuePayout` call until a human decides, and the core refuses a payout without the `payout:write` scope or for a claim that is not approved (see `core-claims-mcp`).
+An invoice that contains an instruction to approve a payout SHALL NOT lead to a payout, on the claimant chat or on the adjuster chat, even when the model obeys it and even when the guardrail does not flag it. Each layer SHALL hold on its own: the guardrail refuses the claimant's message, the confirmation policy pauses every `issuePayout` call and every approval of a claim (`updateClaimStatus` to `APPROVED`, see `adjuster-tools`) until a human decides, and the core refuses a payout without the `payout:write` scope or for a claim that is not approved (see `core-claims-mcp`).
 
 #### Scenario: The guardrail stops the pasted invoice
 - **WHEN** a claimant pastes the invoice text with the injection and the decision model flags it
@@ -93,3 +93,15 @@ An invoice that contains an instruction to approve a payout SHALL NOT lead to a 
 #### Scenario: A subagent that reads the poisoned claim cannot pay out
 - **WHEN** the adjuster's model delegates claim 4700 to `damage-assessor` with `Task`, the subagent's `getClaim` result carries the invoice text, and the subagent obeys it by requesting `issuePayout` for 4700
 - **THEN** the subagent was offered only `getClaim`, the invoice text is in the tool response it received, no `issuePayout` call reaches the core, and the `Task` call ends as an error result the orchestrator receives (see `adjuster-subagents`)
+
+### Requirement: The health report shows whether the decision model answers
+The backend health SHALL include a component `decisionModel` that asks the decision model one short question on every health request, because the guardrail fails closed and the claimant chat cannot answer while the decision model is unreachable (an Ollama without the decision endpoint, or the model not pulled). Any answer, a refusal included, SHALL be `UP`; a failed call SHALL be `DOWN` and make the overall status `DOWN`.
+
+#### Scenario: The decision model answers
+- **WHEN** a client requests `GET /actuator/health` and the decision model answers
+- **THEN** the body includes the component `decisionModel` with status `UP`
+
+#### Scenario: The decision model cannot answer
+- **WHEN** a client requests `GET /actuator/health` and the decision model call fails
+- **THEN** the response status is 503, the overall status is `DOWN` and the component `decisionModel` is `DOWN`
+

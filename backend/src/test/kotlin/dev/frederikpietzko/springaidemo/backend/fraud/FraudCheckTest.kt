@@ -86,12 +86,26 @@ class FraudCheckTest {
     }
 
     @Test
-    fun `an unreadable reply is the unreadable result`() {
+    fun `an unreadable reply that stays unreadable on the second attempt is the unreadable result`() {
         fake.reply("not json")
+        fake.reply("still not json")
 
         val result = fraudCheck.assess(4711)
 
         assertIs<FraudCheckResult.Unreadable>(result)
+        assertEquals(2, fake.prompts.size)
+    }
+
+    @Test
+    fun `an assessment without a verdict is asked for once more with the validation error`() {
+        fake.replyJson("""{"evidence":[],"confidence":0.8}""")
+        fake.replyJson(CLEAR)
+
+        val result = fraudCheck.assess(4711)
+
+        assertEquals(FraudCheckResult.Assessed(FraudAssessment(FraudVerdict.CLEAR, [], 0.8)), result)
+        val retry = lastUserMessage(fake.prompts.last())
+        assertTrue(retry.contains("validation failed") && retry.contains("verdict"), retry)
     }
 
     @Test
