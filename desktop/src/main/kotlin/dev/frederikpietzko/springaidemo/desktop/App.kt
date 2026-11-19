@@ -75,9 +75,10 @@ fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null) {
                     modifier = Modifier.width(240.dp).fillMaxHeight(),
                 )
                 Column(Modifier.weight(1f).fillMaxHeight()) {
+                    val canSend = !state.sending && state.pendingConfirmation == null
                     Conversation(
                         messages = state.messages,
-                        sending = state.sending,
+                        canConfirm = canSend,
                         onConfirm = { scope.launch { viewModel.confirmClaim() } },
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
@@ -147,7 +148,7 @@ private fun Header(persona: Persona, onPersona: (Persona) -> Unit) {
  * card of the last message can be confirmed: the backend files only the latest prepared claim.
  */
 @Composable
-private fun Conversation(messages: List<ChatMessage>, sending: Boolean, onConfirm: () -> Unit, modifier: Modifier) {
+private fun Conversation(messages: List<ChatMessage>, canConfirm: Boolean, onConfirm: () -> Unit, modifier: Modifier) {
     if (messages.isEmpty()) {
         Box(modifier, contentAlignment = Alignment.Center) {
             DText("Describe the kaiju damage to get started.", color = Demo.colors.inkMuted)
@@ -165,7 +166,7 @@ private fun Conversation(messages: List<ChatMessage>, sending: Boolean, onConfir
         items(messages) { message ->
             MessageBubble(
                 message = message,
-                canConfirm = message === messages.last() && !sending,
+                canConfirm = canConfirm && message === messages.last(),
                 onConfirm = onConfirm,
             )
         }
@@ -193,26 +194,6 @@ private fun MessageBubble(message: ChatMessage, canConfirm: Boolean, onConfirm: 
     }
 }
 
-/** A tool call that waits for the user: the tool, its arguments and the two choices. */
-@Composable
-private fun ConfirmationPanel(pending: ChatEvent.ConfirmationRequest, onDecide: (Boolean) -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .background(Demo.colors.surfaceRaised, Demo.shapes.medium)
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        DText("Confirm ${pending.toolName}", style = Demo.typography.title)
-        DText(pending.arguments, style = Demo.typography.caption, color = Demo.colors.inkMuted)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DButton("Approve", onClick = { onDecide(true) }, style = DButtonStyle.PRIMARY)
-            DButton("Deny", onClick = { onDecide(false) })
-        }
-    }
-}
-
 /** A prepared claim to check: its facts, the damage items with their amounts in minor units, the total and Confirm. */
 @Composable
 private fun ClaimCard(card: ChatEvent.ClaimCard, canConfirm: Boolean, onConfirm: () -> Unit) {
@@ -235,6 +216,26 @@ private fun Fact(label: String, vararg values: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         DText(label, color = Demo.colors.inkMuted, modifier = Modifier.width(96.dp))
         values.forEach { DText(it) }
+    }
+}
+
+/** A tool call that waits for the user: the tool, its arguments and the two choices. */
+@Composable
+private fun ConfirmationPanel(pending: ChatEvent.ConfirmationRequest, onDecide: (Boolean) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .background(Demo.colors.surfaceRaised, Demo.shapes.medium)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        DText("Confirm ${pending.toolName}", style = Demo.typography.title)
+        DText(pending.arguments, style = Demo.typography.caption, color = Demo.colors.inkMuted)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DButton("Approve", onClick = { onDecide(true) }, style = DButtonStyle.PRIMARY)
+            DButton("Deny", onClick = { onDecide(false) })
+        }
     }
 }
 

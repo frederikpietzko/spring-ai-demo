@@ -55,17 +55,6 @@ The protocol module SHALL NOT depend on the web framework, the AI framework, the
 - **WHEN** the declared dependencies of the protocol module are inspected
 - **THEN** the only library it declares is kotlinx-serialization-json, and the Spring, Compose and Ktor libraries are not among its dependencies
 
-### Requirement: Confirmation decision carries the id and the choice
-The protocol SHALL define the confirmation decision as a JSON object with a `confirmationId` field and an `approved` field (a boolean). It SHALL carry nothing else: the paused tool calls are never sent by the client.
-
-#### Scenario: Decision wire form
-- **WHEN** a decision for id "c-1" that approves is encoded
-- **THEN** the JSON is `{"confirmationId":"c-1","approved":true}` and decoding it gives the same decision
-
-#### Scenario: Missing choice is rejected
-- **WHEN** the JSON `{"confirmationId":"c-1"}` is decoded as a decision
-- **THEN** decoding fails
-
 ### Requirement: Conversation summaries and messages have a stable JSON form
 The protocol SHALL define a conversation summary (`id`, `title`, `startedAt` as an ISO-8601 instant text) and a conversation message (`role`, `USER` or `ASSISTANT`, and `text`), each serialized as a JSON object with exactly those fields, so that backend and desktop agree on the conversation list and the transcript.
 
@@ -113,3 +102,14 @@ The protocol SHALL tell for every chat event whether it is terminal: `Done`, `Er
 #### Scenario: Terminal and non-terminal events
 - **WHEN** the terminal-ness of each event is asked
 - **THEN** `Done`, `Error` and `ConfirmationRequest` are terminal and `TextDelta` and `ClaimCard` are not
+
+### Requirement: Confirmation decision carries the id and the choice
+The protocol SHALL define the confirmation decision as a JSON object with a `confirmationId` field and an `approved` field (a boolean). It SHALL carry nothing else: the paused tool calls are never sent by the client.
+
+#### Scenario: Decision wire form
+- **WHEN** a decision for id "c-1" that approves is encoded
+- **THEN** the JSON is `{"confirmationId":"c-1","approved":true}` and decoding it gives the same decision
+
+#### Scenario: Missing choice is rejected
+- **WHEN** the JSON `{"confirmationId":"c-1"}` is decoded as a decision
+- **THEN** decoding fails

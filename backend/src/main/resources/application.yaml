@@ -46,6 +46,13 @@ spring:
       observations:
         # Off by default, written down so the switch is visible: would log the retrieved clauses (ADR-0010).
         log-query-response: false
+    session:
+      repository:
+        jdbc:
+          # Flyway owns the DDL (db/session, ADR-0002). The default (embedded) only skips PostgreSQL by accident.
+          initialize-schema: never
+          # Lets the conversation list find the claimant's sessions with findByMetadata(agentName, "claimant").
+          indexed-attributes: agentName
     # Content stays out of telemetry (ADR-0010). All of these are the library defaults; they are written down so
     # turning one on is a visible, deliberate change. The retrieval query is dropped by ObservabilityConfiguration.
     chat:
@@ -56,13 +63,6 @@ spring:
         observations:
           log-prompt: false
           log-completion: false
-    tools:
-      observations:
-        # The one switch that adds tool arguments and results to the spans as attributes.
-        include-content: false
-      confirmation:
-        # A payout waits for a human decision. By name, because MCP tools carry no requiresConfirmation flag.
-        tools: issuePayout
     mcp:
       client:
         # Connect on the first adjuster request instead of at startup, so the backend starts without core-mcp.
@@ -72,13 +72,13 @@ spring:
             core:
               # The insurer core system (core-mcp, ADR-0003 port 8081); the default endpoint /mcp matches it.
               url: ${CORE_MCP_URL:http://localhost:8081}
-    session:
-      repository:
-        jdbc:
-          # Flyway owns the DDL (db/session, ADR-0002). The default (embedded) only skips PostgreSQL by accident.
-          initialize-schema: never
-          # Lets the conversation list find the claimant's sessions with findByMetadata(agentName, "claimant").
-          indexed-attributes: agentName
+    tools:
+      observations:
+        # The one switch that adds tool arguments and results to the spans as attributes.
+        include-content: false
+      confirmation:
+        # A payout waits for a human decision. By name, because MCP tools carry no requiresConfirmation flag.
+        tools: issuePayout
 
 management:
   tracing:

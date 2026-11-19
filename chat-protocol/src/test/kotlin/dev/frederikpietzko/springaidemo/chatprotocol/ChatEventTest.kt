@@ -32,17 +32,6 @@ class ChatEventTest {
     }
 
     @Test
-    fun `confirmation request is encoded with its type, id, tool name and arguments`() {
-        val json = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""").toJson()
-
-        assertEquals(
-            """{"type":"confirmation-request","confirmationId":"c-1","toolName":"issuePayout",""" +
-                """"arguments":"{\"claimNumber\":4711}"}""",
-            json,
-        )
-    }
-
-    @Test
     fun `claim card is encoded with its type and fields`() {
         val json = CAR_ROOF_CARD.toJson()
 
@@ -50,6 +39,17 @@ class ChatEventTest {
             """{"type":"claim-card","policyNumber":"KP-1001","district":"HARBOUR",""" +
                 """"incidentAt":"2026-11-19T15:00:00Z","kaijuClass":3,"description":"Kaiju stepped on the car",""" +
                 """"damageItems":[{"category":"VEHICLE","description":"Car roof","amountMinor":800000}]}""",
+            json,
+        )
+    }
+
+    @Test
+    fun `confirmation request is encoded with its type, id, tool name and arguments`() {
+        val json = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""").toJson()
+
+        assertEquals(
+            """{"type":"confirmation-request","confirmationId":"c-1","toolName":"issuePayout",""" +
+                """"arguments":"{\"claimNumber\":4711}"}""",
             json,
         )
     }
@@ -69,10 +69,7 @@ class ChatEventTest {
 
     @ParameterizedTest
     @MethodSource("terminality")
-    fun `done, error and confirmation request end the stream, text and claim cards do not`(
-        event: ChatEvent,
-        terminal: Boolean,
-    ) {
+    fun `done, error and confirmation request end the stream, others do not`(event: ChatEvent, terminal: Boolean) {
         assertEquals(terminal, event.isTerminal)
     }
 
@@ -104,8 +101,8 @@ class ChatEventTest {
             ChatEvent.TextDelta("Größe 🦖 \"quoted\""),
             ChatEvent.Done,
             ChatEvent.Error("Größe 🦖 \"quoted\""),
-            ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711,"note":"Größe 🦖"}"""),
             CAR_ROOF_CARD.copy(description = "Größe 🦖 \"quoted\""),
+            ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711,"note":"Größe 🦖"}"""),
         ]
 
         @JvmStatic

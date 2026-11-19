@@ -39,8 +39,7 @@ class EndpointsTest {
             .flatMap { it.pathPatternsCondition?.patternValues.orEmpty() }
 
         assertTrue(patterns.isNotEmpty(), "expected at least the actuator mappings")
-        val servedPaths: Set<String> =
-            ["/error", "/chat", "/chat/decisions", "/conversations", "/conversations/{id}/messages"]
-        assertTrue(patterns.all { it.startsWith("/actuator") || it in servedPaths }, patterns.toString())
+        val allowed = setOf("/error", "/chat", "/chat/decisions", "/conversations", "/conversations/{id}/messages")
+        assertTrue(patterns.all { it.startsWith("/actuator") || it in allowed }, patterns.toString())
     }
 }

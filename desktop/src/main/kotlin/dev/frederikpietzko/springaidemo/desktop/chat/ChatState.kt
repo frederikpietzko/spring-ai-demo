@@ -28,6 +28,6 @@ data class ChatState(
     val messages: List<ChatMessage> = [],
     val sending: Boolean = false,
     val persona: Persona = Persona.CLAIMANT,
-    val pendingConfirmation: ChatEvent.ConfirmationRequest? = null,
     val conversations: List<ConversationSummary> = [],
+    val pendingConfirmation: ChatEvent.ConfirmationRequest? = null,
 )

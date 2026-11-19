@@ -192,15 +192,15 @@ class HttpChatApiTest {
     private suspend fun sendThrough(baseUrl: String): List<ChatEvent> =
         HttpChatApi(baseUrl).use { api -> api.send(request).toList() }
 
-    private suspend fun decideThrough(baseUrl: String): List<ChatEvent> =
-        HttpChatApi(baseUrl).use { api -> api.decide(ConfirmationDecision("c-1", approved = true)).toList() }
-
     private fun HttpExchange.respondWithJson(json: String) {
         val bytes = json.toByteArray(Charsets.UTF_8)
         responseHeaders.add("Content-Type", "application/json")
         sendResponseHeaders(200, bytes.size.toLong())
         responseBody.use { it.write(bytes) }
     }
+
+    private suspend fun decideThrough(baseUrl: String): List<ChatEvent> =
+        HttpChatApi(baseUrl).use { api -> api.decide(ConfirmationDecision("c-1", approved = true)).toList() }
 
     private fun HttpExchange.respondWithEvents(vararg data: String) {
         responseHeaders.add("Content-Type", "text/event-stream")

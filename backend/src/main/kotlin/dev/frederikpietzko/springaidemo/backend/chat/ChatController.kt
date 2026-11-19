@@ -7,15 +7,14 @@ import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
 import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
-import dev.frederikpietzko.springaidemo.chatprotocol.isTerminal
 import dev.frederikpietzko.springaidemo.chatprotocol.toJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onCompletion
 import org.slf4j.LoggerFactory
 import org.springframework.http.MediaType
 import org.springframework.http.codec.ServerSentEvent
@@ -39,14 +38,15 @@ private const val GENERIC_ERROR = "The claims desk is unavailable."
 @RestController
 class ChatController(
     private val claimantChat: ClaimantChat,
+    private val adjusterChat: AdjusterChat,
     private val conversations: Conversations,
     private val claimIntake: ClaimIntake,
-    private val adjusterChat: AdjusterChat,
 ) {
     /**
      * Streams the answer to [request]; the persona picks the agent. A request without a conversation id, or with a
      * blank one, gets a fresh conversation of its own. For the claimant, the action decides who answers: a message is
-     * answered by the claimant agent, the claim actions by the [ClaimIntake], whatever the request's message says.
+     * answered by the claimant agent, the claim actions by the [ClaimIntake], whatever the request's message says. The
+     * adjuster agent answers every request on its own, without a conversation.
      */
     @PostMapping("/chat", consumes = [MediaType.APPLICATION_JSON_VALUE], produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
     fun chat(@RequestBody request: ChatRequest): Flow<ServerSentEvent<String>> =
@@ -60,12 +60,7 @@ class ChatController(
                     ChatAction.CONFIRM_CLAIM -> confirmClaim(conversationId)
                 }
             }
-            Persona.ADJUSTER ->
-                if (request.action == ChatAction.MESSAGE) {
-                    adjusterChat.stream(request.message)
-                } else {
-                    flowOf(ChatEvent.Error("Claim actions are not available for persona ADJUSTER"))
-                }
+            Persona.ADJUSTER -> adjusterChat.stream(request.message).withTerminalEvent()
         }
             .asServerSentEvents()
 
@@ -76,16 +71,16 @@ class ChatController(
         produces = [MediaType.TEXT_EVENT_STREAM_VALUE],
     )
     fun decide(@RequestBody decision: ConfirmationDecision): Flow<ServerSentEvent<String>> =
-        adjusterChat.decide(decision).asServerSentEvents()
+        adjusterChat.decide(decision).withTerminalEvent().asServerSentEvents()
 
     private fun Flow<ChatEvent>.asServerSentEvents(): Flow<ServerSentEvent<String>> =
-        terminated()
-            // Pre-encoded JSON: a non-String payload would be written by the subclass serializer, without `type`.
-            .map { ServerSentEvent.builder(it.toJson()).build() }
+        // Pre-encoded JSON: a non-String payload would be written by the subclass serializer, without `type`.
+        map { ServerSentEvent.builder(it.toJson()).build() }
 
     private fun claimantReply(conversationId: String, message: String): Flow<ChatEvent> =
         claimantChat.stream(conversationId, message)
             .map<String, ChatEvent> { ChatEvent.TextDelta(it) }
+            .terminated()
 
     /**
      * Turns the stored conversation into a claim card or a follow-up question. The extraction is a blocking model
@@ -97,32 +92,43 @@ class ChatController(
             emit(claimIntake.prepare(conversationId, history).toEvent())
         }
             .flowOn(Dispatchers.IO)
+            .terminated()
 
     /** Files the conversation's prepared claim (never one sent by the client) and answers with its claim number. */
     private fun confirmClaim(conversationId: String): Flow<ChatEvent> =
-        flow { emit(claimIntake.confirm(conversationId).toEvent()) }
+        flow { emit(claimIntake.confirm(conversationId).toEvent()) }.terminated()
 
     /**
-     * Ends this reply with exactly one terminal event: [ChatEvent.Done] when it completed and did not end itself, the
-     * generic [ChatEvent.Error] when it failed with an exception. A JVM `Error` is rethrown. Done only follows a
-     * non-terminal last event (text, a claim card, or nothing), never the agent's own confirmation request or error
-     * event. A failed or cancelled stream throws out of `collect`, so it gets no Done; the `catch` maps the failure.
+     * Ends this reply with exactly one terminal event: [ChatEvent.Done] when it completed, the generic
+     * [ChatEvent.Error] when it failed with an exception. A JVM `Error` is rethrown.
      */
     private fun Flow<ChatEvent>.terminated(): Flow<ChatEvent> =
+        // Done only for a completed reply (a failed or cancelled stream has a cause). The order matters: after
+        // `catch` the flow completes normally, so an `onCompletion` placed there would add Done after the Error.
+        onCompletion { cause -> if (cause == null) emit(ChatEvent.Done) }.mapFailures()
+
+    /**
+     * Done only for a completed adjuster reply that did not end itself: after text (or nothing), never after a
+     * confirmation request or an error event of the agent. A failed or cancelled stream throws out of `collect`, so it
+     * gets no Done; [mapFailures] maps the failure.
+     */
+    private fun Flow<ChatEvent>.withTerminalEvent(): Flow<ChatEvent> =
         flow {
             var last: ChatEvent? = null
             collect { event ->
                 last = event
                 emit(event)
             }
-            if (last?.isTerminal != true) emit(ChatEvent.Done)
+            if (last == null || last is ChatEvent.TextDelta) emit(ChatEvent.Done)
+        }.mapFailures()
+
+    private fun Flow<ChatEvent>.mapFailures(): Flow<ChatEvent> =
+        catch { cause ->
+            // Only exceptions are a failed reply; an Error is rethrown (`catch` rethrows cancellation itself).
+            // It is searched in the cause chain: advisors built on BaseAdvisor (the policy wording retrieval)
+            // wrap every stream failure in an IllegalStateException.
+            generateSequence(cause) { it.cause }.firstOrNull { it !is Exception }?.let { throw it }
+            log.warn("Chat stream failed", cause)
+            emit(ChatEvent.Error(GENERIC_ERROR))
         }
-            .catch { cause ->
-                // Only exceptions are a failed reply; an Error is rethrown (`catch` rethrows cancellation itself).
-                // It is searched in the cause chain: advisors built on BaseAdvisor (the policy wording retrieval)
-                // wrap every stream failure in an IllegalStateException.
-                generateSequence(cause) { it.cause }.firstOrNull { it !is Exception }?.let { throw it }
-                log.warn("Chat stream failed", cause)
-                emit(ChatEvent.Error(GENERIC_ERROR))
-            }
 }

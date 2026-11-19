@@ -24,7 +24,6 @@ private const val CONNECTION_CLOSED = "The connection closed before the answer w
  * The chat screen's state and actions, independent of Compose so it can be tested with a fake [ChatApi]. Every
  * conversation gets its own id from [newId].
  */
-@Suppress("TooManyFunctions") // one screen's actions: send, claim, decide, conversations, persona
 class ChatViewModel(private val api: ChatApi, private val newId: () -> String = { UUID.randomUUID().toString() }) {
     private val mutableState = MutableStateFlow(ChatState(conversationId = newId()))
 
@@ -52,7 +51,7 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
 
     /**
      * Asks the backend to file the conversation's prepared claim, shown as the user line "Confirm claim"; the answer is
-     * streamed like a reply to [send]. Ignored while an answer is streaming.
+     * streamed like a reply to [send]. Ignored while an answer is streaming or a confirmation is pending.
      */
     suspend fun confirmClaim() {
         exchange(userLine = "Confirm claim", message = "", action = ChatAction.CONFIRM_CLAIM)
@@ -127,32 +126,35 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
 
     /**
      * Shows the transcript of [conversation] and continues it: later messages carry its id. A transcript that cannot
-     * be loaded shows no messages. Ignored while an answer is streaming.
+     * be loaded shows no messages. Ignored while an answer is streaming or a confirmation is pending.
      */
     suspend fun open(conversation: ConversationSummary) {
-        if (state.value.sending) return
+        if (state.value.sending || state.value.pendingConfirmation != null) return
         val messages = api.messages(conversation.id).map { it.toChatMessage() }
         mutableState.update {
             if (it.sending) {
                 it
             } else {
-                it.copy(conversationId = conversation.id, messages = messages, pendingConfirmation = null)
+                it.copy(conversationId = conversation.id, messages = messages)
             }
         }
     }
 
-    /** Clears the conversation and starts a new one with a new id; ignored while an answer is streaming. */
+    /**
+     * Clears the conversation and starts a new one with a new id; ignored while an answer is streaming or a
+     * confirmation is pending.
+     */
     fun newConversation() {
-        if (state.value.sending) return
-        mutableState.update { it.copy(conversationId = newId(), messages = [], pendingConfirmation = null) }
-    }
-
-    private fun ConversationMessage.toChatMessage(): ChatMessage = when (role) {
-        MessageRole.USER -> ChatMessage(ChatMessage.Author.USER, text)
-        MessageRole.ASSISTANT -> ChatMessage(ChatMessage.Author.ASSISTANT, text)
+        if (state.value.sending || state.value.pendingConfirmation != null) return
+        mutableState.update { it.copy(conversationId = newId(), messages = []) }
     }
 
     private fun updateReply(change: (ChatMessage) -> ChatMessage) {
         mutableState.update { it.copy(messages = it.messages.dropLast(1) + change(it.messages.last())) }
     }
+}
+
+private fun ConversationMessage.toChatMessage(): ChatMessage = when (role) {
+    MessageRole.USER -> ChatMessage(ChatMessage.Author.USER, text)
+    MessageRole.ASSISTANT -> ChatMessage(ChatMessage.Author.ASSISTANT, text)
 }

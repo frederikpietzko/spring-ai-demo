@@ -50,6 +50,17 @@ class ArchitectureTest {
             .because("ADR-0006: the vector store owns the vector table, Exposed does not map it")
 
     /**
+     * ADR-0010: only the injected `ChatClient.Builder` (and the injected `ToolCallingAdvisor.Builder<*>`, after
+     * `.copy()`) carry the observation registry; a chat client built any other way would be invisible in traces and
+     * metrics, silently.
+     */
+    @ArchTest
+    val chat_clients_come_from_injected_builders: ArchRule =
+        noClasses()
+            .should().callMethodWhere(unobservedChatClientFactories)
+            .because("ADR-0010: only the injected builders carry the observation registry")
+
+    /**
      * The claim intake is domain code: the chat layer maps its results to protocol events and wording, never the other
      * way round. Full package prefixes: a bare `..chat..` would also match Spring AI's `org.springframework.ai.chat`.
      */
@@ -90,4 +101,5 @@ class ArchitectureTest {
                 "org.jetbrains.exposed..",
             )
             .because("the adjuster depends on the fraud check, not the reverse, and ADR-0006 keeps Exposed out")
+
 }

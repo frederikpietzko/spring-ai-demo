@@ -9,8 +9,8 @@ val ChatJson: Json = Json
 
 /**
  * One event of a chat stream. The JSON field `type` names the event (kotlinx's default class discriminator), for
- * example `{"type":"text-delta","text":"Hel"}`. The events are [TextDelta], [ClaimCard], [ConfirmationRequest],
- * [Done] and [Error]; a stream ends with exactly one terminal event ([isTerminal]): [Done], [Error] or
+ * example `{"type":"text-delta","text":"Hel"}`. The events are [TextDelta], [ClaimCard], [Done], [Error] and
+ * [ConfirmationRequest]; a stream ends with exactly one terminal event ([isTerminal]): [Done], [Error] or
  * [ConfirmationRequest]. After a confirmation request the client answers with a [ConfirmationDecision], whose reply is
  * a new stream with the same rules.
  *
@@ -73,7 +73,10 @@ sealed interface ChatEvent {
 @Serializable
 data class ClaimCardItem(val category: String, val description: String, val amountMinor: Long)
 
-/** Whether this event ends the stream: [ChatEvent.Done], [ChatEvent.Error] and [ChatEvent.ConfirmationRequest] do. */
+/**
+ * Whether this event ends the stream: [ChatEvent.Done], [ChatEvent.Error] and [ChatEvent.ConfirmationRequest] do,
+ * every other event does not.
+ */
 val ChatEvent.isTerminal: Boolean
     get() = when (this) {
         is ChatEvent.TextDelta, is ChatEvent.ClaimCard -> false

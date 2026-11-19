@@ -28,11 +28,11 @@ dependencies {
     implementation("org.springframework.ai:spring-ai-starter-vector-store-pgvector")
     implementation("org.springframework.ai:spring-ai-markdown-document-reader")
     implementation("org.springframework.ai:spring-ai-rag")
-    // The adjuster's MCP client for the core tools of core-mcp (JDK HttpClient transport, no WebFlux stack).
-    implementation("org.springframework.ai:spring-ai-starter-mcp-client")
     // Session Memory: JDBC session repository, session advisors and their auto-configuration. The schema stays with
     // Flyway (db/session, ADR-0002); the library's own schema initialization is switched off in application.yaml.
     implementation("org.springframework.ai:spring-ai-starter-model-session-jdbc")
+    // The adjuster's MCP client for the core tools of core-mcp (JDK HttpClient transport, no WebFlux stack).
+    implementation("org.springframework.ai:spring-ai-starter-mcp-client")
     implementation("tools.jackson.module:jackson-module-kotlin")
     // Lets Spring MVC return a Kotlin Flow (the Flux-to-Flow bridge of the chat endpoint); version from the Boot BOM.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")

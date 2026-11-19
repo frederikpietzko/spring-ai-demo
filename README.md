@@ -80,7 +80,7 @@ curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Acce
 - With `ANTHROPIC_API_KEY` set, the reply arrives incrementally as `data: {"type":"text-delta","text":"..."}` events and ends with `data: {"type":"done"}`.
 - Without a key (or on any other failure) the stream is a single `data: {"type":"error","message":"The claims desk is unavailable."}`; the cause is in the backend log.
 - `"persona":"ADJUSTER"` is answered by the adjuster agent, which works with the core tools of `core-mcp` (see "Adjuster agent" below). A malformed body or an unknown persona is a `400`.
-- A request may carry a `conversationId` (`{"persona":"CLAIMANT","message":"Hi","conversationId":"c-1"}`): requests with the same id form one conversation, and the model sees its earlier turns. Without an id (or with a blank one) the request starts a fresh conversation of its own. Conversations are stored in the backend database and survive restarts; after more than ten turns the prompt keeps only the five most recent ones, and the model can still find older messages with its `conversation_search` tool.
+- A request may carry a `conversationId` (`{"persona":"CLAIMANT","message":"Hi","conversationId":"c-1"}`): requests with the same id form one conversation, and the model sees its earlier turns. The adjuster does not remember earlier messages and ignores the id. Without an id (or with a blank one) the request starts a fresh conversation of its own. Conversations are stored in the backend database and survive restarts; after more than ten turns the prompt keeps only the five most recent ones, and the model can still find older messages with its `conversation_search` tool.
 - Each claimant message is grounded in the fictional policy wording (`backend/src/main/resources/corpus/policy-wording`): the closest clauses are added to the prompt, labelled `[source - title]`, and the model is asked to cite those labels when the message asks about coverage (ADR-0006).
 
 ### Preparing and confirming a claim
@@ -96,22 +96,6 @@ curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Acce
 - A complete report is answered with a claim card, then `done`: `data: {"type":"claim-card","policyNumber":"KP-1001","district":"HARBOUR","incidentAt":"2026-11-19T15:00:00Z","kaijuClass":3,"description":"...","damageItems":[{"category":"VEHICLE","description":"Car roof","amountMinor":800000}]}`. The backend keeps it as the conversation's prepared claim (in memory, lost on restart).
 - A report that lacks details (policy number, district, incident time, kaiju class 1 to 5, description, damage items with an amount above zero) is answered with one text delta naming them; nothing is prepared. A reply the backend cannot read asks the claimant to describe the incident again.
 - The confirm answers with the new claim number (from 4714 upwards), or with the reason it was not filed: no prepared claim, or a refused policy (a policy number ending in `-0000`). The claim is filed by a local in-memory stand-in until the backend calls the `fileClaim` MCP tool of `core-mcp`.
-
-## Conversation endpoints
-
-The stored claimant conversations, newest first, and the transcript of one of them (what the claimant typed and what the assistant answered; an unknown id is a `404`):
-
-```bash
-curl localhost:8080/conversations
-curl localhost:8080/conversations/c-1/messages
-```
-
-```text
-[{"id":"c-1","title":"Kaiju stepped on my shed","startedAt":"2026-11-20T10:00:00Z"}]
-[{"role":"USER","text":"Kaiju stepped on my shed"},{"role":"ASSISTANT","text":"Noted."}]
-```
-
-The title is the beginning of the first message (at most 60 characters).
 
 ## Adjuster agent
 
@@ -139,11 +123,26 @@ Agentic RAG: retrieval is a tool the model decides to call, not a fixed step bef
 
 The 4711 scenario: claim 4711 says a class 3 kaiju hit the harbour at `2026-11-18T15:00:00Z`. A search at `HARBOUR` between 13:00 and 17:00 finds nothing; a second search at `SALTMARSH` finds `SB-102`, which places the kaiju on the Saltmarsh mudflats, about 40 km up the coast, at 14:45. The model cites `SB-102` and flags the claim. The tests script exactly these two retrievals with the fake model against the real pgvector store; whether a real model finds them is left to the `evaluation` change.
 
+## Conversation endpoints
+
+The stored claimant conversations, newest first, and the transcript of one of them (what the claimant typed and what the assistant answered; an unknown id is a `404`):
+
+```bash
+curl localhost:8080/conversations
+curl localhost:8080/conversations/c-1/messages
+```
+
+```text
+[{"id":"c-1","title":"Kaiju stepped on my shed","startedAt":"2026-11-20T10:00:00Z"}]
+[{"role":"USER","text":"Kaiju stepped on my shed"},{"role":"ASSISTANT","text":"Noted."}]
+```
+
+The title is the beginning of the first message (at most 60 characters).
+
 ## Desktop chat
 
-Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch selects `Claimant` (default) or `Adjuster`. When the adjuster's reply asks for a payout, a confirmation panel shows the tool and its arguments with **Approve** and **Deny**; while it is open no new message can be sent, and the decision's continuation is appended to the same reply. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key.
+Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch selects `Claimant` (default) or `Adjuster`. Stored conversations and claim cards belong to the claimant. When the adjuster's reply asks for a payout, a confirmation panel shows the tool and its arguments with **Approve** and **Deny**; while it is open no new message can be sent, and the decision's continuation is appended to the same reply. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key.
 
-Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch shows `Claimant`; `Adjuster` is listed but not selectable yet. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key.
 
 The column on the left lists the stored conversations, loaded at start and after every answer. Click one to see its transcript and continue it; **New conversation** clears the screen and starts a new one. The desktop gives every conversation its own id, so the backend remembers it across desktop and backend restarts. Without a backend the list stays empty.
 

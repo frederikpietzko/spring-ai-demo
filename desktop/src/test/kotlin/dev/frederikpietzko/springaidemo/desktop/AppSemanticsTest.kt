@@ -82,7 +82,9 @@ class AppSemanticsTest {
         waitForIdle()
 
         onNode(isPersonaSwitch).assertTextContains("Adjuster")
-        assertEquals([Persona.ADJUSTER to "Hi"], api.requests.map { it.persona to it.message })
+        val request = api.requests.single()
+        assertEquals(Persona.ADJUSTER, request.persona)
+        assertEquals("Hi", request.message)
     }
 
     @Test
@@ -260,7 +262,6 @@ class AppSemanticsTest {
     }
 
     private companion object {
-        val PAYOUT_CONFIRMATION = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""")
         val SHED = ConversationSummary("c-3", "Shed", "2026-11-20T10:00:00Z")
         val GNOME = ConversationSummary("c-7", "Gnome", "2026-11-20T09:00:00Z")
 
@@ -280,5 +281,7 @@ class AppSemanticsTest {
                 ClaimCardItem("GARDEN", "Garden gnome", 25000),
             ],
         )
+
+        val PAYOUT_CONFIRMATION = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""")
     }
 }

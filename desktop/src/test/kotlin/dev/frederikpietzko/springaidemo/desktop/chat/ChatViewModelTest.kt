@@ -448,7 +448,10 @@ class ChatViewModelTest {
 
         assertEquals([ConfirmationDecision("c-1", approved = true)], api.decisions)
         assertEquals(
-            ChatState(conversationId = "c-1", messages = [user("Pay claim 4711"), assistant("Ready to pay. Paid")]),
+            ChatState(
+                conversationId = "c-1",
+                messages = [user("Pay claim 4711"), assistant("Ready to pay. Paid")],
+            ),
             paused.state.value,
         )
     }
@@ -518,6 +521,20 @@ class ChatViewModelTest {
         assertEquals([], api.decisions)
     }
 
+    @Test
+    suspend fun `a new conversation and an opened one are ignored while a confirmation is pending`() {
+        val api = FakeChatApi(conversations = { [SHED] }) { flowOf(PAYOUT_CONFIRMATION) }
+        val paused = ChatViewModel(api, scriptedIds())
+        paused.send("Pay claim 4711")
+        val before = paused.state.value
+
+        paused.newConversation()
+        paused.open(SHED)
+
+        assertEquals(before, paused.state.value)
+        assertEquals([], api.openedIds)
+    }
+
     private fun user(text: String) = ChatMessage(ChatMessage.Author.USER, text)
 
     private fun assistant(text: String, error: String? = null) =
@@ -530,7 +547,6 @@ class ChatViewModelTest {
         /** Bounds every wait, so a missing guard fails the test instead of hanging it. */
         val TIMEOUT = 5.seconds
 
-        val PAYOUT_CONFIRMATION = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""")
         const val GNOME_TEXT = "my garden gnome is gone"
         val CARD = ChatEvent.ClaimCard(
             policyNumber = "KP-1001",
@@ -542,5 +558,6 @@ class ChatViewModelTest {
         )
         val SHED = ConversationSummary("c-3", "Shed", "2026-11-20T10:00:00Z")
         val GNOME = ConversationSummary("c-7", "Gnome", "2026-11-20T09:00:00Z")
+        val PAYOUT_CONFIRMATION = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""")
     }
 }

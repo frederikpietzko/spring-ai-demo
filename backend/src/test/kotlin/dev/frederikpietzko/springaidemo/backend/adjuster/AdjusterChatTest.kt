@@ -76,7 +76,7 @@ class AdjusterChatTest {
         postChat("""{"persona":"CLAIMANT","message":"Hi"}""")
 
         val options = assertIs<ToolCallingChatOptions>(fake.prompts.last().options)
-        // The claimant has its own conversation search tool, but none of the core tools.
+        // The claimant keeps only its own conversation recall tool, never a core tool.
         assertEquals(["conversation_search"], options.toolCallbacks.orEmpty().map { it.toolDefinition.name() })
     }
 

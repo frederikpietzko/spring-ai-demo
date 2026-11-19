@@ -14,6 +14,7 @@ import dev.frederikpietzko.springaidemo.chatprotocol.ClaimCardItem
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import org.springframework.ai.chat.messages.SystemMessage
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.test.web.servlet.client.RestTestClient
 import kotlin.test.assertEquals
@@ -103,12 +104,14 @@ class ClaimActionsEndpointTest {
     }
 
     @Test
-    fun `an adjuster prepare request gets one error and no model call`() {
-        val events = post("""{"persona":"ADJUSTER","message":"","action":"PREPARE_CLAIM"}""")
+    fun `an adjuster request ignores the claim action and is answered by the adjuster agent`() {
+        fake.replyChunks("ok")
 
-        val error = assertIs<ChatEvent.Error>(events.single())
-        assertTrue(error.message.contains("ADJUSTER"), error.message)
-        assertEquals([], fake.prompts)
+        val events = post("""{"persona":"ADJUSTER","message":"Hi","action":"PREPARE_CLAIM"}""")
+
+        assertEquals([ChatEvent.TextDelta("ok"), ChatEvent.Done], events)
+        val system = fake.prompts.last().instructions.filterIsInstance<SystemMessage>().single().text.orEmpty()
+        assertTrue(system.contains("adjuster assistant"), system)
     }
 
     @ParameterizedTest

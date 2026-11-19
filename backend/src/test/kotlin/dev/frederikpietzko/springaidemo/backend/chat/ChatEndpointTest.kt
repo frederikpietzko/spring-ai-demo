@@ -99,7 +99,7 @@ class ChatEndpointTest {
     }
 
     @Test
-    fun `a claimant request is answered by the claimant agent, with only its conversation search tool`() {
+    fun `a claimant request is answered by the claimant agent, without core tools`() {
         fake.replyChunks("ok")
 
         postChat(CLAIMANT_HI)
@@ -107,10 +107,9 @@ class ChatEndpointTest {
         val prompt = fake.prompts.last()
         val system = prompt.instructions.filterIsInstance<SystemMessage>().single().text.orEmpty()
         assertTrue(system.contains("claims desk assistant"), system)
-        assertEquals(
-            ["conversation_search"],
-            assertIs<ToolCallingChatOptions>(prompt.options).toolCallbacks.orEmpty().map { it.toolDefinition.name() },
-        )
+        val tools = assertIs<ToolCallingChatOptions>(prompt.options).toolCallbacks.orEmpty()
+        // Only the claimant's own conversation recall tool, no core tool.
+        assertEquals(["conversation_search"], tools.map { it.toolDefinition.name() })
     }
 
     @Test

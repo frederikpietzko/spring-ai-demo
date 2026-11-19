@@ -402,3 +402,10 @@ Binding text: `openspec/changes/archive/2026-11-20-agentic-rag-fraud/design.md` 
 - `README.md` "Desktop chat" has an older duplicated paragraph saying the Adjuster is not selectable yet.
 - Note the `: String` power-assert workaround in the kotlin-testing skill, and that Jackson 3 `JsonNode.map` shadows Kotlin's `map` (use `.values().map`).
 - `ide diagnostics` shows style warnings ("Use destructuring declaration") in new tests; optional cleanup.
+
+### Merge `worktree-bridge-*` (mcp-tools-and-confirmation) into `roadmap-track-b`
+
+- **Adjuster has no session memory or claim actions:** the adjuster client keeps its own stateless loop; `conversationId` and `action` of an `ADJUSTER` request are ignored, session advisors, `conversation_search` and the claim intake stay claimant-only. *Why:* the confirmation resume is stateless by design (paused reply kept in `PendingConfirmations`), and the follow-up in both sections already says the adjuster would adopt session advisors later.
+- **Controller keeps two terminal rules:** the claimant flows use `terminated()` (Done after every completed reply, including claim cards); the adjuster flows use `withTerminalEvent()` (Done only after text or nothing). Both share one `mapFailures()` catch. `ConfirmationRequest` joins `isTerminal`.
+- **View model:** `send`, `prepareClaim` and `confirmClaim` are ignored while a confirmation is pending; `decide` streams the continuation into the same reply and refreshes the conversation list; `newConversation` and `open` are ignored while a confirmation is pending, like while sending. The input row's Send and Prepare claim share `canSend`.
+- **Tests adapted, none loosened in intent:** the claimant "without tools" tests now assert exactly the `conversation_search` tool (no core tool); the adjuster prepare-claim test (expected one `Error`) now asserts the adjuster agent answers and ignores the action; bridge desktop tests use scripted ids and carry `conversationId`.
