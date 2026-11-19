@@ -86,3 +86,4 @@ Project agents: `planner` (writes OpenSpec artifacts only), `implementer` (test-
 - Commit only source and docs; secrets (`.env`, API keys, `*.key`) stay local. Spring AI demos read provider keys from the environment, never from committed config.
 - Push, open PRs or deploy only on explicit request.
 - Architecture changes (new top-level packages, new shared abstractions) need an ADR.
+- Keep the repo audience-neutral: never name a specific customer, event or company the demo is presented to (code, docs, specs, commit messages, sample data). The demo is reused across talks.
