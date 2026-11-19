@@ -104,9 +104,11 @@ Agents use these terms exactly in code, tests and specs. Don't invent synonyms.
 | **Damage item** | One damaged object with a category and an estimated amount |
 | **Claim status** | `DRAFT`, `FILED`, `UNDER_REVIEW`, `APPROVED`, `REJECTED`, `PAID` |
 | **Fraud check** | Comparing a claim against the sighting bulletins and the claim history |
+| **Fraud assessment** | Structured output of a fraud check (`FraudAssessment`): a verdict, the evidence (bulletin ids, each with a finding) and a confidence from 0 to 1 |
+| **Fraud verdict** | `CLEAR` (a bulletin confirms the claim), `FLAGGED` (a bulletin contradicts it), `INCONCLUSIVE` (neither) |
 | **Payout** | Payment for an approved claim. Needs `payout:write` and human confirmation |
 
-Setting: a fictional coastal city with districts (Harbour, Old Town, Neon Market, Riverside, Hilltop) and a neighbouring town for alibis. It is fictional on purpose so the demo can be reused anywhere. Swap the names freely.
+Setting: a fictional coastal city with districts (Harbour, Old Town, Neon Market, Riverside, Hilltop) and a neighbouring town for alibis, Saltmarsh (`SALTMARSH`, about 40 km up the coast). It is fictional on purpose so the demo can be reused anywhere. Swap the names freely.
 
 Money: one fictional currency, amounts as `Long` minor units. No real currency.
 
@@ -287,7 +289,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
     - Writes **ADR-0007**.
   - Out: subagents.
   - Tests: the fake model writes and updates todos, and the SSE carries the matching `TodoUpdate`s. Only skill names and descriptions sit in the system prompt, and the full skill loads on demand.
-- [ ] **`agentic-rag-fraud`**
+- [x] **`agentic-rag-fraud`**
   - Scope:
     - Sighting bulletins corpus (fictional, timestamped, located).
     - Retrieval exposed as a **tool** the agent decides to call (metadata filters on time and place, query rewriting, several retrievals), plus a fraud verdict as structured output (`FraudAssessment`: verdict, evidence, confidence).

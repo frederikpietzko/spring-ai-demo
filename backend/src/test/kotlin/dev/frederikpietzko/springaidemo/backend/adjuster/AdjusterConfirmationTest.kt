@@ -69,6 +69,24 @@ class AdjusterConfirmationTest {
     }
 
     @Test
+    fun `a search paused together with a payout runs after approval`() {
+        fake.requestTools("searchSightingBulletins" to SALTMARSH_SEARCH, "issuePayout" to CLAIM_4711)
+        val pause = assertIs<ChatEvent.ConfirmationRequest>(postChat(ADJUSTER_PAY_4711).last())
+        fake.replyChunks("Done")
+
+        val events = decide(pause.confirmationId, approved = true)
+
+        assertEquals(ChatEvent.Done, events.last())
+        val results = fake.prompts.last().instructions.filterIsInstance<ToolResponseMessage>()
+            .flatMap { it.responses }
+            .associate { it.name to it.responseData }
+        val expectedTools: Set<String> = ["searchSightingBulletins", "issuePayout"]
+        assertEquals(expectedTools, results.keys)
+        val searchResult = results.getValue("searchSightingBulletins")
+        assertTrue(searchResult.contains("SB-102"), searchResult)
+    }
+
+    @Test
     fun `denying runs no payout and hands the denial to the model`() {
         val confirmationId = pauseForPayout()
         fake.reply("Understood, no payout.")
@@ -158,6 +176,8 @@ class AdjusterConfirmationTest {
     private companion object {
         const val ADJUSTER_PAY_4711 = """{"persona":"ADJUSTER","message":"Pay out claim 4711"}"""
         const val CLAIM_4711 = """{"claimNumber":4711}"""
+        const val SALTMARSH_SEARCH = """{"query":"kaiju sighting","from":"2026-11-18T13:00:00Z",""" +
+            """"to":"2026-11-18T17:00:00Z","place":"SALTMARSH"}"""
         val IDENTITY: Map<String, Any?> = mapOf("actor" to "adjuster-agent")
     }
 }

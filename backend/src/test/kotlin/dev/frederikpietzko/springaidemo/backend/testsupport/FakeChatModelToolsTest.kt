@@ -45,6 +45,20 @@ class FakeChatModelToolsTest {
     }
 
     @Test
+    fun `one reply requesting two tools runs both and both results reach the next call`() {
+        fake.requestTools("getClaim" to """{"id":"4711"}""", "getClaim" to """{"id":"4712"}""")
+        fake.reply("Both claims are open.")
+
+        val answer = builder.build().prompt().user("Status of claims 4711 and 4712?").tools(tool).call().content()
+
+        assertEquals("Both claims are open.", answer)
+        assertEquals(["4711", "4712"], tool.executedWith)
+        val results = fake.prompts[1].instructions.filterIsInstance<ToolResponseMessage>()
+            .flatMap { it.responses.map { response -> response.responseData } }
+        assertEquals(["\"claim 4711 is open\"", "\"claim 4712 is open\""], results)
+    }
+
+    @Test
     fun `streams scripted text chunks in order and completes`() {
         fake.replyChunks("Hel", "lo")
 

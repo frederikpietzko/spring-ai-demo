@@ -1,5 +1,6 @@
 package dev.frederikpietzko.springaidemo.backend.adjuster
 
+import dev.frederikpietzko.springaidemo.backend.fraud.SightingBulletinSearch
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +18,7 @@ import org.springframework.ai.model.tool.ToolCallDecision
 import org.springframework.ai.model.tool.ToolCallDecisions
 import org.springframework.ai.model.tool.ToolCallingChatOptions
 import org.springframework.ai.model.tool.ToolCallingManager
+import org.springframework.ai.support.ToolCallbacks
 import org.springframework.ai.tool.ToolCallbackProvider
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
@@ -44,6 +46,7 @@ class AdjusterChat(
     @Qualifier("mcpToolCallbacks") private val coreTools: ToolCallbackProvider,
     private val toolCallingManager: ToolCallingManager,
     private val pendingConfirmations: PendingConfirmations,
+    private val sightingBulletinSearch: SightingBulletinSearch,
 ) {
     /** Streams the reply to [message]: text deltas, and a confirmation request if the reply pauses. */
     fun stream(message: String): Flow<ChatEvent> {
@@ -71,7 +74,8 @@ class AdjusterChat(
 
     /**
      * Runs or denies the tool calls of the [paused] reply and returns the conversation with their results. The loop
-     * keeps no state, so the prompt carries the core tools and the tool context again.
+     * keeps no state, so the prompt carries every tool of the adjuster (the core tools and the bulletin search) and the
+     * tool context again: a tool missing here fails with "No ToolCallback found".
      */
     private fun runToolCalls(paused: PausedTurn, approved: Boolean): List<Message> {
         val keys = ToolCallDecisions.toolCallKeys(checkNotNull(paused.reply.result) { "paused reply" }.output)
@@ -79,7 +83,7 @@ class AdjusterChat(
             if (approved) ToolCallDecision.allow(key) else ToolCallDecision.deny(key, DENIED)
         }
         val options = ToolCallingChatOptions.builder()
-            .toolCallbacks(*coreTools.toolCallbacks)
+            .toolCallbacks(*coreTools.toolCallbacks, *ToolCallbacks.from(sightingBulletinSearch))
             .toolContext(ADJUSTER_IDENTITY)
             .build()
         return toolCallingManager

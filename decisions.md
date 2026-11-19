@@ -368,3 +368,37 @@ Binding text: `openspec/changes/archive/2026-11-20-mcp-tools-and-confirmation/de
 - **Pending confirmations never expire** and are lost on restart (demo only).
 - **After the merge with track B:** the adjuster client should adopt the observability advisors; session advisors stay claimant-only.
 - **`CredentialIsolationTest`** now also guards a non-credential (`CORE_MCP_URL`); its name could say "environment isolation".
+
+### Wave 3 - `agentic-rag-fraud`
+
+Review: clean (no confirmed blockers).
+
+Binding text: `openspec/changes/archive/2026-11-20-agentic-rag-fraud/design.md` (no new ADR; `docs/adr/0006-vector-store-and-embeddings.md` got a status-line note on the time filter).
+
+**Decisions**
+
+- **Package and ADR:** new package `backend/fraud` (`SightingBulletinIngestion`, `SightingBulletinSearch`, `FraudCheck`, `FraudAssessment`), no new ADR; ADR-0006 gets a status-line note. *Why:* `intake` and `rag` were added the same way; ROADMAP section 6 assigns no ADR to this change; the policy wording stays alone in `rag`.
+- **Agentic retrieval is the model's own:** the model writes and rewrites the `query` argument; the tool description tells it to search again, rephrased or at another place, when nothing useful comes back. The library `RewriteQueryTransformer` is not used. *Why:* the transformer makes a hidden extra model call per retrieval, which uses up steps of the scripted fake; the demo point is that the agent decides.
+- **Verdict is a service, not a tool:** a blocking `FraudCheck.assess(claimNumber)` with a private chat client and a sealed `FraudCheckResult` (`Assessed` | `Unreadable`; a null entity is `Unreadable` too). It is offered the search tool and a lazily filtered read-only `getClaim`, uses prompt-based `entity<FraudAssessment>()` and sends `toolContext(actor=adjuster-agent)`. No desktop event, no adjuster tool `checkFraud`. *Why:* `entity()` exists only for blocking calls and the adjuster chat streams; a desktop event would change ADR-0005; an adjuster tool that runs an agent is the `subagents` change.
+- **Time stored as epoch seconds:** `observedAtEpochSecond` is a number filtered with numeric `gte`/`lte`; the ISO time is derived with `Instant.ofEpochSecond`. *Why:* the pgvector filter converter rewrites ISO date strings to the `.SSS` form, so a stored `...:00Z` value is not `<=` the bound `...:00.000Z`; the boundary scenario is tested.
+- **Corpus format:** one Markdown file per bulletin with a hand-parsed `key: value` header (id, observedAt, place), a blank line, then the text; seven bulletins SB-101..SB-107, no splitter. The class is part of the text, not metadata. `internal` parse API (`SightingBulletin`, `parseSightingBulletin`, `readSightingBulletins`) shared by ingestion and corpus tests; malformed files fail by name. *Why:* `MarkdownDocumentReader` has no front-matter support and a YAML library is too much for three keys; nothing filters by class yet.
+- **Alibi data:** SB-102 and SB-103 at SALTMARSH on 2026-11-18 at 14:45Z and 15:10Z (SB-102 about 40 km from the harbour), no HARBOUR bulletin in the incident hours, SB-106 matches claim 4712 (class 5) and SB-107 claim 4713 (class 1). The town is named SALTMARSH; `place` is a free string matched exactly with `eq`, a blank place means everywhere, `District` is unchanged. *Why:* a claim cannot happen in the neighbouring town, so it does not belong in the claim-domain enum.
+- **Adjuster wiring and resume path:** `adjusterChatClient.defaultTools(coreTools, sightingBulletinSearch)`, one adjuster-prompt bullet, and `ToolCallbacks.from(sightingBulletinSearch)` in `AdjusterChat.runToolCalls`. `FakeChatModel.requestTools(vararg Pair<String,String>)` scripts several tool calls in one reply, so a test covers a paused payout together with a search. *Why:* the tool loop keeps no state, so a paused reply that also asked for a search would fail with an unknown tool on resume.
+- **Test data rule:** every bulletin text and every test query contains "kaiju"; top K is 5; filter tests run on the startup-ingested corpus; a temporary `policy-wording` row pins the `eq corpus` filter. *Why:* pgvector drops rows at distance exactly 1 and the hashed bag-of-words `FakeEmbeddingModel` yields exactly 1 for texts sharing no word.
+- **Hit time type and prompt text:** `SightingBulletinHit.observedAt` is an `Instant` (ISO-8601 UTC in the tool result JSON, tested through `ToolCallbacks`); the fraud user message is "Check claim <n> against the sighting bulletins." and the system prompt has no braces. *Why:* simplest type that meets the spec; braces would be parsed as template placeholders.
+- **ArchUnit rule:** `backend.fraud..` may not depend on chat, adjuster, chatprotocol or Exposed; `FraudCheck` keeps its own private identity value. *Why:* adjuster depends on fraud, so a back-reference would be a package cycle.
+- **Scope trims:** claim-history half of the glossary's fraud check, confidence range validation, returning consulted bulletins and a ranking-quality test are left out; `evaluation` can look bulletins up by id through metadata. Glossary rows "Fraud assessment" and "Fraud verdict" were added.
+- **Tooling workaround:** assertion messages that come from Java (`String!`) are stored in variables declared `: String` first, because the power-assert plugin crashes on platform-typed message locals.
+
+**Descoped / deviations from the roadmap entry**
+
+- "Query rewriting" is the model's rewrite, not the library transformer; the claim-history check is not part of this change.
+
+**Follow-ups**
+
+- Validate the assessment: compare evidence ids with the bulletins the search returned and range-check `confidence` (a value such as 7 or -1 is accepted today).
+- A model-supplied place variant such as "Saltmarsh" or a trailing space returns an empty list, which looks like a real absence; consider normalising or validating `place`.
+- The HNSW index is probed before the metadata filters apply and the table is shared with the policy wording; once it outgrows the candidate pool (default 40) a filtered search can return fewer than top K hits.
+- `README.md` "Desktop chat" has an older duplicated paragraph saying the Adjuster is not selectable yet.
+- Note the `: String` power-assert workaround in the kotlin-testing skill, and that Jackson 3 `JsonNode.map` shadows Kotlin's `map` (use `.values().map`).
+- `ide diagnostics` shows style warnings ("Use destructuring declaration") in new tests; optional cleanup.

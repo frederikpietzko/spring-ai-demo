@@ -73,4 +73,21 @@ class ArchitectureTest {
         noClasses()
             .should().callMethodWhere(unobservedChatClientFactories)
             .because("ADR-0010: only the injected builders carry the observation registry")
+
+    /**
+     * The fraud check is its own capability: it knows neither the chat layer nor the protocol, never reaches back into
+     * the adjuster (which is offered its search tool, so a back-reference would be a package cycle) and, like the RAG
+     * code, leaves the vector table to the vector store (ADR-0006). Full package prefixes, as above.
+     */
+    @ArchTest
+    val fraud_does_not_depend_on_chat_adjuster_or_exposed: ArchRule =
+        noClasses()
+            .that().resideInAPackage("${BackendApplication::class.java.packageName}.fraud..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                "${BackendApplication::class.java.packageName}.chat..",
+                "${BackendApplication::class.java.packageName}.adjuster..",
+                "dev.frederikpietzko.springaidemo.chatprotocol..",
+                "org.jetbrains.exposed..",
+            )
+            .because("the adjuster depends on the fraud check, not the reverse, and ADR-0006 keeps Exposed out")
 }

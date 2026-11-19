@@ -1,5 +1,6 @@
 package dev.frederikpietzko.springaidemo.backend.adjuster
 
+import dev.frederikpietzko.springaidemo.backend.fraud.SightingBulletinSearch
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.tool.ToolCallbackProvider
 import org.springframework.beans.factory.annotation.Qualifier
@@ -12,17 +13,18 @@ import org.springframework.core.io.Resource
 @Configuration(proxyBeanMethods = false)
 class AdjusterConfiguration {
     /**
-     * The adjuster instructions as the system prompt and the core tools of `core-mcp`. MCP tools are not registered
-     * on a chat client automatically, so they are added here explicitly; the provider lists them on every request,
-     * which is when the MCP client connects for the first time.
+     * The adjuster instructions as the system prompt, the core tools of `core-mcp` and the sighting bulletin search.
+     * MCP tools are not registered on a chat client automatically, so they are added here explicitly; the provider
+     * lists them on every request, which is when the MCP client connects for the first time.
      */
     @Bean
     fun adjusterChatClient(
         builder: ChatClient.Builder,
         @Value("classpath:prompts/adjuster-system.md") adjusterSystemPrompt: Resource,
         @Qualifier("mcpToolCallbacks") coreTools: ToolCallbackProvider,
+        sightingBulletinSearch: SightingBulletinSearch,
     ): ChatClient = builder
         .defaultSystem(adjusterSystemPrompt, Charsets.UTF_8)
-        .defaultTools(coreTools)
+        .defaultTools(coreTools, sightingBulletinSearch)
         .build()
 }

@@ -81,6 +81,40 @@ class AdjusterChatTest {
     }
 
     @Test
+    fun `a bulletin search result reaches the model`() {
+        fake.requestTool("searchSightingBulletins", SALTMARSH_SEARCH)
+        fake.replyChunks("Checked")
+
+        val events = sseEvents(postChat(ADJUSTER_CLAIM_4711).responseBody ?: byteArrayOf())
+
+        assertEquals(ChatEvent.Done, events.last())
+        val toolResponse = fake.prompts[1].instructions.filterIsInstance<ToolResponseMessage>().single()
+        val result = assertNotNull(toolResponse.responses.single().responseData)
+        assertTrue(result.contains("SB-102"), result)
+    }
+
+    @Test
+    fun `the claimant is not offered the bulletin search`() {
+        fake.replyChunks("ok")
+
+        postChat("""{"persona":"CLAIMANT","message":"Hi"}""")
+
+        val options = assertIs<ToolCallingChatOptions>(fake.prompts.last().options)
+        val toolNames = options.toolCallbacks.orEmpty().map { it.toolDefinition.name() }
+        assertFalse("searchSightingBulletins" in toolNames, toolNames.toString())
+    }
+
+    @Test
+    fun `the adjuster instructions mention the sighting bulletins`() {
+        fake.replyChunks("ok")
+
+        postChat(ADJUSTER_CLAIM_4711)
+
+        val system = fake.prompts.last().instructions.filterIsInstance<SystemMessage>().single().text.orEmpty()
+        assertTrue(system.contains("sighting bulletins"), system)
+    }
+
+    @Test
     fun `the tool sees the adjuster identity in its tool context`() {
         fake.requestTool("getClaim", CLAIM_4711)
         fake.replyChunks("ok")
@@ -140,6 +174,8 @@ class AdjusterChatTest {
     private companion object {
         const val ADJUSTER_CLAIM_4711 = """{"persona":"ADJUSTER","message":"What is the status of claim 4711?"}"""
         const val CLAIM_4711 = """{"claimNumber":4711}"""
+        const val SALTMARSH_SEARCH = """{"query":"kaiju sighting","from":"2026-11-18T13:00:00Z",""" +
+            """"to":"2026-11-18T17:00:00Z","place":"SALTMARSH"}"""
         const val GENERIC_ERROR = "The claims desk is unavailable."
         val IDENTITY: Map<String, Any?> = mapOf("actor" to "adjuster-agent")
     }
