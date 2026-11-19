@@ -2,6 +2,7 @@
 name: reviewer
 description: Read-only reviewer dispatched by the change-review skill - audits a diff either for spec compliance or for one quality focus (architecture, code standards, design, testing, docs) and returns cited findings. Cannot edit files, run builds or spawn agents. Use via change-review rather than directly.
 tools: Read, Grep, Glob, Bash, Skill, mcp__gradle__query_build, mcp__gradle__inspect_dependencies, mcp__gradle__read_dependency_sources, mcp__gradle__search_dependency_sources, mcp__gradle__gradle_docs
+model: sonnet
 color: orange
 ---
 

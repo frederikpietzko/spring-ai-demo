@@ -1,5 +1,5 @@
 ---
-description: "Ship a change end to end: plan → implement → review → fix (≤3 rounds) → archive → commit, with approval gates"
+description: "Ship a change end to end: plan → implement → review (one lean round) → fix (one round) → archive → commit, with approval gates"
 argument-hint: "<openspec-change-name | feature request>"
 ---
 
@@ -8,7 +8,7 @@ Ship `$ARGUMENTS` through the full harness loop. You are the **orchestrator**: y
 Keep a running status block in each message to the user so they always know where the run is:
 
 ```
-/ship <change> - step <n>/6 <name> | review round <r>/3 | gates passed: plan ✔ archive … commit …
+/ship <change> - step <n>/6 <name> | review: <pending|n confirmed blockers|clean> | gates passed: plan ✔ archive … commit …
 ```
 
 ## 0. Preconditions
@@ -43,29 +43,38 @@ Implementation is the `openspec-apply-change` workflow, executed by the `impleme
 4. Report starts with `PAUSED:` → relay the issue and options to the user and wait. Design issue / scope beyond the spec → fix the plan with `openspec-update-change` and pass Gate 1 again; then re-dispatch the implementer for the remaining tasks (the apply workflow resumes from the unticked tasks).
 5. Verify, don't trust the report: `openspec list --json` must show `completedTasks == totalTasks` for the change, and the SubagentStop hook must have reported `check passed` (or nothing changed). Otherwise stop and ask. Don't review a half-built change.
 
-## 3. Review
+## 3. Review (one round, a sanity check)
 
-Run the `change-review` skill. Scope: `git diff $(git merge-base main HEAD)` plus untracked files from `git status --short`. Spec: the OpenSpec change. Use the skill's normal reviewer sizing - every round gets independent reviewers who are **not** shown earlier rounds' findings.
+This is a demo project: the review is a sanity check that the implementation matches the spec and keeps to the architecture, not an audit. Suboptimal docs and nitpicks in tests are fine.
 
-Verdict `APPROVE` → go to step 5.
+Run **one** lean `change-review` round, overriding the skill's reviewer sizing. Scope: `git diff $(git merge-base main HEAD)` plus untracked files from `git status --short`. Spec: the OpenSpec change. Dispatch the read-only `reviewer` agents in parallel, on smaller models:
 
-## 4. Fix loop (max 3 rounds)
+| Reviewer | Model | Question |
+|---|---|---|
+| Spec compliance (`references/spec-compliance.md`) | sonnet | Is every requirement implemented, and does nothing contradict the spec? |
+| Architecture (`architecture` focus) | sonnet | Are the ADRs and module boundaries kept (data ownership, packages, one shared test context, Flyway owns the schema), and is the layering right? |
+| Correctness (`code-standards` + `testing` focus, bugs only) | haiku | Are there obvious bugs or security holes, and is the core behaviour untested? |
+| Kotlin style (`code-standards` focus, idioms only; rulebook `kotlin-engineer`) | sonnet | Is the code idiomatic Kotlin (null-safety without `!!`, sealed results, immutability, expressions over statements, standard-library idioms, the project's experimental features)? |
 
-While the verdict is `REQUEST_CHANGES` and fewer than 3 fix rounds have run:
+No docs reviewer. Tell every reviewer to be lenient. The style reviewer is only a sanity check: its findings are `minor` at most, never block, and become follow-ups. `blocker` is only for a **real** problem: a spec requirement that is missing or contradicted, a bug or broken behaviour, a security issue, an ADR or architecture violation, or a red build. Everything else is `minor` or `nit`.
 
-1. Dispatch the `implementer` in **fix mode** (still within the `openspec-apply-change` guardrails: no unspecified scope, truthful checkboxes) with the change name and the `blocker` + `major` findings verbatim (`[severity] file:line - problem / why / fix`). `minor`/`nit` findings are not sent; collect them as follow-ups.
-2. From its report, collect `declined` and `needs-spec` findings. A `needs-spec` finding → stop the loop and ask the user (it changes the plan, which needs Gate 1 again via `openspec-update-change`).
-3. Re-check `openspec list --json` (a fix may have unticked and re-ticked a task - all must be ticked again), then re-run step 3 on the full change diff.
+**Triage (you):** before acting, read the cited code for every `blocker`/`major` and keep only findings that are real and relevant to this change. Findings you drop and all `minor`/`nit` findings become follow-ups.
 
-A finding the implementer `declined` that the next round raises again → don't loop on it; take it to the user with both sides (reviewer's why, implementer's reason) at the end.
+No confirmed blocker → go to step 5.
 
-After round 3 with blockers/majors left → **stop**. Report the remaining findings, the declined ones and what was tried. Don't archive or commit; ask the user how to proceed.
+## 4. Fix (one round)
+
+1. Dispatch the `implementer` in **fix mode** (still within the `openspec-apply-change` guardrails: no unspecified scope, truthful checkboxes) with the change name and the **confirmed blockers** verbatim (`[severity] file:line - problem / why / fix`).
+2. From its report, collect `declined` and `needs-spec` findings. A `needs-spec` finding → ask the user (it changes the plan, which needs Gate 1 again via `openspec-update-change`).
+3. Re-check `openspec list --json` (every task ticked again) and that `check` is green. **No second review round.**
+
+If `check` stays red after the fix → stop, report what failed and what was tried, and ask the user how to proceed. Don't archive or commit.
 
 ## 5. ⛔ Gate 2 - archive
 
 Follow the `openspec-archive-change` skill for the change, as written - it owns the incomplete-artifact/task warnings, the delta-spec sync assessment, the inline `openspec-sync-specs` merge and the move to `openspec/changes/archive/YYYY-MM-DD-<name>/`. Its steps (including the `mv` into the archive) are the only way the change gets archived - don't shortcut them with the `openspec archive` CLI or a manual move.
 
-Its sync prompt **is** Gate 2 - one question, not two. Before asking it, prefix the skill's combined sync summary with: final review verdict, review rounds used, the requirement → status table from the last spec-compliance review, and follow-ups (minor/nit + implementer follow-ups). Offer exactly the options the skill allows (e.g. "Sync now (recommended)" / "Archive without syncing" / "Cancel"); "Cancel" stops `/ship` before archive and commit.
+Its sync prompt **is** Gate 2 - one question, not two. Before asking it, prefix the skill's combined sync summary with: the confirmed blockers and whether they were fixed, the requirement → status table from the spec-compliance review, and follow-ups (dropped and minor/nit findings + implementer follow-ups). Offer exactly the options the skill allows (e.g. "Sync now (recommended)" / "Archive without syncing" / "Cancel"); "Cancel" stops `/ship` before archive and commit.
 
 Archiving only happens on an explicit answer. If the skill stops (sync failed, verification mismatch, sync-blocked capability), stop `/ship` and report - don't commit.
 
@@ -79,14 +88,14 @@ Show `git status --short`, `git diff --stat` and a proposed commit message. The 
 <what changed and why, from proposal.md - 2-5 lines>
 
 OpenSpec: <change-name> (archived as <date>-<change-name>)
-Review: APPROVE after <r> fix round(s)
+Review: <n> confirmed blocker(s), fixed | clean
 ```
 
 (plus the attribution trailer required by the session). Ask for approval or edits. On yes → stage the change's files explicitly (no `git add -A` if the precondition check showed unrelated changes) and commit on the change branch. Never push, never merge into `main` - say how to do it instead.
 
 ## Final report
 
-Change name, branch, commit hash (or the gate where it stopped and why), tasks done, tests added, review rounds and final verdict, declined findings, follow-ups.
+Change name, branch, commit hash (or the gate where it stopped and why), tasks done, tests added, confirmed blockers and their fixes, declined findings, follow-ups.
 
 ## Never
 
@@ -94,5 +103,5 @@ Change name, branch, commit hash (or the gate where it stopped and why), tasks d
 - Edit code, tests, specs, `detekt.yml`, baselines or hooks yourself to get past a step - dispatch the right agent or stop and ask.
 - Implement outside `openspec-apply-change`, tick task checkboxes yourself, or archive outside `openspec-archive-change`.
 - Answer a question an OpenSpec skill would ask the user on the user's behalf.
-- Run reviewers yourself or show them earlier findings - independence is the point of the review.
-- Exceed 3 fix rounds.
+- Run reviewers yourself - independence is the point of the review.
+- Run more than one review round or more than one fix round, or block on findings you have not confirmed as real blockers.

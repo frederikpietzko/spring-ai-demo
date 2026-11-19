@@ -25,6 +25,9 @@ Run started 2026-11-20. Each archived change is one local commit on the run's br
 - **O5 A change that stays red after descoping is parked, not committed.** Its work is committed to a local `parked/<change>` branch, the run's branch stays green, and the change is listed here.
 - **O6 Plans are committed before implementation.** A `docs:` commit holds each wave's proposals, so the diff a reviewer sees is exactly the implementation.
 
+- **O7 Lighter review loop (owner's instruction, changed during the run, about 04:30).** After `policy-rag` the loop is: one review round only, with four lenient reviewers on smaller models. Two are on sonnet and check that the spec is met and that the architecture and ADRs are kept. One is on haiku and checks for obvious bugs, security problems and untested core behaviour. One is on sonnet and checks idiomatic Kotlin; it never blocks. The orchestrator then confirms which findings are real blockers. Those get one fix round, with no re-review. Docs gaps and test nitpicks become follow-ups. *Why:* the 3-round loop kept finding new documentation and test "majors" on every round, which cost about two hours per change. The rules are in `.claude/commands/ship.md` and `.claude/agents/reviewer.md` (`model: sonnet`). `chat-streaming` and `policy-rag` went through the old loop.
+- **O8 Recovery from API connection errors.** Three agents died from an SSL/API connection error around 04:15: the `policy-rag` archive step, the `core-mcp-claims` plan refresh and its first implementation attempt. The `policy-rag` archive was finished by hand from the recorded data. The partial `core-mcp-claims` work (module skeleton, init script, task 0.1) was set aside, then restored, and implementation continues from it.
+
 ## Per change
 
 Sections are added in landing order.
