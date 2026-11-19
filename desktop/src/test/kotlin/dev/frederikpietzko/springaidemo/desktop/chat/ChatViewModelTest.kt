@@ -3,8 +3,8 @@ package dev.frederikpietzko.springaidemo.desktop.chat
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatAction
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
-import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import dev.frederikpietzko.springaidemo.chatprotocol.ClaimCardItem
+import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.MessageRole
@@ -550,6 +550,20 @@ class ChatViewModelTest {
 
         assertEquals(ChatState(conversationId = "c-1"), viewModel.state.value)
         assertEquals([], api.decisions)
+    }
+
+    @Test
+    suspend fun `a new conversation and an opened one are ignored while a confirmation is pending`() {
+        val api = FakeChatApi(conversations = { [SHED] }) { flowOf(PAYOUT_CONFIRMATION) }
+        val paused = ChatViewModel(api, scriptedIds())
+        paused.send("Pay claim 4711")
+        val before = paused.state.value
+
+        paused.newConversation()
+        paused.open(SHED)
+
+        assertEquals(before, paused.state.value)
+        assertEquals([], api.openedIds)
     }
 
     private fun user(text: String) = ChatMessage(ChatMessage.Author.USER, text)

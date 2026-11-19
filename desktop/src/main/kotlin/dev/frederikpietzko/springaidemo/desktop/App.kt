@@ -76,9 +76,10 @@ fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null) {
                     modifier = Modifier.width(240.dp).fillMaxHeight(),
                 )
                 Column(Modifier.weight(1f).fillMaxHeight()) {
+                    val canSend = !state.sending && state.pendingConfirmation == null
                     Conversation(
                         messages = state.messages,
-                        sending = state.sending,
+                        canConfirm = canSend,
                         onConfirm = { scope.launch { viewModel.confirmClaim() } },
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
@@ -89,7 +90,7 @@ fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null) {
                         )
                     }
                     InputRow(
-                        canSend = !state.sending && state.pendingConfirmation == null,
+                        canSend = canSend,
                         onSend = { text -> scope.launch { viewModel.send(text) } },
                         onPrepare = { scope.launch { viewModel.prepareClaim() } },
                     )
@@ -148,7 +149,7 @@ private fun Header(persona: Persona, onPersona: (Persona) -> Unit) {
  * card of the last message can be confirmed: the backend files only the latest prepared claim.
  */
 @Composable
-private fun Conversation(messages: List<ChatMessage>, sending: Boolean, onConfirm: () -> Unit, modifier: Modifier) {
+private fun Conversation(messages: List<ChatMessage>, canConfirm: Boolean, onConfirm: () -> Unit, modifier: Modifier) {
     if (messages.isEmpty()) {
         Box(modifier, contentAlignment = Alignment.Center) {
             DText("Describe the kaiju damage to get started.", color = Demo.colors.inkMuted)
@@ -166,7 +167,7 @@ private fun Conversation(messages: List<ChatMessage>, sending: Boolean, onConfir
         items(messages) { message ->
             MessageBubble(
                 message = message,
-                canConfirm = message === messages.last() && !sending,
+                canConfirm = canConfirm && message === messages.last(),
                 onConfirm = onConfirm,
             )
         }

@@ -19,8 +19,8 @@ import androidx.compose.ui.text.AnnotatedString
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatAction
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
-import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import dev.frederikpietzko.springaidemo.chatprotocol.ClaimCardItem
+import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.MessageRole
@@ -83,7 +83,9 @@ class AppSemanticsTest {
         waitForIdle()
 
         onNode(isPersonaSwitch).assertTextContains("Adjuster")
-        assertEquals([ChatRequest(Persona.ADJUSTER, "Hi", api.requests.single().conversationId)], api.requests)
+        val request = api.requests.single()
+        assertEquals(ChatRequest(Persona.ADJUSTER, "Hi", request.conversationId), request)
+        assertTrue(!request.conversationId.isNullOrBlank(), request.toString())
     }
 
     @Test
@@ -291,6 +293,7 @@ class AppSemanticsTest {
     }
 
     private companion object {
+        val PAYOUT_CONFIRMATION = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""")
         val SHED = ConversationSummary("c-3", "Shed", "2026-11-20T10:00:00Z")
         val GNOME = ConversationSummary("c-7", "Gnome", "2026-11-20T09:00:00Z")
 
@@ -310,8 +313,7 @@ class AppSemanticsTest {
                 ClaimCardItem("GARDEN", "Garden gnome", 25000),
             ],
         )
-        val TABLE = ChatEvent.AnalyticsTable("Payouts by district", ["District", "Payouts"], [["HARBOUR", "3"]])
 
-        val PAYOUT_CONFIRMATION = ChatEvent.ConfirmationRequest("c-1", "issuePayout", """{"claimNumber":4711}""")
+        val TABLE = ChatEvent.AnalyticsTable("Payouts by district", ["District", "Payouts"], [["HARBOUR", "3"]])
     }
 }

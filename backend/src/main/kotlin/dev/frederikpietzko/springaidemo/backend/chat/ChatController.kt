@@ -47,7 +47,7 @@ class ChatController(
      * Streams the answer to [request]; the persona picks the agent. A request without a conversation id, or with a
      * blank one, gets a fresh conversation of its own. For the claimant, the action decides who answers: a message is
      * answered by the claimant agent, the claim actions by the [ClaimIntake], whatever the request's message says. The
-     * adjuster answers messages only.
+     * adjuster agent answers messages only; a claim action for the adjuster gets one error event and no model call.
      */
     @PostMapping("/chat", consumes = [MediaType.APPLICATION_JSON_VALUE], produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
     fun chat(@RequestBody request: ChatRequest): Flow<ServerSentEvent<String>> =

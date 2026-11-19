@@ -3,10 +3,10 @@ package dev.frederikpietzko.springaidemo.backend.chat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.reactive.asFlow
 import org.springframework.ai.chat.client.ChatClient
-import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.ai.session.SessionAttributes
 import org.springframework.ai.session.advisor.SessionAdvisors
 import org.springframework.ai.session.advisor.SessionMemoryAdvisor
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 
 /** The claimant agent: answers one claimant message of a conversation as a stream of text chunks. */
