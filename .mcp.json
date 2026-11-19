@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "gradle": {
+      "command": "jbang",
+      "args": [
+        "run",
+        "--quiet",
+        "--fresh",
+        "gradle-mcp@rnett"
+      ]
+    },
+    "jbcontext": {
+      "command": "jbcontext",
+      "args": [
+        "mcp"
+      ]
+    },
+    "kotlin-docs": {
+      "type": "http",
+      "url": "https://mcp.kotlinlang.org"
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "Authorization": "${CONTEXT7_API_KEY:-}"
+      }
+    }
+  }
+}

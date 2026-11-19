@@ -1,0 +1,68 @@
+{
+  "_comment": "Hook config taken from harness-engineering-spring. NOT active. To enable: copy the \"hooks\" block into .claude/settings.json once a Gradle build (with detekt + a `check` task) exists.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/preflight.py\"",
+            "timeout": 10,
+            "statusMessage": "Harness preflight"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/detekt_changed_file.py\"",
+            "timeout": 180,
+            "statusMessage": "detekt on edited file"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/check_changed_modules.py\"",
+            "timeout": 900,
+            "statusMessage": "Running check on changed Gradle projects"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "implementer|general-purpose",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/check_changed_modules.py\"",
+            "timeout": 900,
+            "statusMessage": "Running check on changed Gradle projects"
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/check_changed_modules.py\"",
+            "timeout": 900,
+            "statusMessage": "Running check on changed Gradle projects"
+          }
+        ]
+      }
+    ]
+  }
+}

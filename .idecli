@@ -1,0 +1,15 @@
+{
+  "lsp-servers": {
+    "intellij-server": {
+      "languages": {
+        "java": [
+          "*.java"
+        ],
+        "kotlin": [
+          "*.kt",
+          "*.kts"
+        ]
+      }
+    }
+  }
+}
