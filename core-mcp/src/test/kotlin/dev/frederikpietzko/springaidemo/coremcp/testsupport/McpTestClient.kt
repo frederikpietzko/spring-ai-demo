@@ -20,13 +20,22 @@ private val REQUEST_TIMEOUT = Duration.ofSeconds(10)
 
 /**
  * The MCP SDK client the tests use: it talks Streamable HTTP to the running server on its random port (the default
- * endpoint `/mcp`), exactly as an agent would. It connects and initializes on first use, and disconnects when the
- * context starts closing, before the server stops, so the server never waits for the client's open stream.
+ * endpoint `/mcp`), exactly as an agent would, and sends the access token [fetchToken] returns as its bearer token
+ * (fetched once, on first use). It connects and initializes on first use, and disconnects when the context starts
+ * closing, before the server stops, so the server never waits for the client's open stream. A client a test builds
+ * itself is closed by that test.
  */
-class McpTestClient(private val environment: Environment) : ApplicationListener<ContextClosedEvent> {
+class McpTestClient(private val environment: Environment, fetchToken: () -> String) :
+    ApplicationListener<ContextClosedEvent>, AutoCloseable {
+    /** The bearer token this client sends with every request. */
+    val accessToken: String by lazy(fetchToken)
+
     private val connection = lazy {
         val port = environment.getRequiredProperty("local.server.port")
-        McpClient.sync(HttpClientStreamableHttpTransport.builder("http://127.0.0.1:$port").build())
+        val transport = HttpClientStreamableHttpTransport.builder("http://127.0.0.1:$port")
+            .addHttpRequestCustomizer { request, _, _, _, _ -> request.header("Authorization", "Bearer $accessToken") }
+            .build()
+        McpClient.sync(transport)
             .requestTimeout(REQUEST_TIMEOUT)
             .build()
             .also { it.initialize() }
@@ -36,20 +45,31 @@ class McpTestClient(private val environment: Environment) : ApplicationListener<
     /** Name and version the server reported in the initialize handshake. */
     fun serverInfo(): Implementation = client.serverInfo
 
-    /** Calls the tool [name] with [arguments] (JSON-like values: strings, numbers, lists, maps). */
-    fun call(name: String, arguments: Map<String, Any>): CallToolResult =
-        client.callTool(CallToolRequest.builder(name).arguments(arguments).build())
+    /**
+     * Calls the tool [name] with [arguments] (JSON-like values: strings, numbers, lists, maps) and [meta] as the
+     * request `_meta` (where the backend puts the claimant id).
+     */
+    fun call(name: String, arguments: Map<String, Any>, meta: Map<String, Any> = emptyMap()): CallToolResult =
+        client.callTool(CallToolRequest.builder(name).arguments(arguments).meta(meta).build())
 
     fun listTools(): List<Tool> = client.listTools().tools()
 
     fun listResourceTemplates(): List<ResourceTemplate> = client.listResourceTemplates().resourceTemplates()
 
-    fun readResource(uri: String): ReadResourceResult = client.readResource(ReadResourceRequest.builder(uri).build())
+    /** Reads the resource [uri] with [meta] as the request `_meta`. */
+    fun readResource(uri: String, meta: Map<String, Any> = emptyMap()): ReadResourceResult =
+        client.readResource(ReadResourceRequest.builder(uri).meta(meta).build())
 
-    override fun onApplicationEvent(event: ContextClosedEvent) {
+    override fun onApplicationEvent(event: ContextClosedEvent) = close()
+
+    override fun close() {
         if (connection.isInitialized()) client.close()
     }
 }
+
+/** A claimant client whose token holds only [scopes] (a test closes it, `use { ... }`). */
+fun claimantClientWithScopes(environment: Environment, authServer: AuthServerProcess, scopes: String): McpTestClient =
+    McpTestClient(environment) { authServer.token(CLAIMANT_AGENT, scopes) }
 
 /** The text of a tool result's single text content (the JSON or the error sentence). */
 val CallToolResult.text: String

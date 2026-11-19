@@ -106,6 +106,8 @@ object SecretScanner {
         "DB_PASSWORD" to "demo", // local compose database password
         "POSTGRES_USER" to "demo", // same credentials in compose.yaml
         "POSTGRES_PASSWORD" to "demo", // same credentials in compose.yaml
+        "CLAIMANT_AGENT_SECRET" to "claimant-local-secret", // auth-server and backend: local claimant agent client
+        "ADJUSTER_AGENT_SECRET" to "adjuster-local-secret", // auth-server and backend: local adjuster agent client
     )
 
     private val excludedDirectories: Set<String> = ["build", ".gradle", ".git", ".idea", ".kotlin", "node_modules"]

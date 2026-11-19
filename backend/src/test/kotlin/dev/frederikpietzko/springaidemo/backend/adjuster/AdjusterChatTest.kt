@@ -38,8 +38,8 @@ class AdjusterChatTest {
     private lateinit var coreTools: FakeCoreTools
 
     @Autowired
-    @Qualifier("mcpToolCallbacks")
-    private lateinit var mcpToolCallbacks: ToolCallbackProvider
+    @Qualifier("adjusterCoreTools")
+    private lateinit var adjusterCoreTools: ToolCallbackProvider
 
     @Autowired
     private lateinit var builder: ChatClient.Builder
@@ -118,7 +118,7 @@ class AdjusterChatTest {
     @Test
     fun `a local tool that reuses a core tool name fails the request before the model is asked`() {
         // ClaimLookupTool declares a local getClaim, the name of a core tool.
-        val clashing = builder.defaultTools(mcpToolCallbacks, ClaimLookupTool()).build()
+        val clashing = builder.defaultTools(adjusterCoreTools, ClaimLookupTool()).build()
         fake.reply("never used")
 
         val error = assertFailsWith<IllegalStateException> {

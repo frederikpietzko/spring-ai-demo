@@ -3,6 +3,7 @@ package dev.frederikpietzko.springaidemo.coremcp.mcp
 import dev.frederikpietzko.springaidemo.coremcp.domain.Payout
 import dev.frederikpietzko.springaidemo.coremcp.domain.PayoutResult
 import dev.frederikpietzko.springaidemo.coremcp.domain.PayoutService
+import dev.frederikpietzko.springaidemo.coremcp.security.CallerAccess
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult
 import org.springframework.ai.mcp.annotation.McpTool
 import org.springframework.ai.mcp.annotation.McpToolParam
@@ -13,16 +14,17 @@ import java.time.Instant
 /** What `issuePayout` answers: the payout and whether this call created it. */
 data class PayoutReceipt(val claimNumber: Long, val amountMinor: Long, val issuedAt: Instant, val newlyIssued: Boolean)
 
-/** The MCP tool that pays claims. */
+/** The MCP tool that pays claims; only a token with `payout:write` (the adjuster agent's) may call it. */
 @Component
-class PayoutTools(private val payouts: PayoutService, private val json: JsonMapper) {
+class PayoutTools(private val payouts: PayoutService, private val json: JsonMapper, private val access: CallerAccess) {
     @McpTool(
         description = "Pays an APPROVED claim: total estimated damage minus the policy deductible, in minor units; " +
             "the claim becomes PAID. Calling it again for a paid claim returns the existing payout.",
         annotations = McpTool.McpAnnotations(idempotentHint = true),
     )
-    fun issuePayout(@McpToolParam(description = "Claim number, for example 4711") claimNumber: Long): CallToolResult =
-        when (val result = payouts.issue(claimNumber)) {
+    fun issuePayout(@McpToolParam(description = "Claim number, for example 4711") claimNumber: Long): CallToolResult {
+        access.scopeDenial("payout:write")?.let { return ToolResults.error(it) }
+        return when (val result = payouts.issue(claimNumber)) {
             is PayoutResult.Issued -> receipt(claimNumber, result.payout, newlyIssued = true)
             is PayoutResult.AlreadyIssued -> receipt(claimNumber, result.payout, newlyIssued = false)
             PayoutResult.NotFound -> ToolResults.error("Claim $claimNumber not found")
@@ -33,6 +35,7 @@ class PayoutTools(private val payouts: PayoutService, private val json: JsonMapp
                     "the deductible of ${result.deductibleMinor}; nothing to pay",
             )
         }
+    }
 
     private fun receipt(claimNumber: Long, payout: Payout, newlyIssued: Boolean): CallToolResult =
         ToolResults.ok(json, PayoutReceipt(claimNumber, payout.amountMinor, payout.issuedAt, newlyIssued))

@@ -23,7 +23,7 @@ import org.springframework.stereotype.Service
 
 /**
  * Who calls the core tools. It travels in the tool context only, never in a message, and is forwarded to `core-mcp`
- * as MCP `_meta`. A fixed adjuster identity until the claimant id and OAuth arrive (`mcp-security`).
+ * as MCP `_meta` ([identityMeta]). The adjuster connection's token proves the persona to the core (ADR-0009).
  */
 private val ADJUSTER_IDENTITY: Map<String, Any> = mapOf("actor" to "adjuster-agent")
 
@@ -41,7 +41,7 @@ private const val NOTHING_WAITING = "Nothing is waiting for this decision."
 @Service
 class AdjusterChat(
     @Qualifier("adjusterChatClient") private val adjusterChatClient: ChatClient,
-    @Qualifier("mcpToolCallbacks") private val coreTools: ToolCallbackProvider,
+    @Qualifier("adjusterCoreTools") private val coreTools: ToolCallbackProvider,
     private val toolCallingManager: ToolCallingManager,
     private val pendingConfirmations: PendingConfirmations,
 ) {

@@ -20,7 +20,7 @@ class AdjusterConfiguration {
     fun adjusterChatClient(
         builder: ChatClient.Builder,
         @Value("classpath:prompts/adjuster-system.md") adjusterSystemPrompt: Resource,
-        @Qualifier("mcpToolCallbacks") coreTools: ToolCallbackProvider,
+        @Qualifier("adjusterCoreTools") coreTools: ToolCallbackProvider,
     ): ChatClient = builder
         .defaultSystem(adjusterSystemPrompt, Charsets.UTF_8)
         .defaultTools(coreTools)

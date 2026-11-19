@@ -7,7 +7,8 @@ Small, runnable examples of Spring AI 2.1 features (Kotlin, Spring Boot 4.2). Th
 | `backend` | Spring Boot 4.2 application: Spring AI Anthropic (Claude Haiku), Ollama embeddings, pgvector RAG, Session Memory (JDBC), Actuator health, Exposed, Flyway, PostgreSQL |
 | `desktop` | Compose Multiplatform desktop app (JVM): the chat screen, the shared theme and components, a Ktor SSE client |
 | `chat-protocol` | Shared library module (no runtime): chat request (with the optional conversation id), persona, chat events, conversation summaries and transcript messages with their JSON form (ADR-0005) |
-| `core-mcp` | Spring Boot 4.2 application on port 8081: the insurer core system (policies, claims, payouts) as a Spring AI MCP server over Streamable HTTP, Exposed, Flyway, its own database `core` (ADR-0003) |
+| `core-mcp` | Spring Boot 4.2 application on port 8081: the insurer core system (policies, claims, payouts) as a Spring AI MCP server over Streamable HTTP, Exposed, Flyway, its own database `core` (ADR-0003); an OAuth 2 resource server that checks token, scope and claimant ownership (ADR-0009) |
+| `auth-server` | Spring Boot 4.2 application on port 9000: OAuth 2 authorization server (Spring Authorization Server with the community `mcp-authorization-server`) for the two agent clients (ADR-0009) |
 | `build-logic` | Included build with the `demo.kotlin-jvm` convention plugin (Kotlin flags, JUnit 6, power-assert, detekt) |
 
 Decisions are recorded in `docs/adr/`, behavior in `openspec/`.
@@ -29,6 +30,7 @@ docker compose up -d                 # local PostgreSQL (pgvector/pgvector:pg18)
 ./gradlew :backend:bootRun           # run the backend; starts the compose services (database, lgtm) if they are stopped
 ./gradlew :desktop:run               # open the chat window (starts without a backend; sending needs one)
 ./gradlew :backend:generateMigrations  # write migration SQL for new Exposed tables (needs Docker)
+./gradlew :auth-server:bootRun       # run the authorization server on port 9000 (no database)
 ./gradlew :core-mcp:bootRun          # run the core system on port 8081 (start the database first: docker compose up -d)
 ./gradlew :core-mcp:test             # core-mcp tests (needs Docker)
 ./gradlew :core-mcp:generateMigrations # write migration SQL for new core-mcp tables (needs Docker)
@@ -42,18 +44,20 @@ Health check: `curl localhost:8080/actuator/health`.
 
 `core-mcp` does not start the compose database: Spring Boot's Docker Compose support would take its connection from the compose service, whose database is `backend`, and override the `core` URL. Run `docker compose up -d` first.
 
+Start order for the whole desk: the database (`docker compose up -d`), `auth-server`, `core-mcp`, then the backend. `core-mcp` and the backend also start while the auth-server is down; the adjuster's first tool call needs it.
+
 ## Core system over MCP (`core-mcp`)
 
-`core-mcp` serves MCP over Streamable HTTP at `http://localhost:8081/mcp` (server name `core-mcp`). The endpoints have no security yet (`mcp-security` adds it); every caller may call every tool.
+`core-mcp` serves MCP over Streamable HTTP at `http://localhost:8081/mcp` (server name `core-mcp`). Every request needs an access token of the `auth-server` (see [Security](#security)); without one the answer is 401. Each tool also checks the scope of the token, and a claimant token reaches only the claimant's own data.
 
 - Tools: `findPolicy`, `getClaim`, `listClaimsForCustomer` (read-only), `fileClaim`, `updateClaimStatus`, `issuePayout`. A refused domain operation (unknown claim, illegal status change, payout not allowed, invalid input) is a tool result marked as an error that names the offending value, never a protocol error.
 - Resources: `claim://{claimNumber}` (the claim as JSON) and `policy://{policyNumber}/summary` (Markdown). An unknown id is an MCP error whose message says "not found".
 - Rules: status flow `FILED` -> `UNDER_REVIEW` or `REJECTED`, `UNDER_REVIEW` -> `APPROVED` or `REJECTED`; `PAID` only through `issuePayout`, which pays an approved claim its total minus the policy deductible, once. All amounts are whole minor units of one fictional currency.
 
-Try it with the MCP Inspector (`npx @modelcontextprotocol/inspector`, transport "Streamable HTTP", URL `http://localhost:8081/mcp`), or send the initialize request by hand:
+Try it with the MCP Inspector (`npx @modelcontextprotocol/inspector`, transport "Streamable HTTP", URL `http://localhost:8081/mcp`, a token from the [Security](#security) section as the bearer token), or send the initialize request by hand:
 
 ```bash
-curl -s -X POST localhost:8081/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+curl -s -X POST localhost:8081/mcp -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
 ```
 
@@ -68,6 +72,28 @@ The seed migration holds the scenario fixtures, which later changes rely on and 
 | Policy `KP-9000` (sandbox) | customer 4 (Sandbox Customer), all four categories, deductible 10000; the only policy tests write to |
 
 Every policy is valid from 2026-01-01 to 2027-12-31. New claims get numbers above 4713.
+
+## Security
+
+The core system, not the agent, decides what a token may do (ADR-0009). `auth-server` (port 9000) issues tokens by `client_credentials` to two fixed clients, one per agent persona; dynamic client registration is off.
+
+| Client | Scopes |
+| --- | --- |
+| `claimant-agent` | `policies:read`, `claims:read`, `claims:write` |
+| `adjuster-agent` | the claimant's scopes plus `payout:write`, `analytics:read` |
+
+- `core-mcp` answers a request without a valid token with 401. Each tool needs its scope (`findPolicy` `policies:read`; `getClaim`, `listClaimsForCustomer` `claims:read`; `fileClaim`, `updateClaimStatus` `claims:write`; `issuePayout` `payout:write`); a missing scope is a tool error that names it, not an HTTP 403. `updateClaimStatus` refuses the claimant agent.
+- A claimant call carries the claimant's customer id as MCP `_meta` `claimantId` and reaches only that customer's policies, claims and resources; other items are refused without their data, missing ones are still "not found".
+- The backend has one MCP connection and one OAuth client per persona (`core-adjuster`, `core-claimant`) and forwards only `actor` and `claimantId` of the tool context as `_meta`. Only the adjuster chat uses its connection so far. The backend's own endpoints have no security.
+- Secrets: `CLAIMANT_AGENT_SECRET` and `ADJUSTER_AGENT_SECRET`, read by `auth-server` and backend; the local defaults `claimant-local-secret` and `adjuster-local-secret` work without setup and are for local development only. `AUTH_SERVER_URL` (default `http://localhost:9000`) is the issuer for all three applications. A restarted auth-server has a new signing key: restart the backend too, or wait up to 5 minutes for its cached token to expire.
+
+Get a token and call the core with it (and once without, for the 401):
+
+```bash
+TOKEN=$(curl -s -u adjuster-agent:adjuster-local-secret -d grant_type=client_credentials \
+  -d 'scope=policies:read claims:read claims:write payout:write analytics:read' localhost:9000/oauth2/token | jq -r .access_token)
+curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8081/mcp -H 'Content-Type: application/json' -d '{}'   # 401
+```
 
 ## Chat endpoint
 
@@ -115,7 +141,7 @@ The title is the beginning of the first message (at most 60 characters).
 
 ## Adjuster agent
 
-The persona `ADJUSTER` talks to the adjuster agent. It reads and changes claims through the core tools of `core-mcp` (`getClaim`, `updateClaimStatus`, `issuePayout`, ...), which the backend reaches with the Spring AI MCP client at `CORE_MCP_URL` (default `http://localhost:8081`, endpoint `/mcp`). `core-mcp` and its database `core` must be running for the adjuster only: the backend starts without them, and the MCP client connects on the first adjuster request. If the core is down, an adjuster request ends with the generic `error` event; claimant chat is not affected. The adjuster's tool calls carry a fixed caller identity (`actor=adjuster-agent`) in the tool context, which reaches `core-mcp` as MCP `_meta` and never the model.
+The persona `ADJUSTER` talks to the adjuster agent. It reads and changes claims through the core tools of `core-mcp` (`getClaim`, `updateClaimStatus`, `issuePayout`, ...), which the backend reaches with the Spring AI MCP client at `CORE_MCP_URL` (default `http://localhost:8081`, endpoint `/mcp`). `core-mcp` and its database `core` must be running for the adjuster only: the backend starts without them, and the MCP client connects on the first adjuster request. If the core is down, an adjuster request ends with the generic `error` event; claimant chat is not affected. The adjuster's tool calls carry a fixed caller identity (`actor=adjuster-agent`) in the tool context, which reaches `core-mcp` as MCP `_meta` and never the model. The backend authenticates the adjuster's connection with the token of the OAuth client `adjuster-agent`, so the `auth-server` must run too (see [Security](#security)); the backend fetches the token on the first adjuster request.
 
 A payout needs a human decision. When the model calls `issuePayout`, the tool does not run: the stream ends with a `confirmation-request` event instead of `done`, and the paused reply waits in the backend (in memory, so a restart forgets it). The decision goes to `POST /chat/decisions` and streams the continued reply:
 
@@ -166,6 +192,9 @@ The backend exports traces and metrics over OTLP (ADR-0010). Spring AI observes 
 | `SPRING_AI_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama used for embeddings (Spring AI does not read `OLLAMA_HOST`) |
 | `BACKEND_URL` | `http://localhost:8080` | Backend base URL used by the desktop app |
 | `CORE_MCP_URL` | `http://localhost:8081` | Base URL of `core-mcp` for the adjuster's MCP client (endpoint `/mcp`) |
+| `AUTH_SERVER_URL` | `http://localhost:9000` | Issuer of the auth-server: its own issuer, the issuer `core-mcp` accepts and the backend's token endpoint (`/oauth2/token`) |
+| `CLAIMANT_AGENT_SECRET` | `claimant-local-secret` | Client secret of `claimant-agent` (auth-server and backend; the default is for local development only) |
+| `ADJUSTER_AGENT_SECRET` | `adjuster-local-secret` | Client secret of `adjuster-agent` (auth-server and backend; the default is for local development only) |
 
 The defaults match `compose.yaml` (databases `backend` and `core`, user and password `demo`) and are for local development only.
 
@@ -195,14 +224,16 @@ On a fresh volume, start the database with `docker compose up -d` from the repos
 ./gradlew :backend:test --tests '*ApplicationHealthTest'    # one backend test class
 ./gradlew :desktop:test                                     # desktop tests (no Docker)
 ./gradlew :core-mcp:test                                    # core-mcp tests (needs Docker)
-./gradlew :core-mcp:test --tests '*ServerHandshakeTest'     # one core-mcp test class
+./gradlew :core-mcp:test --tests '*ServerHandshakeTest'     # one core-mcp test class (forks the auth-server)
+./gradlew :auth-server:test                                 # auth-server tests (no Docker)
 ./gradlew :backend:secretsScan                              # scan the working tree for keys and tokens
 ```
 
 - **One shared backend context.** Every backend integration test carries the single `@IntegrationTest` annotation, which starts the application once on a random port with a real PostgreSQL (`pgvector/pgvector:pg18`, started by Testcontainers) and reuses that context for all test classes. Tests do not customise the context (no `@DirtiesContext`, mock beans, profiles or extra properties); an architecture test enforces this. Tests share one database and run sequentially, so tests that write data use unique keys and clean up after themselves.
-- **No real model in tests.** The context runs with `spring.ai.model.chat=none` and a scripted `FakeChatModel`: a test scripts text, JSON, tool-call requests or streamed chunks, then reads the prompts the model received. It fails loudly when its script is exhausted. Embeddings come from a deterministic `FakeEmbeddingModel` (a hashed bag of words, 768 dimensions) with `spring.ai.model.embedding=none`, so no test reaches Ollama. The MCP client is switched off too (`spring.ai.mcp.client.enabled=false`): fake core tools (`FakeCoreTools`: `getClaim` and `issuePayout`, recording every call) stand in under the real provider's bean name `mcpToolCallbacks`, so no test contacts `core-mcp`; the committed MCP client wiring is checked by `McpClientWiringTest` outside the shared context. No API key is needed, and `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `CORE_MCP_URL` and all `SPRING_AI_*` variables are removed from the test JVM.
-- **`secretsScan`.** `:backend:check` (and so root `check`) also scans the text files of the working tree (tracked or not; not build output, `.git`, `.idea`, `.claude/worktrees`, binaries or the local `.env`, `*.key` and `.claude/settings.local.json`) for provider keys, tokens, private keys, credentials in URLs and non-placeholder passwords (non-source files check quoted and bare values, yaml, yml, properties and env files also whole-line values, source files only quoted string literals, typed declarations included; plain URLs, numbers and durations next to non-secret names and placeholder defaults that are harmless are not flagged). The documented local `demo` database defaults are the only allowed values. The task tracks no inputs and runs on every build (about a second).
-- **core-mcp tests** follow the same pattern without a model: one shared context through `@CoreMcpIntegrationTest` (real port, real PostgreSQL from Testcontainers), MCP tools and resources tested end to end through the MCP SDK client over Streamable HTTP, the business rules tested on the domain services against the real database. Tests that write data use only the sandbox policy `KP-9000` and the claims they create, with no cleanup (the container is fresh on every run); exact counts are asserted only over rows no test writes. An architecture test forbids context annotations (`@SpringBootTest`, `@TestPropertySource`, `@Import`, ...) on test classes.
+- **No real model in tests.** The context runs with `spring.ai.model.chat=none` and a scripted `FakeChatModel`: a test scripts text, JSON, tool-call requests or streamed chunks, then reads the prompts the model received. It fails loudly when its script is exhausted. Embeddings come from a deterministic `FakeEmbeddingModel` (a hashed bag of words, 768 dimensions) with `spring.ai.model.embedding=none`, so no test reaches Ollama. The MCP client is switched off too (`spring.ai.mcp.client.enabled=false`): fake core tools (`FakeCoreTools`: `getClaim` and `issuePayout`, recording every call) stand in under the adjuster's real provider bean name `adjusterCoreTools`, so no test contacts `core-mcp` or the auth-server; the committed MCP client wiring (two connections, the OAuth client per persona against a stub token endpoint and core, the `_meta` allowlist) is checked by `McpClientWiringTest` outside the shared context. No API key is needed, and `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `CORE_MCP_URL`, `AUTH_SERVER_URL`, the two agent secrets and all `SPRING_AI_*` variables are removed from the test JVM.
+- **`secretsScan`.** `:backend:check` (and so root `check`) also scans the text files of the working tree (tracked or not; not build output, `.git`, `.idea`, `.claude/worktrees`, binaries or the local `.env`, `*.key` and `.claude/settings.local.json`) for provider keys, tokens, private keys, credentials in URLs and non-placeholder passwords (non-source files check quoted and bare values, yaml, yml, properties and env files also whole-line values, source files only quoted string literals, typed declarations included; plain URLs, numbers and durations next to non-secret names and placeholder defaults that are harmless are not flagged). The documented local `demo` database defaults and the two local agent secrets (`CLAIMANT_AGENT_SECRET`, `ADJUSTER_AGENT_SECRET`, each only for its own key) are the only allowed values. The task tracks no inputs and runs on every build (about a second).
+- **core-mcp tests** follow the same pattern without a model: one shared context through `@CoreMcpIntegrationTest` (real port, real PostgreSQL from Testcontainers), MCP tools and resources tested end to end through the MCP SDK client over Streamable HTTP, the business rules tested on the domain services against the real database. Tests that write data use only the sandbox policy `KP-9000` and the claims they create, with no cleanup (the container is fresh on every run); exact counts are asserted only over rows no test writes. An architecture test forbids context annotations (`@SpringBootTest`, `@TestPropertySource`, `@Import`, ...) on test classes, and another one requires every tool and resource class to use `CallerAccess`. The shared context starts the real `auth-server` as a separate JVM with secrets generated per run; the default test client acts as the adjuster agent with a real token, a second one as the claimant agent.
+- **auth-server tests**: one context on a random port (`TokenEndpointTest`) for tokens, scopes, wrong secrets, metadata and keys, and no client registration.
 - **Desktop tests** cover the theme logic, the chat view model (conversation ids, list and transcript included) and the chat screen's semantics against a fake `ChatApi`, the Ktor client against a local JDK HTTP server, and off-screen renders of the screen and all components in both themes. Rendering uses skiko natives; on Linux the runner needs fontconfig and freetype.
 
 ## Schema workflow: generate with Exposed, apply with Flyway

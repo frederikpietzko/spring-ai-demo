@@ -42,11 +42,12 @@ class TestInfrastructure {
     fun fakeCoreTools(): FakeCoreTools = FakeCoreTools()
 
     /**
-     * The core tools under the bean name of the real MCP provider, so the adjuster's `@Qualifier("mcpToolCallbacks")`
-     * resolves to them. Listing the tools throws [FakeCoreTools.listingFailure] when a test set one.
+     * The core tools under the bean name of the adjuster's real MCP provider, so the adjuster's
+     * `@Qualifier("adjusterCoreTools")` resolves to them. Listing the tools throws [FakeCoreTools.listingFailure] when
+     * a test set one.
      */
     @Bean
-    fun mcpToolCallbacks(fakeCoreTools: FakeCoreTools): ToolCallbackProvider {
+    fun adjusterCoreTools(fakeCoreTools: FakeCoreTools): ToolCallbackProvider {
         val tools = MethodToolCallbackProvider.builder().toolObjects(fakeCoreTools).build()
         return ToolCallbackProvider {
             fakeCoreTools.listingFailure?.let { throw it }

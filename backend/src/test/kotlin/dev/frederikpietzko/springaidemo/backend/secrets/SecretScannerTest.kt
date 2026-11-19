@@ -64,6 +64,17 @@ class SecretScannerTest {
         assertEquals(["assignment"], SecretScanner.scanTree(dir).map { it.rule })
     }
 
+    @Test
+    fun `the documented local agent secrets pass and any other default for them fails`() {
+        dir.resolve("application.yaml").writeText(
+            "    secret: \${CLAIMANT_AGENT_SECRET:claimant-local-secret}\n" +
+                "    secret: \${ADJUSTER_AGENT_SECRET:adjuster-local-secret}\n" +
+                "    secret: \${CLAIMANT_AGENT_SECRET:" + "adjuster-local-secret}\n",
+        )
+
+        assertEquals([3], SecretScanner.scanTree(dir).map { it.line })
+    }
+
     @ParameterizedTest(name = "{0}")
     @ValueSource(
         strings = [

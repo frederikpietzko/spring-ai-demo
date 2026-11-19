@@ -67,10 +67,17 @@ spring:
       client:
         # Connect on the first adjuster request instead of at startup, so the backend starts without core-mcp.
         initialized: false
+        toolcallback:
+          # The auto-configured provider would publish the tools of both connections under the same names. Each
+          # persona gets its own provider instead (adjusterCoreTools, claimantCoreTools in McpClientConfiguration).
+          enabled: false
         streamable-http:
           connections:
-            core:
-              # The insurer core system (core-mcp, ADR-0003 port 8081); the default endpoint /mcp matches it.
+            # The insurer core system (core-mcp, ADR-0003 port 8081; the default endpoint /mcp matches it), once per
+            # persona: each connection sends its persona's token (ADR-0009, McpClientOAuthConfiguration).
+            core-adjuster:
+              url: ${CORE_MCP_URL:http://localhost:8081}
+            core-claimant:
               url: ${CORE_MCP_URL:http://localhost:8081}
     session:
       repository:
@@ -79,6 +86,16 @@ spring:
           initialize-schema: never
           # Lets the conversation list find the claimant's sessions with findByMetadata(agentName, "claimant").
           indexed-attributes: agentName
+
+# The agents' OAuth clients at the auth-server (ADR-0009). The secret defaults are local-development values only,
+# the same as in auth-server's application.yaml; set the environment variables everywhere else.
+agents:
+  # The auth-server; tokens come from <url>/oauth2/token.
+  auth-server-url: ${AUTH_SERVER_URL:http://localhost:9000}
+  claimant:
+    secret: ${CLAIMANT_AGENT_SECRET:claimant-local-secret}
+  adjuster:
+    secret: ${ADJUSTER_AGENT_SECRET:adjuster-local-secret}
 
 management:
   tracing:

@@ -29,8 +29,8 @@ class FakeCoreToolsTest {
     private lateinit var coreTools: FakeCoreTools
 
     @Autowired
-    @Qualifier("mcpToolCallbacks")
-    private lateinit var mcpToolCallbacks: ToolCallbackProvider
+    @Qualifier("adjusterCoreTools")
+    private lateinit var adjusterCoreTools: ToolCallbackProvider
 
     @Autowired
     private lateinit var builder: ChatClient.Builder
@@ -39,14 +39,14 @@ class FakeCoreToolsTest {
     fun `the shared context has no MCP client and the core tool provider is the fake`() {
         assertTrue(context.getBeansOfType(McpSyncClient::class.java).isEmpty())
         assertFalse(context.containsBean("mcpSyncClients"))
-        assertFalse(mcpToolCallbacks is SyncMcpToolCallbackProvider)
+        assertFalse(adjusterCoreTools is SyncMcpToolCallbackProvider)
         val coreToolNames: Set<String> = ["getClaim", "issuePayout"]
-        assertEquals(coreToolNames, mcpToolCallbacks.toolCallbacks.map { it.toolDefinition.name() }.toSet())
+        assertEquals(coreToolNames, adjusterCoreTools.toolCallbacks.map { it.toolDefinition.name() }.toSet())
     }
 
     @Test
     fun `the fake issuePayout does not require a confirmation of its own`() {
-        val payout = mcpToolCallbacks.toolCallbacks.single { it.toolDefinition.name() == "issuePayout" }
+        val payout = adjusterCoreTools.toolCallbacks.single { it.toolDefinition.name() == "issuePayout" }
 
         assertFalse(payout.toolMetadata.requiresConfirmation())
     }
@@ -59,13 +59,13 @@ class FakeCoreToolsTest {
 
     private fun startsCleanThenLeavesState() {
         assertEquals([], coreTools.calls)
-        val payout = mcpToolCallbacks.toolCallbacks.single { it.toolDefinition.name() == "issuePayout" }
+        val payout = adjusterCoreTools.toolCallbacks.single { it.toolDefinition.name() == "issuePayout" }
         payout.call("""{"claimNumber":4711}""", ToolContext(mapOf("actor" to "test")))
         fake.requestTool("getClaim", """{"claimNumber":4711}""")
         fake.reply("Claim 4711 is filed.")
 
         builder.build().prompt().user("Claim 4711?")
-            .tools(mcpToolCallbacks)
+            .tools(adjusterCoreTools)
             .toolContext(mapOf("actor" to "test"))
             .call()
             .content()

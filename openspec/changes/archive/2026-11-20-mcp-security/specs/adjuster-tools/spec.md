@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: The core connection is configured by property and starts lazily
-The backend SHALL connect to the core system over Streamable HTTP with one connection per persona, `core-adjuster` and `core-claimant`, both at the URL `http://localhost:8081` by default and overridable with `CORE_MCP_URL`, and SHALL offer the tools of each connection as its own tool provider, `adjusterCoreTools` and `claimantCoreTools`, so no tool name is published twice. It SHALL start without the core system and without the auth-server running and SHALL connect, and fetch a token, on the first request that needs the tools. The adjuster agent SHALL use the adjuster provider; no chat client uses the claimant provider in this change.
+The backend SHALL connect to the core system over Streamable HTTP with one connection per persona, `core-adjuster` and `core-claimant`, at `http://localhost:8081` by default (`CORE_MCP_URL`), and SHALL offer each connection's tools as its own provider, `adjusterCoreTools` and `claimantCoreTools`. It SHALL start without the core system and the auth-server and connect on the first request that needs the tools. Only the adjuster agent uses a provider.
 
 #### Scenario: Committed configuration points at the core
 - **WHEN** the committed configuration is loaded with the MCP client auto-configurations
@@ -31,7 +31,7 @@ Every request of a connection to the core system SHALL carry the bearer token of
 
 #### Scenario: Each connection sends its persona's token
 - **WHEN** the adjuster provider and the claimant provider each list tools against a stub core system that records the `Authorization` header and answers 401, with a stub token endpoint that issues the token `t-<client id>`
-- **THEN** the first request of the adjuster connection carried `Bearer t-adjuster-agent` and that of the claimant connection `Bearer t-claimant-agent`
+- **THEN** the first request of the adjuster connection carried the bearer token `t-adjuster-agent` and that of the claimant connection the bearer token `t-claimant-agent`
 
 #### Scenario: Backend endpoints stay open
 - **WHEN** the shared backend test context (full auto-configuration) is started

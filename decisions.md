@@ -368,3 +368,47 @@ Binding text: `openspec/changes/archive/2026-11-20-mcp-tools-and-confirmation/de
 - **Pending confirmations never expire** and are lost on restart (demo only).
 - **After the merge with track B:** the adjuster client should adopt the observability advisors; session advisors stay claimant-only.
 - **`CredentialIsolationTest`** now also guards a non-credential (`CORE_MCP_URL`); its name could say "environment isolation".
+
+### Wave 4 - `mcp-security`
+
+Review: clean (no confirmed blockers).
+
+Binding text: `openspec/changes/archive/2026-11-20-mcp-security/design.md` (D1-D10) and **ADR-0009** (security model), plus the 2026-11-20 addenda of ADR-0003 and ADR-0004. This section is the index.
+
+**Decisions**
+
+- **`mcp-security` 0.1.14, plain modules only, no Spring AI 2.0 fallback (ROADMAP R1):** `mcp-authorization-server`, `mcp-server-security` and `mcp-client-security` work on Spring AI 2.1.0-RC2 / Boot 4.2.0-RC2 / Security 7.2.0-RC1; the `-spring-boot` modules are not used and `auth-server` has no Spring AI dependency. *Why:* a research spike proved it; upstream still names Spring AI 2.0, so ADR-0009 states the combination is verified here only. ADR-0007 does not exist in this worktree, so the pin lives in ADR-0009 and the ADR-0003 addendum.
+- **Scope denial is a tool error, not HTTP 403 (deviation from the roadmap's test line):** only a missing or invalid token is an HTTP status (401); a missing scope or failed ownership check is a tool result with `isError=true` naming the scope or item (resources throw an MCP error). *Why:* the HTTP layer cannot see which tool a JSON-RPC body calls, and core-mcp already treats domain failures as tool errors. `@PreAuthorize` was rejected (it answers "Access Denied" twice).
+- **Per-tool scopes:** `findPolicy` needs `policies:read`; `getClaim` and `listClaimsForCustomer` `claims:read`; `fileClaim` and `updateClaimStatus` `claims:write`; `issuePayout` `payout:write`; any claims-analytics tool `analytics:read` (adjuster only). The claimant client may obtain only `policies:read`, `claims:read`, `claims:write`; the adjuster all five. Scopes are literals in each tool (no shared enum). *Why:* simplest mapping of the roadmap's five scopes; slide-sized snippets.
+- **Resources need a valid token and, for claimants, ownership, but no scope.** *Why:* both clients hold the scopes anyway, so a scope rule would add a scenario and no protection.
+- **Claimant identity:** subject `claimant-agent` marks a claimant call; `_meta.claimantId` (from the backend `ToolContext`) is required and must own the policy or claim; adjuster calls skip ownership. The backend forwards only the actor and `claimantId` as `_meta` (allowlist converter). A fixed demo claimant stands in for login. *Why:* the model never sees the tool context and only the backend holds the claimant client secret; the default converter would leak the conversation id.
+- **`updateClaimStatus` is adjuster-only** (`claimantDenial`), although the claimant holds `claims:write` for `fileClaim`. *Why:* the five scopes are fixed; a sixth was rejected.
+- **Lookup first, then ownership:** a missing item stays "not found" for a claimant; a claimant call without `claimantId` is refused. `McpMeta` is never null (empty without `_meta`; verified in the sources and by a test).
+- **Claimant provider has no consumer:** the backend has two connections (`core-adjuster`, `core-claimant`), two OAuth registrations and two providers (`adjusterCoreTools`, `claimantCoreTools`), but no chat client uses `claimantCoreTools`; the token path per persona is tested against stubs. *Why:* the payout confirmation is global by tool name, so a claimant chat offering `issuePayout` would pause on a decision it never handles. `mcpToolCallbacks` is replaced by `adjusterCoreTools`.
+- **Backend OAuth client written in Kotlin, without the Boot security starter:** registrations, an `AuthorizedClientServiceOAuth2AuthorizedClientManager` and a per-connection `McpClientCustomizer` (client-credentials request customizer); `spring.ai.mcp.client.toolcallback.enabled=false`; persona providers and the OAuth configuration are conditional on `spring.ai.mcp.client.enabled`. *Why:* the starter would add a default security chain that locks the backend, and the auto provider would publish duplicate tool names. The persona client is picked by `clientInfo.title()` (the connection name) with `single { }`, so a missing connection fails at startup.
+- **Auth-server chain and issuer:** explicit `authorizeHttpRequests { anyRequest().authenticated() }` plus `dynamicClientRegistration(false)` (Security 7.2 fails at startup without a mapping); issuer pinned by `AUTH_SERVER_URL`; core-mcp always passes Boot's lazy `JwtDecoder` to `mcpServerOAuth2()` so it starts without the auth-server, and the issuer-uri is committed in its YAML (the decoder bean is conditional on the property at parse time).
+- **core-mcp is stateless and bearer-only:** `csrf { disable() }`, so a request without token answers 401, not 403.
+- **Two fixed clients, secrets from the environment:** `agents.claimant.secret` and `agents.adjuster.secret` default to documented local placeholders in each module's `application.yaml` (`CLAIMANT_AGENT_SECRET`, `ADJUSTER_AGENT_SECRET`), allowlisted per key in `SecretScanner`; Kotlin reads them with `@Value` and adds `{noop}` itself. Tests generate random secrets. *Why:* the demo runs without setup and the scanner stays strict. The backend property is `agents.auth-server-url` (a placeholder plus suffix tripped the scan).
+- **core-mcp tests run against the real auth-server:** a `TestInfrastructure` bean forks it in a child JVM (resolvable `authServerRuntime` configuration, free loopback port, stopped on `ContextClosedEvent`); a `DynamicPropertyRegistrar` sets the issuer-uri; `McpTestClient` defaults to an adjuster token with a claimant client and optional `_meta`. *Why:* in-process start is fragile (shared DataSource, Flyway and MCP auto-configuration, SAS replacing the decoder); the roadmap demands a real server. The child is awaited with Awaitility; `TokenEndpointTest` calls with a different host name than the issuer to prove the pinned issuer.
+- **DCR check targets `/oauth2/register`** (read in the 0.1.14 source: dynamic client registration defaults to on), with one red check by flipping the flag.
+- **Backend OAuth tests stay offline:** `ApplicationContextRunner` plus JDK `HttpServer` stubs for the token endpoint and the core; "backend endpoints stay open" runs in the shared integration test (no `SecurityFilterChain` bean, `POST /chat` is not 401/403).
+- **ArchUnit rule in core-mcp:** every class with an `@McpTool` or `@McpResource` method must depend on `CallerAccess`. *Why:* guards tools added by parallel changes.
+- **Implementation details:** denials are combined with `?:` to stay within detekt's `ReturnCount` (config untouched); the spec wording "Bearer plus a 16-character token" became "the bearer token `t-adjuster-agent`" to pass the secrets scan; two long requirements were shortened for the strict validator.
+- **Docs:** ADR-0009 new; ADR-0003 and ADR-0004 status notes and addenda (secrets allowlist, forked auth-server in tests, `adjusterCoreTools` rename); README updated.
+
+**Descoped / deviations from the roadmap entry**
+
+- **No HTTP 403** for denied scopes (see above).
+- **ADR-0007 not amended** (file absent in this worktree).
+- **Manual smoke ran partly:** no Anthropic key, so security was checked with curl against the real auth-server and core-mcp plus the backend's token fetch and MCP session; a tool result back to the model was not run.
+
+**Follow-ups**
+
+- Offer `claimantCoreTools` to a claimant chat (e.g. file claims through `fileClaim` instead of `InMemoryClaimFiling`) with a real `claimantId`; decide how the payout confirmation applies there.
+- After an auth-server restart the backend's cached token is rejected until it expires (up to 5 minutes); re-authorize once on a 401.
+- Finish the smoke with an Anthropic key (an adjuster request whose tool result comes back from the secured core).
+- The "no token, no CSRF token is a 401" test stays green without `csrf { disable() }`; it documents but does not guard that line.
+- Scope checks for `getClaim`, `listClaimsForCustomer`, `updateClaimStatus` and `findPolicy` have no test with a missing scope (the ArchUnit rule proves only that `CallerAccess` is used).
+- `CallerAccess.isClaimant()` is a blacklist (only subject `claimant-agent`); a claimant tells an existing foreign item ("access denied") from a missing one ("not found").
+- `AuthServerProcess` is stopped only on `ContextClosedEvent`; a context that fails to refresh leaves the child JVM running. No test starts core-mcp with an unreachable issuer (the lazy decoder is argued, not tested).
+- The committed local secret defaults would issue `payout:write` tokens on a deployed instance; `CredentialIsolationTest` also guards two non-credentials (`CORE_MCP_URL`, `AUTH_SERVER_URL`) and could be renamed "environment isolation".

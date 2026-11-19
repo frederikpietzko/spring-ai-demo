@@ -13,6 +13,13 @@ spring:
   exposed:
     # The schema is created by Flyway migrations only, never by Exposed at startup.
     generate-ddl: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # The auth-server (ADR-0009); tokens must carry exactly this issuer. Its keys are fetched on the first
+          # request, so core-mcp starts while the auth-server is down.
+          issuer-uri: ${AUTH_SERVER_URL:http://localhost:9000}
   ai:
     mcp:
       server:
