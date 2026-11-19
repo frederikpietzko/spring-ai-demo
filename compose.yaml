@@ -22,5 +22,21 @@ services:
       timeout: 3s
       retries: 10
 
+  # Local observability stack (ADR-0010): Grafana, Tempo, Prometheus and an OpenTelemetry collector in one container.
+  # Grafana on http://localhost:3300 (local-only login admin/admin, the image default), OTLP on 4317 (gRPC) and 4318.
+  lgtm:
+    image: grafana/otel-lgtm:0.41.0
+    labels:
+      # bootRun must not wait for this container's ports; the exporters retry on their own.
+      org.springframework.boot.readiness-check.tcp.disable: "true"
+    ports:
+      - "3300:3000"
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      # Relative to the compose file's directory: run docker compose from the repository root (bootRun is not affected).
+      - ./compose/lgtm/claims-desk-dashboard.json:/otel-lgtm/grafana/conf/provisioning/dashboards/custom/claims-desk-dashboard.json:ro
+      - ./compose/lgtm/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/custom.yaml:ro
+
 volumes:
   postgres-data:

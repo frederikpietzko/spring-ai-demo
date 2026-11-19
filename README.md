@@ -18,20 +18,22 @@ Decisions are recorded in `docs/adr/`, behavior in `openspec/`.
 - JDK 25. Either run `sdk env` in the repository root (SDKMAN reads `.sdkmanrc`), or do nothing: the Gradle toolchain resolver downloads JDK 25 when none is installed.
 - Ollama with the embedding model, for `bootRun` only: install Ollama, run `ollama pull nomic-embed-text` and keep Ollama running (default `http://localhost:11434`). The backend embeds the policy wording at startup and does not start without it. Tests and `check` need neither Ollama nor an Anthropic key, and `core-mcp` needs neither at all (it has no model).
 - Optional: `ANTHROPIC_API_KEY` in your environment. The backend starts and reports healthy without it; only a real model call needs it. The key is read from the environment only and is never committed.
+- Free host ports 3300, 4317 and 4318 for `bootRun`: it also starts the observability stack (`lgtm`, see [Observability](#observability)), whose container fails to start, and takes `bootRun` with it, when one of them is taken. Its image is large, so the first `bootRun` or `docker compose up -d` pulls for a while.
 
 ## Commands
 
 ```bash
 ./gradlew build                      # compile, package and check all modules
 ./gradlew check                      # static analysis (detekt), tests and the secrets scan of all modules (needs Docker)
-docker compose up -d                 # local PostgreSQL (pgvector/pgvector:pg18) on port 5432
-./gradlew :backend:bootRun           # run the backend; starts the compose database if it is stopped
+docker compose up -d                 # local PostgreSQL (pgvector/pgvector:pg18) on port 5432 and lgtm (Grafana on 3300)
+./gradlew :backend:bootRun           # run the backend; starts the compose services (database, lgtm) if they are stopped
 ./gradlew :desktop:run               # open the chat window (starts without a backend; sending needs one)
 ./gradlew :backend:generateMigrations  # write migration SQL for new Exposed tables (needs Docker)
 ./gradlew :core-mcp:bootRun          # run the core system on port 8081 (start the database first: docker compose up -d)
 ./gradlew :core-mcp:test             # core-mcp tests (needs Docker)
 ./gradlew :core-mcp:generateMigrations # write migration SQL for new core-mcp tables (needs Docker)
-docker compose down                  # stop the database
+docker compose stop lgtm             # stop only the observability stack (bootRun keeps it stopped while the database runs)
+docker compose down                  # stop the database and the observability stack
 ```
 
 The backend starts the compose database itself (Spring Boot Docker Compose support), whether it is launched from the repo root (e.g. an IDE run configuration) or from `backend/` (e.g. `bootRun`): `backend/compose.yaml` is a symlink to the root `compose.yaml`, and the fixed project name `spring-ai-demo` makes both share one container and volume. On Windows, enable symlinks in Git (`core.symlinks=true`) for this to work.
@@ -84,6 +86,23 @@ curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Acce
 ## Desktop chat
 
 Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch shows `Claimant`; `Adjuster` is listed but not selectable yet. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key. Messages are not remembered across restarts.
+
+## Observability
+
+The backend exports traces and metrics over OTLP (ADR-0010). Spring AI observes every chat client call, each advisor, the retrieval (vector store), each tool call and each model call, and counts the model's input and output tokens (`gen_ai.client.token.usage`). Every trace is sampled and metrics are pushed every 10 seconds.
+
+- **The stack:** the compose service `lgtm` (`grafana/otel-lgtm`: Grafana, Tempo, Prometheus-compatible metrics, an OpenTelemetry collector in one container). `docker compose up -d` starts it, and so does `bootRun` when no compose service runs yet. If the database was already running before (for example started before this service existed), Boot skips the start and `lgtm` stays down: run `docker compose up -d` once. Run `docker compose` commands from the repository root: the `lgtm` mounts are relative to the compose file's directory, and from the symlinked `backend/` Compose would mount empty directories.
+- **Ports:** Grafana on host port 3300, OTLP on 4317 (gRPC) and 4318 (HTTP). All three must be free, or the container, and with it `bootRun`, fails to start; if another collector holds them, stop it or stop this stack with `docker compose stop lgtm` (while the database keeps running, `bootRun` leaves `lgtm` stopped). The image is large: the first pull is slow.
+- **Grafana:** `http://localhost:3300`, local-only login `admin` / `admin` (the image's default). The provisioned dashboard "Claims desk" (folder "Claims desk") shows chat token usage per token type (chat calls only; embedding calls report to the same counter) and the average chat client latency. Traces: Explore, Tempo, search by service name `spring-ai-demo-backend`; a claimant message shows the chat client, advisor and `db.vector.client.operation` spans (and the model span when a key is set).
+- **Content stays out.** By default no span attribute holds what the claimant typed, the prompt, the completion or tool arguments and results. The switches, all `false` in `application.yaml`:
+  - chat model: `spring.ai.chat.observations.log-prompt`, `spring.ai.chat.observations.log-completion` (log only);
+  - chat client: `spring.ai.chat.client.observations.log-prompt`, `spring.ai.chat.client.observations.log-completion` (log only);
+  - tool calls: `spring.ai.tools.observations.include-content` (adds tool arguments and results to the spans);
+  - vector store: `spring.ai.vectorstore.observations.log-query-response` (logs the retrieved clauses).
+
+  Turning one on is a deliberate change: the logs or traces then hold claimant text. The retrieval query (the claimant's message) is dropped from the vector store span by `ObservabilityConfiguration`, whatever the switches say.
+- **Build every chat client from the injected `ChatClient.Builder`.** `ChatClient.builder(model)` and `ChatClient.create(model)` use a no-op observation registry, so such a client is silently invisible; an architecture test rejects them. A customized tool-calling advisor comes from the injected `ToolCallingAdvisor.Builder<*>` after `.copy()` (the bean is shared by every chat client builder), never from `ToolCallingAdvisor.builder()`.
+- **Tests and `check` need no stack.** The test context exports nothing (Boot's OpenTelemetry test starter) and records the observations in memory instead.
 
 ## Environment variables
 

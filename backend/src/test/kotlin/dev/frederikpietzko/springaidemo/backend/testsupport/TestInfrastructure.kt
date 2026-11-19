@@ -1,5 +1,6 @@
 package dev.frederikpietzko.springaidemo.backend.testsupport
 
+import io.micrometer.observation.ObservationRegistry
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.context.annotation.Bean
@@ -19,11 +20,18 @@ class TestInfrastructure {
     @ServiceConnection
     fun postgres(): PostgreSQLContainer = PostgreSQLContainer(POSTGRES_IMAGE)
 
-    /** The only chat model of the test context (the real provider is switched off in [IntegrationTest]). */
+    /**
+     * The only chat model of the test context (the real provider is switched off in [IntegrationTest]); it reports its
+     * blocking calls to the context's observation registry, as a provider model does.
+     */
     @Bean
-    fun fakeChatModel(): FakeChatModel = FakeChatModel()
+    fun fakeChatModel(observationRegistry: ObservationRegistry): FakeChatModel = FakeChatModel(observationRegistry)
 
     /** The only embedding model of the test context (the real provider is switched off in [IntegrationTest]). */
     @Bean
     fun fakeEmbeddingModel(): FakeEmbeddingModel = FakeEmbeddingModel()
+
+    /** Records every stopped observation; emptied before each test by [ObservationRecorderReset]. */
+    @Bean
+    fun recordingObservationHandler(): RecordingObservationHandler = RecordingObservationHandler()
 }

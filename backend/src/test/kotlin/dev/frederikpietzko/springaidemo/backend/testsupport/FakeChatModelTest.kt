@@ -27,6 +27,15 @@ class FakeChatModelTest {
     }
 
     @Test
+    fun `answers a direct model call without an observation registry`() {
+        fake.reply("Hello")
+
+        val response = fake.call(Prompt("Hi"))
+
+        assertEquals("Hello", response.result?.output?.text)
+    }
+
+    @Test
     fun `fails with the unexpected prompt when the script is exhausted`() {
         val error = assertFailsWith<IllegalStateException> {
             client.prompt().user("Surprise question").call().content()
