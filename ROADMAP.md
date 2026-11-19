@@ -324,7 +324,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
     - The containment layers are verified together: scope denial, confirmation, guardrail.
   - Out: claiming the guardrail alone solves injection.
   - Tests: an invoice with the injection text leads to no payout on either persona. The guardrail blocks before the session stores the message (offline stub decision model).
-- [ ] **`evaluation`**
+- [x] **`evaluation`**
   - Scope: an evaluation suite (a separate Gradle source set or tag, not part of `check` because it needs a real model and API key): `RelevancyEvaluator` on a fixed set of coverage questions, and `FactCheckingEvaluator` on fraud verdicts against the bulletins.
   - Out: running in CI without a key.
   - Tests: the suite itself. It is skipped when `ANTHROPIC_API_KEY` is absent.

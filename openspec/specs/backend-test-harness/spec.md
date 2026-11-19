@@ -7,7 +7,7 @@ Defines how backend integration tests run: one shared application context agains
 ## Requirements
 
 ### Requirement: Backend integration tests share one application context
-All backend integration tests SHALL run against a single shared application context and a single database container, started once per test run, so that adding a test does not add a context start.
+All backend integration tests run by the `test` task SHALL run against a single shared application context and a single database container, started once per test run, so that adding a test does not add a context start. The evaluation suite run by the separate `evaluate` task is the only exception: it has its own application context and its own database container, and `check` never runs it.
 
 #### Scenario: Two test classes, one context
 - **WHEN** two different backend integration test classes run in the same test run
@@ -92,7 +92,7 @@ The fake chat model SHALL be able to script a reply that delivers some text chun
 - **THEN** the call fails with the scripted message
 
 ### Requirement: Tests never reach the real model provider
-Backend tests SHALL NOT send a request to the real model provider: the test configuration SHALL set a placeholder key and an unreachable base URL, and the test environment SHALL NOT contain the developer's provider credentials.
+Backend tests run by the `test` task (and so by `check`) SHALL NOT send a request to the real model provider: the test configuration SHALL set a placeholder key and an unreachable base URL, and the test environment SHALL NOT contain the developer's provider credentials. The credential removal SHALL apply to every Gradle `Test` task except the evaluation task `evaluate`, which is the only task that may reach a real provider and which is not part of `check`.
 
 #### Scenario: Developer key does not leak
 - **WHEN** the tests run in a shell where `ANTHROPIC_API_KEY` is set
@@ -101,6 +101,10 @@ Backend tests SHALL NOT send a request to the real model provider: the test conf
 #### Scenario: Test properties guard the provider
 - **WHEN** the shared test context's configuration is inspected
 - **THEN** the provider key is a placeholder, the provider base URL is unreachable, and no real provider chat model bean exists
+
+#### Scenario: Only the evaluation task keeps the key
+- **WHEN** `:backend:evaluate` runs in a shell where `ANTHROPIC_API_KEY` is set
+- **THEN** the evaluation JVM sees the key, while the JVM of `:backend:test` in the same shell does not
 
 ### Requirement: Provider wiring is verified without a key and without network
 The backend SHALL be verified, in a test that does not start the full application, to construct its Anthropic chat model with the default model from the committed application configuration, with no key configured and without any network access.

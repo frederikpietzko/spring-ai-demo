@@ -1,9 +1,20 @@
 # Shared detekt configuration. Builds upon the detekt defaults (buildUponDefaultConfig = true);
 # only deviations from the defaults belong here.
+#
+# The backend's evaluation suite (backend/src/evaluation) follows the test style (backticked names, seed numbers), so
+# it gets the default test exemption of three rules. A list here replaces the default list, so each `excludes` repeats
+# the detekt default and adds '**/evaluation/**'.
+complexity:
+  TooManyFunctions:
+    excludes: ['**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**', '**/evaluation/**']
 naming:
   FunctionNaming:
     # Composable functions are PascalCase by Compose convention.
     ignoreAnnotated: ['Composable']
+    excludes: ['**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**', '**/evaluation/**']
   VariableNaming:
     # ArchUnit uses the field name of an @ArchTest rule as the test name; snake_case reads as a sentence.
     ignoreAnnotated: ['ArchTest']
+style:
+  MagicNumber:
+    excludes: ['**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**', '**/*.kts', '**/evaluation/**']
