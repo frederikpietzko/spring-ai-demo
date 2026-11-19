@@ -2,19 +2,26 @@ package dev.frederikpietzko.springaidemo.desktop.chat
 
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
+import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
+import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
+import dev.frederikpietzko.springaidemo.chatprotocol.MessageRole
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.flow.update
+import java.util.UUID
 
 /** Shown when the stream ends without a terminal event, which the protocol only allows for a dropped connection. */
 private const val CONNECTION_CLOSED = "The connection closed before the answer was complete."
 
-/** The chat screen's state and actions, independent of Compose so it can be tested with a fake [ChatApi]. */
-class ChatViewModel(private val api: ChatApi) {
-    private val mutableState = MutableStateFlow(ChatState())
+/**
+ * The chat screen's state and actions, independent of Compose so it can be tested with a fake [ChatApi]. Every
+ * conversation gets its own id from [newId].
+ */
+class ChatViewModel(private val api: ChatApi, private val newId: () -> String = { UUID.randomUUID().toString() }) {
+    private val mutableState = MutableStateFlow(ChatState(conversationId = newId()))
 
     /** The current screen state. */
     val state: StateFlow<ChatState> = mutableState.asStateFlow()
@@ -22,7 +29,8 @@ class ChatViewModel(private val api: ChatApi) {
     /**
      * Sends [text] and streams the reply into the conversation until a terminal event arrives. An error event, or a
      * stream that ends without a terminal event, is shown under the (partial) reply; `sending` is reset in any case.
-     * A blank [text], or a call while an answer is still streaming, is ignored.
+     * Then the conversation list is refreshed, after the input is usable again (not when cancelled). A blank [text],
+     * or a call while an answer is still streaming, is ignored.
      */
     suspend fun send(text: String) {
         if (text.isBlank() || state.value.sending) return
@@ -31,7 +39,7 @@ class ChatViewModel(private val api: ChatApi) {
         mutableState.update { it.copy(messages = it.messages + question, sending = true) }
         try {
             var terminated = false
-            api.send(ChatRequest(state.value.persona, text))
+            api.send(ChatRequest(state.value.persona, text, state.value.conversationId))
                 // The stream ends with exactly one terminal event; stop collecting there.
                 .transformWhile { event ->
                     emit(event)
@@ -51,11 +59,42 @@ class ChatViewModel(private val api: ChatApi) {
         } finally {
             mutableState.update { it.copy(sending = false) }
         }
+        // Outside the finally: a GET against a dead backend can take a while and must not block the input.
+        refreshConversations()
+    }
+
+    /** Replaces the conversation list with the backend's; an unreachable backend gives an empty list. */
+    suspend fun refreshConversations() {
+        val conversations = api.conversations()
+        mutableState.update { it.copy(conversations = conversations) }
+    }
+
+    /**
+     * Shows the transcript of [conversation] and continues it: later messages carry its id. A transcript that cannot
+     * be loaded shows no messages. Ignored while an answer is streaming.
+     */
+    suspend fun open(conversation: ConversationSummary) {
+        if (state.value.sending) return
+        val messages = api.messages(conversation.id).map { it.toChatMessage() }
+        mutableState.update {
+            if (it.sending) it else it.copy(conversationId = conversation.id, messages = messages)
+        }
+    }
+
+    /** Clears the conversation and starts a new one with a new id; ignored while an answer is streaming. */
+    fun newConversation() {
+        if (state.value.sending) return
+        mutableState.update { it.copy(conversationId = newId(), messages = []) }
     }
 
     /** Selects the persona for the next message. */
     fun selectPersona(persona: Persona) {
         mutableState.update { it.copy(persona = persona) }
+    }
+
+    private fun ConversationMessage.toChatMessage(): ChatMessage = when (role) {
+        MessageRole.USER -> ChatMessage(ChatMessage.Author.USER, text)
+        MessageRole.ASSISTANT -> ChatMessage(ChatMessage.Author.ASSISTANT, text)
     }
 
     private fun updateReply(change: (ChatMessage) -> ChatMessage) {

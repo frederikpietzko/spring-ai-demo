@@ -128,6 +128,17 @@ class ChatEndpointTest {
     }
 
     @Test
+    fun `the claimant instructions describe the memory and the recall tool`() {
+        fake.replyChunks("ok")
+
+        postChat(CLAIMANT_HI)
+
+        val system = fake.prompts.last().instructions.filterIsInstance<SystemMessage>().single().text.orEmpty()
+        assertTrue(system.contains("conversation_search"), system)
+        assertTrue(!system.contains("only see the current message"), system)
+    }
+
+    @Test
     fun `the user text reaches the model unchanged, braces included`() {
         fake.replyChunks("ok")
 
@@ -150,7 +161,7 @@ class ChatEndpointTest {
     }
 
     @Test
-    fun `a second request does not see the first message`() {
+    fun `a second request does not see the first message without a conversation id`() {
         fake.replyChunks("one")
         fake.replyChunks("two")
 

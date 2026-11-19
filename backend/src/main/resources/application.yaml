@@ -10,8 +10,9 @@ spring:
     # The schema is created by Flyway migrations only, never by Exposed at startup.
     generate-ddl: false
   flyway:
-    # db/migration is written by the Exposed generator; db/vector holds the hand-written pgvector DDL (ADR-0006).
-    locations: classpath:db/migration,classpath:db/vector
+    # db/migration is written by the Exposed generator; db/vector holds the hand-written pgvector DDL (ADR-0006) and
+    # db/session the hand-written DDL of the Session Memory store.
+    locations: classpath:db/migration,classpath:db/vector,classpath:db/session
   docker:
     compose:
       # No `file` here: Spring Boot finds compose.yaml in the working directory. The repo root has the real file and
@@ -42,6 +43,13 @@ spring:
         dimensions: 768
         # Readable, stable chunk ids such as policy-wording/exclusions.md#0-0 instead of UUIDs.
         id-type: text
+    session:
+      repository:
+        jdbc:
+          # Flyway owns the DDL (db/session, ADR-0002). The default (embedded) only skips PostgreSQL by accident.
+          initialize-schema: never
+          # Lets the conversation list find the claimant's sessions with findByMetadata(agentName, "claimant").
+          indexed-attributes: agentName
 
 management:
   endpoints:

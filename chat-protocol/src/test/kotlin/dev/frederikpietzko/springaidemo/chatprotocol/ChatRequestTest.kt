@@ -4,6 +4,7 @@ import kotlinx.serialization.SerializationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 
 class ChatRequestTest {
     @Test
@@ -11,6 +12,23 @@ class ChatRequestTest {
         val json = ChatJson.encodeToString(ChatRequest.serializer(), ChatRequest(Persona.CLAIMANT, "Hi"))
 
         assertEquals("""{"persona":"CLAIMANT","message":"Hi"}""", json)
+    }
+
+    @Test
+    fun `request with a conversation id is encoded with the id and decodes to the same request`() {
+        val request = ChatRequest(Persona.CLAIMANT, "Hi", conversationId = "c-1")
+
+        val json = ChatJson.encodeToString(ChatRequest.serializer(), request)
+
+        assertEquals("""{"persona":"CLAIMANT","message":"Hi","conversationId":"c-1"}""", json)
+        assertEquals(request, ChatJson.decodeFromString(ChatRequest.serializer(), json))
+    }
+
+    @Test
+    fun `request without a conversation id decodes with no id`() {
+        val request = ChatJson.decodeFromString(ChatRequest.serializer(), """{"persona":"CLAIMANT","message":"Hi"}""")
+
+        assertNull(request.conversationId)
     }
 
     @Test

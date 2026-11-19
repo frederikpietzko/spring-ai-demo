@@ -7,7 +7,7 @@ Defines how the database schema workflow is set up: versioned SQL files are the 
 ## Requirements
 
 ### Requirement: Migrations are versioned SQL files
-The project SHALL keep the generated schema history as versioned SQL files in the backend migration directory, SHALL keep hand-written pgvector DDL as versioned SQL files in a second backend directory that the generator never reads, and SHALL never create or alter the schema through automatic startup DDL.
+The project SHALL keep the generated schema history as versioned SQL files in the backend migration directory, SHALL keep hand-written pgvector DDL and hand-written conversation store DDL as versioned SQL files in two further backend directories that the generator never reads, and SHALL never create or alter the schema through automatic startup DDL.
 
 #### Scenario: Migration directory exists and is empty
 - **WHEN** the repository is checked out after this change
@@ -24,6 +24,14 @@ The project SHALL keep the generated schema history as versioned SQL files in th
 #### Scenario: Vector store library creates no schema
 - **WHEN** the backend configuration is inspected
 - **THEN** schema initialization by the vector store library is turned off and schema validation is on
+
+#### Scenario: Session DDL lives in its own directory
+- **WHEN** the backend's migration directories are listed after this change
+- **THEN** the session directory contains one migration that creates the conversation store tables (sessions, indexed attributes and events) and their indexes, and neither the migration directory written by the generator nor the vector directory does
+
+#### Scenario: Session library creates no schema
+- **WHEN** the backend configuration is inspected
+- **THEN** schema initialization by the session library is turned off
 
 ### Requirement: Migration generation is explicit and reviewable
 The project SHALL provide a single documented command that writes migration SQL for the difference between the Kotlin table definitions and the migrated history into the migration directory, and generation SHALL NOT run as part of a normal build or startup.
@@ -63,11 +71,11 @@ After all migrations are applied to an empty database, the migrated schema SHALL
 - **THEN** the comparison reports at least one required statement and the schema agreement check fails
 
 ### Requirement: Applied migrations are immutable and replayable
-The migration history of both migration directories SHALL replay from an empty database without error, and a migration that was applied and later edited SHALL be rejected by validation.
+The migration history of every migration directory SHALL replay from an empty database without error, and a migration that was applied and later edited SHALL be rejected by validation.
 
 #### Scenario: Replay from empty
-- **WHEN** all migrations of both directories are applied to an empty schema
-- **THEN** every migration succeeds and the history lists each of them
+- **WHEN** all migrations of all directories are applied to an empty schema
+- **THEN** every migration succeeds and the history lists each of them, the session migration included
 
 #### Scenario: Edited migration is rejected
 - **WHEN** the recorded checksum of an applied migration differs from its file
@@ -77,12 +85,16 @@ The migration history of both migration directories SHALL replay from an empty d
 - **WHEN** the backend has started against an empty database
 - **THEN** no migration is pending and applying migrations again changes nothing
 
-### Requirement: Generation is unaffected by the vector directory
-The migration generation command SHALL read and write only the generated migration directory, so hand-written vector DDL never makes generation fail and never appears in a generated file.
+### Requirement: Generation is unaffected by hand-written directories
+The migration generation command SHALL read and write only the generated migration directory, so hand-written vector DDL and hand-written session DDL never make generation fail and never appear in a generated file.
 
 #### Scenario: Generation with the vector migration present
 - **WHEN** the generation command runs while the vector migration exists and there are no table definitions
 - **THEN** it succeeds and no file is written
+
+#### Scenario: Generation with the session migration present
+- **WHEN** the generation command runs while the vector and session migrations exist and there are no table definitions
+- **THEN** it succeeds, no file is written, and the generated migration directory stays empty
 
 ### Requirement: Core module owns its schema the same way
 The `core-mcp` module SHALL keep its schema history as versioned SQL files in its own single migration directory, SHALL keep its Exposed tables in its own persistence tables package, SHALL provide its own documented generation command, and SHALL never create or alter the schema through automatic startup DDL. Seed data SHALL be a versioned migration that is applied after the generated table migrations.

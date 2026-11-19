@@ -197,3 +197,41 @@ Binding text: `openspec/changes/archive/2026-11-20-core-mcp-claims/design.md` (D
 - **ArchUnit context rule gap:** `@MockitoBean`/`@MockitoSpyBean` on fields, `@DynamicPropertySource` methods and a nested `@TestConfiguration` stay a review item (ADR-0004 addendum).
 - **N+1 in `ClaimService.toClaim`:** one query per claim for items and payout in `listForCustomer`; fine for demo-sized data.
 - **Wave 2 (`mcp-tools-and-confirmation`):** point the backend MCP client at `http://localhost:8081/mcp` with the legacy Streamable HTTP transport; the tool names, parameter names and JSON fields of design D12 are the contract.
+
+### Wave 2 - `session-memory`
+
+Review: clean (no confirmed blockers).
+
+Binding text: `openspec/changes/archive/2026-11-20-session-memory/design.md` (D1-D14, risks). This change wrote no new ADR; status notes were appended to `docs/adr/0002-technology-stack.md`, `0004-test-strategy.md`, `0005-chat-protocol.md` and `0006-vector-store-and-embeddings.md`.
+
+**Decisions**
+
+- **Conversation ids belong to the desktop:** `ChatRequest(persona, message, conversationId: String? = null)`; the desktop creates one id per conversation, the backend maps null or blank to a fresh id, and there is no new event. *Why:* ADR-0005's extension rule (the old wire form is unchanged) and no server-assigned id, which would need a `ConversationStarted` event and a fix of the view model's terminal-event handling. Ids over 255 characters are not validated and end as the generic error event.
+- **Session schema as hand-written DDL in `db/session`:** the library's PostgreSQL schema is copied verbatim into `V20261120120000__create_session_tables.sql`, `classpath:db/session` joins `spring.flyway.locations`, and `spring.ai.session.repository.jdbc.initialize-schema` is `never`; no Exposed tables. *Why:* ADR-0002 forbids startup DDL, the generator-owned `db/migration` stays empty, and it mirrors `db/vector` (ADR-0006).
+- **Advisor order unchanged, stored text is the retrieval-rewritten message:** audit 100, session turn advisor 200, retrieval 250, tool calling 300, session memory advisor 1000. The claimant's typed text rides on the user message as metadata `claimantText`; transcript, recall tool and title read it before the message text. *Why:* no ADR-0006 or `RagOrderTest` change; retrieval above memory would repeat retrieval on every tool round. Second-turn tests assert `contains`, not equality.
+- **Hand-written `conversation_search` tool:** a case-insensitive substring match over the whole stored log (user and assistant text), the five most recent matches as `role: text` lines, the conversation id read from `ToolContext`. *Why:* the 2.1.0-RC2 session jars have no recall tool, and compaction dropping turns from the prompt while the tool still finds them is the demo point. Community memory tools stay for ADR-0007; embedding recall would need a conversation vector store.
+- **Compaction without a summarizer:** a turn-count trigger (`MAX_TURNS = 10`) with a window strategy that keeps the last `KEPT_TURNS = 5` turns, synchronous. Compaction never deletes events, so the transcript and the tool still see every turn. *Why:* a summarizer adds a Haiku call and "script exhausted" under `FakeChatModel`; a token trigger is harder to test. The constants are public top-level `const val`s (the plan said `internal`, which the Kotlin policy forbids in application modules).
+- **Titles and list:** a session is created with metadata `agentName = claimant` and `title` = first typed message cut to 60 characters; `agentName` is an indexed attribute and `Conversations.list()` uses `findByMetadata`, newest first, `startedAt` as `Instant.toString()`. *Why:* the library has no list-all call and only indexed keys are searchable; other agents get their own list after the merge.
+- **Endpoints and DTOs:** `GET /conversations` and `GET /conversations/{id}/messages` with `ConversationSummary` and `ConversationMessage(role USER or ASSISTANT, text)` in the chat protocol; the transcript reads the whole log, drops blank and tool messages and answers 404 only when no session has the id. *Why:* the smallest protocol addition; a session of another agent is not filtered from the transcript, only from the list.
+- **Desktop:** `ChatApi.conversations()` and `messages(id)` are `suspend` and give an empty list on any failure (cancellation and JVM errors are rethrown); the list refreshes at start and after each ended answer; `newConversation` and `open` are ignored while sending; the current id is not persisted. A left 240 dp column with a "New conversation" button and ghost buttons for the titles, with no fill of its own (the render test samples the background there). *Why:* the app keeps running without a backend and has no second error channel; after a restart the list is the way back.
+- **Restart test inside the shared context:** the restart is simulated by building a new `DefaultSessionService`, repository and claimant client over the same data source (design D12), not by a second Spring context. *Why:* ADR-0004 forbids a second context; this deviates from the roadmap's "new context, same DB".
+- **Spec shape:** new capability `conversation-memory`; `backend-chat` and `backend-runtime` requirements renamed, `policy-rag` "Retrieval sits between memory and tools" now refers to the session turn advisor, `schema-migrations` renamed to "Generation is unaffected by hand-written directories", and `desktop-shell` modified for the conversation column. The merge into the main specs gave `conversation-memory` a Purpose section the delta did not have.
+- **Claimant prompt:** a "Memory" section (the conversation is remembered, long ones are shortened, use `conversation_search` before asking the claimant to repeat something); the "only the current message" bullet is gone.
+- **Test and code details:** fixed descriptive conversation ids in backend tests and scripted ids `c-1`, `c-2` in desktop tests (UUID.randomUUID is banned in tests); `testsupport/ChatPosts.kt` shares the POST helper; `ConversationMemoryTest` uses the JUnit `@Test` because its restart test is a `suspend fun`; `FakeChatApi` keeps `reply` as the last parameter and its list lambdas are `suspend`; `ChatState.conversationId` has no default; `@Suppress("LongParameterList")` on `claimantChatClient`; no ArchUnit rule for Exposed in `chat` (the existing tables-package rule already confines tables).
+- **Accepted gaps (design risks):** a failed or cancelled stream leaves a user message without a reply; stored user messages contain the retrieved clauses; no TTL cleanup (nothing calls `deleteExpiredSessions`); a storage failure while saving the reply turns a finished stream into an error event.
+
+**Descoped / deviations from the roadmap entry**
+
+- Out as planned: TTL cleanup, summarizing compaction, deleting or renaming conversations, pagination, long-term memory (`AutoMemoryTools`).
+- The restart test does not use a new Spring context (see above).
+- No run with a real Anthropic key; tests use the fakes.
+
+**Follow-ups**
+
+- **Merge with the parallel track:** the adjuster client should adopt the same session advisors, `ConversationSearch` and its own `agentName`. Merge hotspots: `ChatConfiguration`, `application.yaml` (`spring.flyway.locations`), `ChatController`, the protocol module, `ChatViewModel`, `App`.
+- **Client-supplied ids are trusted:** an id of another agent's session is appended to, and an id over 255 characters fails in the database as the generic error; `transcript(id)` ignores the session's agent.
+- **Race in the view model:** "New conversation" while `open()` awaits the transcript is not guarded; when the transcript arrives it silently undoes the new conversation.
+- **Title cut:** `take(60)` can split a surrogate pair and leave a lone surrogate.
+- **Missing test:** nothing asserts that the system message mentions `conversation_search` and no longer says only the current message is visible.
+- **Manual check:** `:desktop:run` against a running backend with a real key; the README conversation example is one `text` block holding two JSON arrays.
+- **Style warnings:** a few IDE warnings remain in touched test files (e.g. the `seedTurns` helper); detekt is clean.

@@ -5,6 +5,9 @@ import com.sun.net.httpserver.HttpServer
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatJson
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
+import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
+import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
+import dev.frederikpietzko.springaidemo.chatprotocol.MessageRole
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -92,8 +95,83 @@ class HttpChatApiTest {
         }
     }
 
+    @Test
+    suspend fun `the conversation list is read from GET conversations`() {
+        val seen = CopyOnWriteArrayList<String>()
+        val conversations = withServer(CONVERSATIONS, { exchange ->
+            seen.add("${exchange.requestMethod} ${exchange.requestURI.path}")
+            exchange.respondWithJson("""[{"id":"c-1","title":"Größe 🦖","startedAt":"2026-11-20T10:00:00Z"}]""")
+        }) { baseUrl -> HttpChatApi(baseUrl).use { it.conversations() } }
+
+        assertEquals([ConversationSummary("c-1", "Größe 🦖", "2026-11-20T10:00:00Z")], conversations)
+        assertEquals(["GET /conversations"], seen)
+    }
+
+    @Test
+    suspend fun `a transcript is read from GET conversations id messages`() {
+        val seen = CopyOnWriteArrayList<String>()
+        val messages = withServer(CONVERSATIONS, { exchange ->
+            seen.add("${exchange.requestMethod} ${exchange.requestURI.path}")
+            exchange.respondWithJson("""[{"role":"USER","text":"Hi"},{"role":"ASSISTANT","text":"Noted."}]""")
+        }) { baseUrl -> HttpChatApi(baseUrl).use { it.messages("c-1") } }
+
+        assertEquals(
+            [ConversationMessage(MessageRole.USER, "Hi"), ConversationMessage(MessageRole.ASSISTANT, "Noted.")],
+            messages,
+        )
+        assertEquals(["GET /conversations/c-1/messages"], seen)
+    }
+
+    @Test
+    suspend fun `an error status gives an empty conversation list and an empty transcript`() {
+        val [conversations, messages] = withServer(CONVERSATIONS, { exchange ->
+            exchange.sendResponseHeaders(500, -1)
+            exchange.close()
+        }) { baseUrl -> HttpChatApi(baseUrl).use { Pair(it.conversations(), it.messages("c-1")) } }
+
+        assertEquals([], conversations)
+        assertEquals([], messages)
+    }
+
+    @Test
+    suspend fun `an undecodable body gives an empty conversation list`() {
+        val conversations = withServer(CONVERSATIONS, { it.respondWithJson("""{"not":"a list"}""") }) { baseUrl ->
+            HttpChatApi(baseUrl).use { it.conversations() }
+        }
+
+        assertEquals([], conversations)
+    }
+
+    @Test
+    suspend fun `an unreachable backend gives an empty conversation list`() {
+        val closedPort = withServer(CONVERSATIONS, { it.close() }) { baseUrl -> baseUrl }
+
+        val conversations = HttpChatApi(closedPort).use { it.conversations() }
+
+        assertEquals([], conversations)
+    }
+
+    @Test
+    suspend fun `a fatal JVM error while reading the conversation list is rethrown`() {
+        val failingClient = HttpClient(CIO) {
+            install(SSE)
+            install(createClientPlugin("fatal") { onRequest { _, _ -> throw StackOverflowError("simulated") } })
+        }
+
+        withServer(CONVERSATIONS, { it.respondWithJson("[]") }) { baseUrl ->
+            assertFailsWith<StackOverflowError> { HttpChatApi(baseUrl, failingClient).use { it.conversations() } }
+        }
+    }
+
     private suspend fun sendThrough(baseUrl: String): List<ChatEvent> =
         HttpChatApi(baseUrl).use { api -> api.send(request).toList() }
+
+    private fun HttpExchange.respondWithJson(json: String) {
+        val bytes = json.toByteArray(Charsets.UTF_8)
+        responseHeaders.add("Content-Type", "application/json")
+        sendResponseHeaders(200, bytes.size.toLong())
+        responseBody.use { it.write(bytes) }
+    }
 
     private fun HttpExchange.respondWithEvents(vararg data: String) {
         responseHeaders.add("Content-Type", "text/event-stream")
@@ -102,14 +180,29 @@ class HttpChatApiTest {
     }
 
     /** Runs [block] against a JDK HTTP server on a free port that answers `/chat` with [handler]; always stops it. */
-    private inline fun <T> withServer(noinline handler: (HttpExchange) -> Unit, block: (baseUrl: String) -> T): T {
+    private inline fun <T> withServer(noinline handler: (HttpExchange) -> Unit, block: (baseUrl: String) -> T): T =
+        withServer("/chat", handler, block)
+
+    /**
+     * Runs [block] against a JDK HTTP server on a free port that answers [path] and everything below it with
+     * [handler]; always stops it.
+     */
+    private inline fun <T> withServer(
+        path: String,
+        noinline handler: (HttpExchange) -> Unit,
+        block: (baseUrl: String) -> T,
+    ): T {
         val server = HttpServer.create(InetSocketAddress("localhost", 0), 0)
-        server.createContext("/chat", handler)
+        server.createContext(path, handler)
         server.start()
         try {
             return block("http://localhost:${server.address.port}")
         } finally {
             server.stop(0)
         }
+    }
+
+    private companion object {
+        const val CONVERSATIONS = "/conversations"
     }
 }

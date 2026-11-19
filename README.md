@@ -1,12 +1,12 @@
 # spring-ai-demo
 
-Small, runnable examples of Spring AI 2.1 features (Kotlin, Spring Boot 4.2). The demo is a kaiju insurance claims desk: a claimant chats in a Compose Desktop window and the Spring Boot backend (Anthropic, Exposed, Flyway, PostgreSQL) streams the model's answer back token by token. Coverage questions are answered from the fictional policy wording through RAG (Ollama embeddings, pgvector), with the cited clauses. The backend's only table is the pgvector `vector_store`, created by hand-written Flyway DDL. Claims data lives in a separate insurer core system, `core-mcp`, that agents reach only over MCP (tools and resources on Streamable HTTP, database `core`). The waves and the changes still to come are in [`ROADMAP.md`](ROADMAP.md).
+Small, runnable examples of Spring AI 2.1 features (Kotlin, Spring Boot 4.2). The demo is a kaiju insurance claims desk: a claimant chats in a Compose Desktop window and the Spring Boot backend (Anthropic, Exposed, Flyway, PostgreSQL) streams the model's answer back token by token. Coverage questions are answered from the fictional policy wording through RAG (Ollama embeddings, pgvector), with the cited clauses. Conversations are remembered with Spring AI Session Memory (JDBC, compacted when long, with a `conversation_search` recall tool) and listed in the desktop. The backend's tables are the pgvector `vector_store` and the session tables `ai_session`, `ai_session_event` and `ai_session_index`, all created by hand-written Flyway DDL. Claims data lives in a separate insurer core system, `core-mcp`, that agents reach only over MCP (tools and resources on Streamable HTTP, database `core`). The waves and the changes still to come are in [`ROADMAP.md`](ROADMAP.md).
 
 | Module | What it is |
 | --- | --- |
-| `backend` | Spring Boot 4.2 application: Spring AI Anthropic (Claude Haiku), Ollama embeddings, pgvector RAG, Actuator health, Exposed, Flyway, PostgreSQL |
+| `backend` | Spring Boot 4.2 application: Spring AI Anthropic (Claude Haiku), Ollama embeddings, pgvector RAG, Session Memory (JDBC), Actuator health, Exposed, Flyway, PostgreSQL |
 | `desktop` | Compose Multiplatform desktop app (JVM): the chat screen, the shared theme and components, a Ktor SSE client |
-| `chat-protocol` | Shared library module (no runtime): chat request, persona and chat events with their JSON form (ADR-0005) |
+| `chat-protocol` | Shared library module (no runtime): chat request (with the optional conversation id), persona, chat events, conversation summaries and transcript messages with their JSON form (ADR-0005) |
 | `core-mcp` | Spring Boot 4.2 application on port 8081: the insurer core system (policies, claims, payouts) as a Spring AI MCP server over Streamable HTTP, Exposed, Flyway, its own database `core` (ADR-0003) |
 | `build-logic` | Included build with the `demo.kotlin-jvm` convention plugin (Kotlin flags, JUnit 6, power-assert, detekt) |
 
@@ -78,12 +78,30 @@ curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Acce
 - With `ANTHROPIC_API_KEY` set, the reply arrives incrementally as `data: {"type":"text-delta","text":"..."}` events and ends with `data: {"type":"done"}`.
 - Without a key (or on any other failure) the stream is a single `data: {"type":"error","message":"The claims desk is unavailable."}`; the cause is in the backend log.
 - `"persona":"ADJUSTER"` is part of the protocol but not available yet: it answers with one `error` event. A malformed body or an unknown persona is a `400`.
-- Every chat request stands alone: the backend does not remember earlier messages yet.
+- A request may carry a `conversationId` (`{"persona":"CLAIMANT","message":"Hi","conversationId":"c-1"}`): requests with the same id form one conversation, and the model sees its earlier turns. Without an id (or with a blank one) the request starts a fresh conversation of its own. Conversations are stored in the backend database and survive restarts; after more than ten turns the prompt keeps only the five most recent ones, and the model can still find older messages with its `conversation_search` tool.
 - Each claimant message is grounded in the fictional policy wording (`backend/src/main/resources/corpus/policy-wording`): the closest clauses are added to the prompt, labelled `[source - title]`, and the model is asked to cite those labels when the message asks about coverage (ADR-0006).
+
+## Conversation endpoints
+
+The stored claimant conversations, newest first, and the transcript of one of them (what the claimant typed and what the assistant answered; an unknown id is a `404`):
+
+```bash
+curl localhost:8080/conversations
+curl localhost:8080/conversations/c-1/messages
+```
+
+```text
+[{"id":"c-1","title":"Kaiju stepped on my shed","startedAt":"2026-11-20T10:00:00Z"}]
+[{"role":"USER","text":"Kaiju stepped on my shed"},{"role":"ASSISTANT","text":"Noted."}]
+```
+
+The title is the beginning of the first message (at most 60 characters).
 
 ## Desktop chat
 
-Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch shows `Claimant`; `Adjuster` is listed but not selectable yet. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key. Messages are not remembered across restarts.
+Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch shows `Claimant`; `Adjuster` is listed but not selectable yet. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key.
+
+The column on the left lists the stored conversations, loaded at start and after every answer. Click one to see its transcript and continue it; **New conversation** clears the screen and starts a new one. The desktop gives every conversation its own id, so the backend remembers it across desktop and backend restarts. Without a backend the list stays empty.
 
 ## Environment variables
 
@@ -133,7 +151,7 @@ On a fresh volume, start the database with `docker compose up -d` from the repos
 - **No real model in tests.** The context runs with `spring.ai.model.chat=none` and a scripted `FakeChatModel`: a test scripts text, JSON, tool-call requests or streamed chunks, then reads the prompts the model received. It fails loudly when its script is exhausted. Embeddings come from a deterministic `FakeEmbeddingModel` (a hashed bag of words, 768 dimensions) with `spring.ai.model.embedding=none`, so no test reaches Ollama. No API key is needed, and `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` and all `SPRING_AI_*` variables are removed from the test JVM.
 - **`secretsScan`.** `:backend:check` (and so root `check`) also scans the text files of the working tree (tracked or not; not build output, `.git`, `.idea`, `.claude/worktrees`, binaries or the local `.env`, `*.key` and `.claude/settings.local.json`) for provider keys, tokens, private keys, credentials in URLs and non-placeholder passwords (non-source files check quoted and bare values, yaml, yml, properties and env files also whole-line values, source files only quoted string literals, typed declarations included; plain URLs, numbers and durations next to non-secret names and placeholder defaults that are harmless are not flagged). The documented local `demo` database defaults are the only allowed values. The task tracks no inputs and runs on every build (about a second).
 - **core-mcp tests** follow the same pattern without a model: one shared context through `@CoreMcpIntegrationTest` (real port, real PostgreSQL from Testcontainers), MCP tools and resources tested end to end through the MCP SDK client over Streamable HTTP, the business rules tested on the domain services against the real database. Tests that write data use only the sandbox policy `KP-9000` and the claims they create, with no cleanup (the container is fresh on every run); exact counts are asserted only over rows no test writes. An architecture test forbids context annotations (`@SpringBootTest`, `@TestPropertySource`, `@Import`, ...) on test classes.
-- **Desktop tests** cover the theme logic, the chat view model and the chat screen's semantics against a fake `ChatApi`, the Ktor client against a local JDK HTTP server, and off-screen renders of the screen and all components in both themes. Rendering uses skiko natives; on Linux the runner needs fontconfig and freetype.
+- **Desktop tests** cover the theme logic, the chat view model (conversation ids, list and transcript included) and the chat screen's semantics against a fake `ChatApi`, the Ktor client against a local JDK HTTP server, and off-screen renders of the screen and all components in both themes. Rendering uses skiko natives; on Linux the runner needs fontconfig and freetype.
 
 ## Schema workflow: generate with Exposed, apply with Flyway
 
@@ -146,7 +164,7 @@ Each Spring module owns its schema the same way: the backend (database `backend`
 
 The core-mcp seed (`V<timestamp>__seed_scenario_fixtures.sql`) is hand-written and versioned after the generated table migrations.
 
-The pgvector DDL (the `vector` extension and the `vector_store` table) is hand-written in `backend/src/main/resources/db/vector`, which Flyway applies too and the generator never reads (ADR-0006).
+The pgvector DDL (the `vector` extension and the `vector_store` table) is hand-written in `backend/src/main/resources/db/vector`, which Flyway applies too and the generator never reads (ADR-0006). The Session Memory tables (`ai_session`, `ai_session_event`, `ai_session_index`) are hand-written the same way in `backend/src/main/resources/db/session`, a copy of the library's PostgreSQL schema; the library's own schema initialization is off.
 
 Generation never runs as part of `build`, `check` or startup.
 

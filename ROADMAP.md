@@ -256,7 +256,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
     - Claimant identity goes through `ToolContext`. Tool-name collision policy for local vs MCP tools.
   - Out: OAuth (wave 4).
   - Tests: tool loop with the fake model requesting `getClaim` then `issuePayout`, against a real `core-mcp` started for the test or a fake MCP server. A deny leads to no payout and an approve leads to exactly one. A desktop dialog state test.
-- [ ] **`session-memory`**
+- [x] **`session-memory`**
   - Scope:
     - Spring AI Session with the JDBC repository (database `backend`): `SessionTurnAdvisor` outside the tool loop, `SessionMemoryAdvisor` inside it, the `conversation_search` recall tool, a compaction strategy.
     - Conversation ids per desktop conversation, a conversation list, resume after a backend restart.

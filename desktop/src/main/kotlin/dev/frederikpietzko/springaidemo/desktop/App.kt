@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatApi
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatMessage
@@ -49,20 +51,54 @@ private val personaOptions: List<SelectOption<Persona>> = [
 ]
 
 /**
- * The chat screen: a header with the application name and the persona switch, the conversation, and an input row.
- * [chatApi] talks to the backend (a fake in tests); [themeOverride] forces the light or dark appearance, `null`
- * follows the system.
+ * The chat screen: a header with the application name and the persona switch, the conversation list with "New
+ * conversation" on the left, the conversation and an input row on the right. [chatApi] talks to the backend (a fake in
+ * tests); [themeOverride] forces the light or dark appearance, `null` follows the system.
  */
 @Composable
 fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null) {
     val viewModel = remember(chatApi) { ChatViewModel(chatApi) }
     val state by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
+    LaunchedEffect(viewModel) { viewModel.refreshConversations() }
     DemoTheme(override = themeOverride) {
         Column(Modifier.fillMaxSize().background(Demo.colors.background)) {
             Header(persona = state.persona, onPersona = viewModel::selectPersona)
-            Conversation(state.messages, Modifier.weight(1f).fillMaxWidth())
-            InputRow(sending = state.sending, onSend = { text -> scope.launch { viewModel.send(text) } })
+            Row(Modifier.weight(1f).fillMaxWidth()) {
+                ConversationList(
+                    conversations = state.conversations,
+                    onNew = viewModel::newConversation,
+                    onOpen = { conversation -> scope.launch { viewModel.open(conversation) } },
+                    modifier = Modifier.width(240.dp).fillMaxHeight(),
+                )
+                Column(Modifier.weight(1f).fillMaxHeight()) {
+                    Conversation(state.messages, Modifier.weight(1f).fillMaxWidth())
+                    InputRow(sending = state.sending, onSend = { text -> scope.launch { viewModel.send(text) } })
+                }
+            }
+        }
+    }
+}
+
+/** "New conversation" and the stored conversations by title, newest first; a click opens one. */
+@Composable
+private fun ConversationList(
+    conversations: List<ConversationSummary>,
+    onNew: () -> Unit,
+    onOpen: (ConversationSummary) -> Unit,
+    modifier: Modifier,
+) {
+    Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        DButton("New conversation", onClick = onNew, modifier = Modifier.fillMaxWidth())
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            items(conversations) { conversation ->
+                DButton(
+                    conversation.title,
+                    onClick = { onOpen(conversation) },
+                    modifier = Modifier.fillMaxWidth(),
+                    style = DButtonStyle.GHOST,
+                )
+            }
         }
     }
 }

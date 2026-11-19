@@ -15,8 +15,9 @@ import kotlin.test.assertTrue
 
 /**
  * Replays migrations on a scratch schema so the shared schema is never touched. The real replay uses the locations of
- * the application's [Flyway] bean (the generated `db/migration` and the hand-written `db/vector`); the probe
- * migrations in `db/test-migration` (test resources only, never on Boot's migration path) prove the mechanism.
+ * the application's [Flyway] bean (the generated `db/migration` and the hand-written `db/vector` and `db/session`);
+ * the probe migrations in `db/test-migration` (test resources only, never on Boot's migration path) prove the
+ * mechanism.
  */
 @IntegrationTest
 class MigrationHistoryTest {
@@ -57,7 +58,9 @@ class MigrationHistoryTest {
 
         assertTrue(result.success)
         assertEquals(0, flyway.info().pending().size)
-        assertTrue(VECTOR_STORE_VERSION in flyway.info().applied().mapNotNull { it.version?.version })
+        val applied = flyway.info().applied().mapNotNull { it.version?.version }
+        assertTrue(VECTOR_STORE_VERSION in applied, applied.toString())
+        assertTrue(SESSION_STORE_VERSION in applied, applied.toString())
     }
 
     @Test
@@ -111,5 +114,8 @@ class MigrationHistoryTest {
     private companion object {
         /** The hand-written vector store migration in `db/vector`. */
         const val VECTOR_STORE_VERSION = "20261120000000"
+
+        /** The hand-written session store migration in `db/session`. */
+        const val SESSION_STORE_VERSION = "20261120120000"
     }
 }

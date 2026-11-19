@@ -15,6 +15,7 @@ import org.springframework.http.codec.ServerSentEvent
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
+import java.util.UUID
 
 private val log = LoggerFactory.getLogger(ChatController::class.java)
 
@@ -28,18 +29,24 @@ private const val GENERIC_ERROR = "The claims desk is unavailable."
  */
 @RestController
 class ChatController(private val claimantChat: ClaimantChat) {
-    /** Streams the reply to [request]; the persona picks the agent. */
+    /**
+     * Streams the reply to [request]; the persona picks the agent. A request without a conversation id, or with a
+     * blank one, gets a fresh conversation of its own.
+     */
     @PostMapping("/chat", consumes = [MediaType.APPLICATION_JSON_VALUE], produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
     fun chat(@RequestBody request: ChatRequest): Flow<ServerSentEvent<String>> =
         when (request.persona) {
-            Persona.CLAIMANT -> claimantReply(request.message)
+            Persona.CLAIMANT -> claimantReply(
+                conversationId = request.conversationId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString(),
+                message = request.message,
+            )
             Persona.ADJUSTER -> flowOf(ChatEvent.Error("Persona ADJUSTER is not available yet"))
         }
             // Pre-encoded JSON: a non-String payload would be written by the subclass serializer, without `type`.
             .map { ServerSentEvent.builder(it.toJson()).build() }
 
-    private fun claimantReply(message: String): Flow<ChatEvent> =
-        claimantChat.stream(message)
+    private fun claimantReply(conversationId: String, message: String): Flow<ChatEvent> =
+        claimantChat.stream(conversationId, message)
             .map<String, ChatEvent> { ChatEvent.TextDelta(it) }
             // Done only for a completed reply (a failed or cancelled stream has a cause). The order matters: after
             // `catch` the flow completes normally, so an `onCompletion` placed there would add Done after the Error.

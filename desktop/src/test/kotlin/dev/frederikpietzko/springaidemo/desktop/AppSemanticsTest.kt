@@ -15,6 +15,9 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import androidx.compose.ui.text.AnnotatedString
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
+import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
+import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
+import dev.frederikpietzko.springaidemo.chatprotocol.MessageRole
 import dev.frederikpietzko.springaidemo.desktop.fakes.FakeChatApi
 import kotlinx.coroutines.flow.flowOf
 import org.junit.jupiter.api.Test
@@ -23,15 +26,17 @@ import kotlin.test.assertEquals
 @OptIn(ExperimentalTestApi::class)
 class AppSemanticsTest {
     @Test
-    fun `window shows the application name, the hint, an input and a send button`() = runDesktopComposeUiTest {
-        setContent { App(FakeChatApi()) }
-        waitForIdle()
+    fun `window shows the application name, the conversation column, the hint, an input and a send button`() =
+        runDesktopComposeUiTest {
+            setContent { App(FakeChatApi()) }
+            waitForIdle()
 
-        onNodeWithText("spring-ai-demo").assertIsDisplayed()
-        onNodeWithText("Describe the kaiju damage to get started.").assertIsDisplayed()
-        onNode(hasSetTextAction()).assertIsDisplayed()
-        onNodeWithText("Send").assertIsDisplayed()
-    }
+            onNodeWithText("spring-ai-demo").assertIsDisplayed()
+            onNodeWithText("New conversation").assertIsDisplayed()
+            onNodeWithText("Describe the kaiju damage to get started.").assertIsDisplayed()
+            onNode(hasSetTextAction()).assertIsDisplayed()
+            onNodeWithText("Send").assertIsDisplayed()
+        }
 
     @Test
     fun `a message typed and sent shows up with the streamed reply and clears the input`() = runDesktopComposeUiTest {
@@ -89,7 +94,61 @@ class AppSemanticsTest {
             onNodeWithText("Send").assertIsEnabled()
         }
 
+    @Test
+    fun `the stored conversations are listed at start`() = runDesktopComposeUiTest {
+        setContent { App(FakeChatApi(conversations = { [SHED, GNOME] })) }
+        waitForIdle()
+
+        onNodeWithText("Shed").assertIsDisplayed()
+        onNodeWithText("Gnome").assertIsDisplayed()
+    }
+
+    @Test
+    fun `choosing a conversation shows its transcript`() = runDesktopComposeUiTest {
+        val api = FakeChatApi(
+            conversations = { [SHED, GNOME] },
+            messages = { id ->
+                if (id == GNOME.id) {
+                    [
+                        ConversationMessage(MessageRole.USER, "my garden gnome is gone"),
+                        ConversationMessage(MessageRole.ASSISTANT, "Noted."),
+                    ]
+                } else {
+                    []
+                }
+            },
+        )
+        setContent { App(api) }
+        waitForIdle()
+
+        onNodeWithText("Gnome").performClick()
+        waitForIdle()
+
+        onNodeWithText("my garden gnome is gone").assertIsDisplayed()
+        onNodeWithText("Noted.").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a new conversation clears the screen`() = runDesktopComposeUiTest {
+        setContent { App(FakeChatApi()) }
+        waitForIdle()
+        onNode(hasSetTextAction()).performTextInput("Hi")
+        onNodeWithText("Send").performClick()
+        waitForIdle()
+
+        onNodeWithText("New conversation").performClick()
+        waitForIdle()
+
+        onNodeWithText("Hello").assertDoesNotExist()
+        onNodeWithText("Describe the kaiju damage to get started.").assertIsDisplayed()
+    }
+
     private val isPersonaSwitch = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.DropdownList)
 
     private val hasNoText = SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString(""))
+
+    private companion object {
+        val SHED = ConversationSummary("c-3", "Shed", "2026-11-20T10:00:00Z")
+        val GNOME = ConversationSummary("c-7", "Gnome", "2026-11-20T09:00:00Z")
+    }
 }
