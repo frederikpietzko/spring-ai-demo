@@ -219,7 +219,7 @@ Each entry gives the OpenSpec change name, its scope, what it explicitly leaves 
 
 ### Wave 1
 
-- [ ] **`core-mcp-claims`**
+- [x] **`core-mcp-claims`**
   - Scope:
     - New module `core-mcp` (Spring Boot, Spring AI MCP server, Streamable HTTP, `mcp-annotations`).
     - Exposed tables in database `core`: customers, policies, coverages, claims, damage items, payouts.
