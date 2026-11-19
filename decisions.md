@@ -512,6 +512,42 @@ Binding text: `openspec/changes/archive/2026-11-20-mcp-security/design.md` (D1-D
 - `AuthServerProcess` is stopped only on `ContextClosedEvent`; a context that fails to refresh leaves the child JVM running. No test starts core-mcp with an unreachable issuer (the lazy decoder is argued, not tested).
 - The committed local secret defaults would issue `payout:write` tokens on a deployed instance; `CredentialIsolationTest` also guards two non-credentials (`CORE_MCP_URL`, `AUTH_SERVER_URL`) and could be renamed "environment isolation".
 
+### Wave 5 - `evaluation`
+
+Review: clean (no confirmed blockers).
+
+Binding text: `openspec/changes/archive/2026-11-20-evaluation/design.md` (D1-D10); this change wrote no ADR (addenda in `docs/adr/0004-test-strategy.md` and a status-line note in `docs/adr/0006-vector-store-and-embeddings.md`). This section is the index.
+
+**Decisions**
+
+- **Mechanism:** a separate Gradle source set `evaluation` with the task `evaluate` (`doNotTrackState`, not configuration-cache compatible). `check` depends on `evaluationClasses` only, and detekt gets `src/evaluation/kotlin` as an extra source. *Why:* a JUnit tag in `src/test` would break `TestConventionsTest`, share the fake-model context and run in a task whose environment is scrubbed; real model output must never be up to date or cached.
+- **Credential scrub:** stays deny-by-default but applies to `tasks.withType<Test>().named { it != "evaluate" }`. *Why:* exactly one task may see the provider key; re-adding the key inside `register{}` would depend on the order of configure actions.
+- **Skip conditions:** class-level JUnit conditions, evaluated before the context exists: the key condition first (reason `ANTHROPIC_API_KEY needed`), then `OllamaReachable` (`GET /api/tags`, 2 s, `SPRING_AI_OLLAMA_BASE_URL` honoured, enabled only on 200). *Why:* an `assumeTrue` inside a test runs after startup ingestion has already called Ollama and failed the context; the declaration order makes JUnit stop at the first disabled condition, so no probe is made without a key.
+- **Own Spring context:** the `@RealModelEvaluation` meta-annotation brings a Testcontainers pgvector, a stub `getClaim` tool provider with the `core-mcp` seed values for 4711, 4712 and 4713, and the judge and evaluator beans; the real Anthropic and Ollama beans come from the committed `application.yaml`, the MCP client is off. The stub is needed by `FraudCheck` and by the adjuster beans, so it is in the context from the first class on. *Why:* `@IntegrationTest` forces fakes and the test task scrubs the key; the real tool needs a second app and its database.
+- **Judge and evaluators:** the configured Anthropic model judges (Haiku judging Haiku), constrained by a default system text to answer exactly `YES` or `NO`, no temperature override; `FactCheckingEvaluator` is built with `FactCheckingEvaluator.builder(builder).build()`. No `ChatClient.Builder` bean is declared: each evaluator bean takes the auto-configured prototype builder and sets the judge text on it. *Why:* both built-in evaluators pass only on an exact "yes"; a builder bean would switch off the auto-configured one, and the coverage and fraud clients would inherit the judge prompt.
+- **Relevancy context:** the test retrieves the clauses with the `policyWordingRetriever` bean (same filter and top K as the advisor); `CoverageAnswer` is unchanged. *Why:* clause texts in the answer would leak `Document` into the domain.
+- **Fact-check documents:** per evidence item, a claim-facts text plus the raw bulletin file (header included); the claim is `<id>: <finding>`; a cited id with no file fails the test. *Why:* the vector store texts lack time and place (metadata only) and the evaluator reads document text only.
+- **Verdict expectations (my addition):** 4711 must be `FLAGGED`; 4712 and 4713 must not be, so `INCONCLUSIVE` passes; `Unreadable` fails. Fact checks, the flagged test and the clean-claims test are separate tests, so each assesses its claim itself (six fraud-check calls per run). *Why:* a false accusation is the failure the demo cares about, and a strict `CLEAR` would make a small suite flaky.
+- **Negative controls:** one per evaluator (an off-topic answer for relevancy, the false finding "SB-102 places the kaiju at the harbour at 15:00" for fact checking) must fail. *Why:* proves the judge is not an always-yes, for the cost of two cases.
+- **Detekt:** `config/detekt/detekt.yml` excludes `**/evaluation/**` from `FunctionNaming`, `MagicNumber` and `TooManyFunctions` (default test excludes repeated, since a list replaces the default). No rule is switched off for production code. *Why:* the evaluation sources keep the test style (backticked names, seed numbers).
+- **Test-harness spec and ADRs:** a MODIFIED delta for `backend-test-harness` scopes "one shared context" and "never reach the real provider" to the `test` task and names `evaluate` as the exception; ADR-0004 gets an addendum and ADR-0006 a note that `evaluate` uses real Ollama embeddings; the README has a Testing section. *Why:* otherwise the archived main spec would be contradicted by the suite.
+- **Verification without a key:** the `check` wiring and the key exemption are verified by commands named in the tasks, not by Gradle TestKit; `OllamaReachableTest` (two cases, JDK `HttpServer` stub, offline) runs inside `evaluate`. A smoke start with a placeholder key and the provider URL pointed at an unreachable address proved the wiring (both corpora ingested through real Ollama, every model call refused, nothing reached the provider). Skip reasons were read from JUnit's trace log, because neither the XML report nor the Tooling API shows them.
+- **Assertion style:** `assertTrue(cond, message)` with explicit messages (question, answer, claim, finding, bulletin id), since the evaluators return no feedback and power-assert only transforms the `test` compilation.
+
+**Descoped / deviations from the roadmap entry**
+
+- Retrieval tuning left out: the nomic `search_document:`/`search_query:` prefixes and a similarity threshold, which the policy-rag follow-ups assigned to `evaluation`. The suite measures how retrieval behaves today.
+- The real-model path was not run (the run is unattended and has no provider key).
+
+**Follow-ups**
+
+- Owner: with Ollama (`nomic-embed-text`) and Docker up and a provider key set, run `./gradlew :backend:evaluate` and see which case fails first (the four coverage questions, the fact checks, the verdicts or the two negative controls).
+- If the real run shows weak retrieval, do the deferred tuning (nomic prefixes, a similarity threshold, stale-chunk cleanup).
+- The fraud fact check is vacuous when the fraud check cites no evidence: a `FLAGGED` verdict for 4711 with an empty evidence list passes every fraud test. Consider requiring at least one cited bulletin for 4711.
+- The key condition uses `matches = ".+"`, so a whitespace-only key enables the classes and fails at the provider call instead of skipping.
+- The JUnit skip reason is not visible in the Gradle console or XML report; optionally add a `TestExecutionListener` or `testLogging` setting. At JUnit trace level the enabled reason of the key condition includes the key value, so do not enable FINER logging for `ConditionEvaluator` with a real key set.
+- `check` never executes `evaluate`, so `OllamaReachableTest` and the scrub exception only run on demand.
+
 ### Wave 4 - `subagents`
 
 Review: clean (no confirmed blockers).

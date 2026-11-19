@@ -81,7 +81,9 @@ exposed {
 }
 
 // A developer's provider credentials must never reach a test JVM (Spring AI and the SDK read them as fallbacks).
-tasks.withType<Test>().configureEach {
+// The one exception is the evaluation suite's `evaluate` task (registered below), which needs the real provider key;
+// every other Test task, including any added later, is scrubbed.
+tasks.withType<Test>().named { it != "evaluate" }.configureEach {
     listOf("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL").forEach { environment.remove(it) }
     // Not a credential: removed so the MCP wiring test sees the committed default URL of the core system.
     environment.remove("CORE_MCP_URL")
@@ -116,4 +118,30 @@ val secretsScan = tasks.register<Test>("secretsScan") {
     systemProperty("secrets.scan.root", repositoryRoot)
 }
 
-tasks.check { dependsOn(secretsScan) }
+// The evaluation suite (ADR-0004 addendum): real models judged by Spring AI evaluators, in its own source set with
+// the test dependencies and its own Spring context. `check` compiles and analyses it but never runs it.
+val evaluation: SourceSet = sourceSets.create("evaluation") {
+    compileClasspath += sourceSets.main.get().output
+    runtimeClasspath += sourceSets.main.get().output
+}
+
+configurations.named(evaluation.implementationConfigurationName) {
+    extendsFrom(configurations.testImplementation.get())
+}
+configurations.named(evaluation.runtimeOnlyConfigurationName) {
+    extendsFrom(configurations.testRuntimeOnly.get())
+}
+
+tasks.register<Test>("evaluate") {
+    description = "Judges real-model answers with Spring AI evaluators (needs ANTHROPIC_API_KEY, Ollama and Docker)."
+    group = "verification"
+    testClassesDirs = evaluation.output.classesDirs
+    classpath = evaluation.runtimeClasspath
+    // Model output is never up to date or restorable from a cache.
+    doNotTrackState("every run is a new evaluation by a real model")
+    notCompatibleWithConfigurationCache("the provider key comes from the invoking environment")
+}
+
+detekt { source.from("src/evaluation/kotlin") }
+
+tasks.check { dependsOn(secretsScan, tasks.named(evaluation.classesTaskName)) }
