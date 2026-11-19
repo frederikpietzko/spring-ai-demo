@@ -1,6 +1,6 @@
 # ADR-0008: Model routing
 
-- Status: accepted
+- Status: accepted; the note on the guardrail's decision model below the routing table was added when the tracks were merged (change `injection-guardrails`)
 - Date: 2026-11-20
 - Change: `subagents`
 - Builds on ADR-0002 (Anthropic is the only chat provider, Claude Haiku the default model) and ADR-0007 (the `Task` tool and the subagent definitions).
@@ -27,6 +27,8 @@ Where routing is configured:
 | Claimant chat, claim intake | `claude-haiku-5-5` | `spring.ai.anthropic.chat.model` (`application.yaml`) |
 | Adjuster orchestrator | `claude-sonnet-5-5` | `demo.adjuster.model` (`application.yaml`) |
 | `fraud-investigator`, `damage-assessor` | `claude-haiku-5-5` | `model:` line of `backend/src/main/resources/agents/<name>.md` |
+
+The claimant chat's prompt-injection guardrail (`injection-guardrails`) is no chat model and not part of this routing: it asks the Ollama decision model `d1-omni:600m` (`spring.ai.ollama.decision.model`, ADR-0006 status note). The evaluation suite (`evaluation`, ADR-0004 addendum) judges with the default `claude-haiku-5-5`.
 
 ## Alternatives
 

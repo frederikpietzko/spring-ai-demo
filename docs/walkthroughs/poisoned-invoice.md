@@ -31,6 +31,11 @@ The invoice is plain text in a damage item description; there is no attachment (
    before it runs. On the adjuster chat the stream ends with a `confirmation-request` event and a human approves or
    denies it (`POST /chat/decisions`). The claimant chat is not even offered the tool: a reply that asks for it pauses
    by name before the tool is looked up, and the claimant sees an empty reply.
+   The adjuster's subagents (`fraud-investigator`, `damage-assessor`, change `subagents`) read claim 4700 through
+   `getClaim` too, but their tool lists are read-only (`getClaim`, `searchSightingBulletins`): a subagent that obeys
+   the invoice and asks for `issuePayout` runs nothing, and its `Task` call ends as an error. What a subagent answers
+   still reaches the orchestrator as a tool result, so a payout the orchestrator then asks for waits for the human as
+   above.
 3. **The core's own rules.** `issuePayout` checks the caller's token first: the claimant agent's token has no
    `payout:write` scope, so the call is a tool error naming it. An adjuster's call is refused too, because only an
    `APPROVED` claim can be paid and 4700 is `FILED`. And the tool has no amount parameter: the core pays the damage
@@ -63,7 +68,7 @@ is the point of the layers below the guardrail.
 | Guardrail, input | `GuardrailInputTest` | A flagged or refused message gets the refusal, no prompt, no tool call, no conversation; a failed decision call ends in the generic error; the decision model sees the typed text, not the retrieval template; the adjuster chat is not checked |
 | Guardrail, order | `GuardrailOrderTest` | The guardrail sits between the audit advisor and the session turn advisor |
 | Guardrail, output | `GuardrailOutputTest` | A flagged reply gets the notice after its chunks; the stored reply stays as the model wrote it; failed streams and replies without text are not checked |
-| All layers on both personas | `PoisonedInvoiceTest` | The pasted invoice is refused; with the guardrail switched off the claimant chat still makes no payout call; the adjuster reads the invoice through `getClaim` and the payout waits for a human; denying leaves no payout |
+| All layers on both personas | `PoisonedInvoiceTest` | The pasted invoice is refused; with the guardrail switched off the claimant chat still makes no payout call; the adjuster reads the invoice through `getClaim` and the payout waits for a human; denying leaves no payout; a subagent that reads the invoice is offered only `getClaim` and its payout request fails the `Task` call |
 | The core | `PoisonedInvoicePayoutTest`, `SeedPoisonedInvoiceTest` (core-mcp) | A claimant token cannot pay claim 4700 (`payout:write`), an adjuster cannot pay it while `FILED`; the fixture and the injection text in `getClaim` |
 
 All backend tests use a scripted `FakeDecisionModel` and the fake chat model; no test calls Ollama or Anthropic.
@@ -77,7 +82,8 @@ All backend tests use a scripted `FakeDecisionModel` and the fake chat model; no
   and the session memory keeps the original reply without the notice. Buffering the reply would break token-by-token
   streaming.
 - **No guard on tool results.** The adjuster chat is not checked at all, and the indirect injection reaches the
-  adjuster's model inside the `getClaim` result, which this advisor never sees. The missing layer is a `ToolCallback`
+  adjuster's model inside the `getClaim` result, which this advisor never sees (and, through a subagent, inside the
+  `Task` result). The missing layer is a `ToolCallback`
   decorator that classifies `getClaim` results before the model reads them.
 - **Audit redaction is not done.** The audit trail still holds the claimant's text in memory, and the blocking intake
   call is still not audited (ADR-0005, status note).

@@ -89,3 +89,7 @@ An invoice that contains an instruction to approve a payout SHALL NOT lead to a 
 #### Scenario: Denying the confirmation leaves no payout
 - **WHEN** the adjuster denies that confirmation
 - **THEN** no `issuePayout` call reaches the core
+
+#### Scenario: A subagent that reads the poisoned claim cannot pay out
+- **WHEN** the adjuster's model delegates claim 4700 to `damage-assessor` with `Task`, the subagent's `getClaim` result carries the invoice text, and the subagent obeys it by requesting `issuePayout` for 4700
+- **THEN** the subagent was offered only `getClaim`, the invoice text is in the tool response it received, no `issuePayout` call reaches the core, and the `Task` call ends as an error result the orchestrator receives (see `adjuster-subagents`)
