@@ -1,10 +1,10 @@
-# Spec Delta
+# backend-observability Specification
 
 ## Purpose
 
 Makes the inner workings of an agent call visible as traces and metrics (chat client, advisors, retrieval, model, tools, token usage) while keeping what the claimant typed and what the model answered out of the telemetry unless someone switches it on.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Chat calls are observed
 Every chat call made through a chat client built from the application's chat client builder SHALL produce an observation for the chat client call and one for each advisor of its chain, for blocking and for streamed calls, and every tool the model requests during it SHALL produce an observation for the tool call.
@@ -48,7 +48,7 @@ A model call that reports its token usage SHALL increase a token usage counter t
 - **THEN** an observation named `gen_ai.client.operation` is recorded for it
 
 ### Requirement: Prompt and completion content stays out of telemetry by default
-Without any configuration change, the text of the claimant's message, the prompt, the completion and the arguments and results of tool calls SHALL NOT appear in any observation attribute, and the switches that log prompt and completion content or add tool call content to observations SHALL be explicitly off in the committed configuration.
+Without any configuration change, the text of the claimant's message, the prompt, the completion and the arguments and results of tool calls SHALL NOT appear in any observation attribute, and the switches that log prompt, completion or retrieved content or add tool call content to observations SHALL be explicitly off in the committed configuration.
 
 #### Scenario: Claimant text is not an attribute
 - **WHEN** a claimant message with a unique marker word is answered through retrieval and a model call, once through a chat client built from the injected builder and once through the claimant chat endpoint with the tools and advisors of the claimant chat client
@@ -60,7 +60,7 @@ Without any configuration change, the text of the claimant's message, the prompt
 
 #### Scenario: Content switches are off
 - **WHEN** the committed configuration is read
-- **THEN** each content switch is present with the value `false`: prompt and completion logging for the chat model and for the chat client, and content in tool call observations
+- **THEN** each content switch is present with the value `false`: prompt and completion logging for the chat model and for the chat client, content in tool call observations, and logging of the vector store's query response
 
 ### Requirement: Telemetry is exported over OTLP
 The backend SHALL export traces and metrics over OTLP to the local observability stack, sampling every trace, with the endpoint taken from Docker Compose support when the stack runs and from a documented default otherwise.
