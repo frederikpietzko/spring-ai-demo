@@ -78,7 +78,8 @@ class AdjusterTodoTest {
 
         postAdjuster()
 
-        assertEquals(setOf("getClaim", "issuePayout", "Skill", "TodoWrite"), toolNames(0).toSet())
+        val expected: Set<String> = ["getClaim", "issuePayout", "Skill", "TodoWrite", "searchSightingBulletins"]
+        assertEquals(expected, toolNames(0).toSet())
     }
 
     @Test

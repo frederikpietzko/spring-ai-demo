@@ -1,5 +1,6 @@
 package dev.frederikpietzko.springaidemo.backend.adjuster
 
+import dev.frederikpietzko.springaidemo.backend.fraud.SightingBulletinSearch
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import kotlinx.coroutines.Dispatchers
@@ -39,10 +40,10 @@ private const val DENIED = "The adjuster did not approve this payout."
 private const val NOTHING_WAITING = "Nothing is waiting for this decision."
 
 /**
- * The adjuster agent: answers one adjuster message with the core tools, its skills and its own todo list, as a stream
- * of chat events. Every todo write becomes a [ChatEvent.TodoUpdate]. A reply that calls a tool needing confirmation
- * (`issuePayout`) ends with a [ChatEvent.ConfirmationRequest]; the paused reply waits in [PendingConfirmations] until
- * [decide] runs or skips its tool calls and continues the reply.
+ * The adjuster agent: answers one adjuster message with the core tools, its skills, the sighting bulletin search and
+ * its own todo list, as a stream of chat events. Every todo write becomes a [ChatEvent.TodoUpdate]. A reply that calls
+ * a tool needing confirmation (`issuePayout`) ends with a [ChatEvent.ConfirmationRequest]; the paused reply waits in
+ * [PendingConfirmations] until [decide] runs or skips its tool calls and continues the reply.
  */
 @Service
 class AdjusterChat(
@@ -51,6 +52,7 @@ class AdjusterChat(
     @Qualifier("adjusterSkills") private val adjusterSkills: ToolCallback,
     private val toolCallingManager: ToolCallingManager,
     private val pendingConfirmations: PendingConfirmations,
+    private val sightingBulletinSearch: SightingBulletinSearch,
 ) {
     /** Streams the reply to [message]: text deltas, todo updates, and a confirmation request if the reply pauses. */
     fun stream(message: String): Flow<ChatEvent> {
@@ -81,8 +83,8 @@ class AdjusterChat(
     /**
      * Runs the tool calls of the [paused] reply and returns the conversation with their results: the calls that wait
      * for a decision run only when [approved], every other call runs as it would have without the pause. The loop
-     * keeps no state, so the prompt carries every adjuster tool (the core tools, [todoWrite] and the skills) and the
-     * tool context again.
+     * keeps no state, so the prompt carries every adjuster tool (the core tools, [todoWrite], the skills and the
+     * bulletin search) and the tool context again: a tool missing here fails with "No ToolCallback found".
      */
     private fun runToolCalls(paused: PausedTurn, approved: Boolean, todoWrite: TodoWriteTool): List<Message> {
         val keys = ToolCallDecisions.toolCallKeys(checkNotNull(paused.reply.result) { "paused reply" }.output)
@@ -91,7 +93,12 @@ class AdjusterChat(
             if (approved || key !in waiting) ToolCallDecision.allow(key) else ToolCallDecision.deny(key, DENIED)
         }
         val options = ToolCallingChatOptions.builder()
-            .toolCallbacks(*coreTools.toolCallbacks, *ToolCallbacks.from(todoWrite), adjusterSkills)
+            .toolCallbacks(
+                *coreTools.toolCallbacks,
+                *ToolCallbacks.from(todoWrite),
+                adjusterSkills,
+                *ToolCallbacks.from(sightingBulletinSearch),
+            )
             .toolContext(ADJUSTER_IDENTITY)
             .build()
         return toolCallingManager
