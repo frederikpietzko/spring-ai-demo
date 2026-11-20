@@ -18,11 +18,15 @@ The evaluation suite SHALL ask the real coverage service four fixed questions (a
 - **THEN** the evaluation does not pass
 
 ### Requirement: Fraud findings are fact-checked against the cited bulletins
-The evaluation suite SHALL run the real fraud check for the seed claims 4711, 4712 and 4713 and SHALL fact-check every evidence item of an assessed result: the claim is the bulletin id with its finding, and the supporting documents are the claim's facts (number, place, incident time, kaiju class) and the complete text of the cited bulletin file including its header. The fact-check prompt SHALL tell the judge that the documents are the claim's record and the cited bulletin and that a finding is supported when every fact it states can be read from them, including comparisons between the claim and the bulletin (same or different place, time, kaiju class, a distance the bulletin names), and not when it states something the documents contradict or do not contain. A failure message SHALL include the judge's raw answer. A cited bulletin id with no bulletin file SHALL fail the test.
+The evaluation suite SHALL run the real fraud check for the seed claims 4711, 4712 and 4713 and SHALL fact-check every evidence item of an assessed result: the claim is the bulletin id with its finding, and the supporting documents are the claim's facts and the text of the cited bulletin file. The fact-check prompt SHALL tell the judge when a finding is supported by the documents. A failure SHALL show the judge's raw answer. A cited bulletin id with no bulletin file SHALL fail the test.
 
 #### Scenario: Every cited finding is supported
 - **WHEN** the suite runs with a real model and the fraud check cites bulletins for a claim
 - **THEN** the fact-checking evaluator passes every evidence item, and a failure message names the claim, the bulletin id, the finding and the judge's raw answer
+
+#### Scenario: Fact-check inputs
+- **WHEN** an evidence item is fact-checked
+- **THEN** the supporting documents are the claim's facts (number, place, incident time, kaiju class) and the complete text of the cited bulletin file including its header
 
 #### Scenario: A false finding fails the evaluator
 - **WHEN** the fact-checking evaluator judges the finding "SB-102: places the kaiju at the harbour at 15:00" for claim 4711 against the claim's facts and the text of `SB-102`
@@ -31,6 +35,10 @@ The evaluation suite SHALL run the real fraud check for the seed claims 4711, 47
 #### Scenario: A cited bulletin does not exist
 - **WHEN** an assessment cites a bulletin id for which no bulletin file exists
 - **THEN** the test fails and names the id
+
+#### Scenario: The fact-check prompt tells the judge what supported means
+- **WHEN** the fact-check prompt is built for an evidence item
+- **THEN** it tells the judge that the documents are the claim's record and the cited bulletin, that a finding is supported when every fact it states can be read from them, including comparisons between the claim and the bulletin (same or different place, time, kaiju class, a distance the bulletin names), and that it is not supported when it states something the documents contradict or do not contain
 
 ### Requirement: Fraud verdicts match the seed scenarios
 The suite SHALL assert the verdict of the real fraud check: `FLAGGED` for claim 4711 and not `FLAGGED` for claims 4712 and 4713. An unreadable result SHALL fail the test. The core claim lookup SHALL be a stub that returns the `core-mcp` seed values of the three claims, so `core-mcp` need not run.

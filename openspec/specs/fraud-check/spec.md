@@ -22,7 +22,11 @@ The backend SHALL provide a fraud check that takes a claim number and runs one b
 - **THEN** the system message received by the model says to compare the claim's place and incident time with the bulletins, to search again with a rephrased query or another place when a search finds nothing, to cite bulletin ids as evidence, and that a verdict is `FLAGGED` only when a bulletin contradicts the claim
 
 ### Requirement: The fraud assessment is structured output
-The fraud check SHALL ask for a fraud assessment as structured output: a verdict (`CLEAR`, `FLAGGED` or `INCONCLUSIVE`), evidence as a list of bulletin id with a finding, and a confidence between 0 and 1. The JSON format instructions SHALL be part of the user message of every model call of the loop. A final reply that does not match the assessment's JSON schema (not JSON, or a required field such as `verdict` missing) SHALL be asked for once more, with the validation error appended to the user message; a reply that is still no fraud assessment SHALL be reported as an unreadable result and not thrown.
+The fraud check SHALL ask for a fraud assessment as structured output: a verdict, evidence (bulletin id with a finding) and a confidence. The JSON format instructions SHALL be part of the user message of every call. A final reply that does not match the assessment's JSON schema SHALL be asked for once more, with the validation error appended to the user message; a reply that is still no fraud assessment SHALL be reported as an unreadable result and not thrown.
+
+#### Scenario: Assessment fields
+- **WHEN** the fraud assessment is read
+- **THEN** the verdict is `CLEAR`, `FLAGGED` or `INCONCLUSIVE`, the evidence is a list of bulletin id with a finding, and the confidence is between 0 and 1
 
 #### Scenario: Format instructions reach the model
 - **WHEN** a fraud check runs
@@ -39,6 +43,10 @@ The fraud check SHALL ask for a fraud assessment as structured output: a verdict
 #### Scenario: A reply without a verdict is asked for again
 - **WHEN** the model replies with `{"evidence":[],"confidence":0.8}` and, asked again, with `{"verdict":"CLEAR","evidence":[],"confidence":0.8}`
 - **THEN** the last user message received by the model contains the validation error naming `verdict`, and the result is an assessed result with the verdict `CLEAR`
+
+#### Scenario: What counts as a non-matching reply
+- **WHEN** a final reply is not JSON, or lacks a required field such as `verdict`
+- **THEN** it does not match the assessment's JSON schema and is asked for once more
 
 ### Requirement: Claim 4711 is flagged by two retrievals
 For seed claim 4711 (`HARBOUR`, `2026-11-18T15:00:00Z`) the fraud check SHALL let the model search the bulletins more than once against the real vector store, so that the neighbouring-town bulletin reaches the model as a tool result, and SHALL return the assessment the model replies with, with the bulletin ids it cites.

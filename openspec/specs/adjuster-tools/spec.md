@@ -44,7 +44,7 @@ The core tools SHALL be offered to the model under exactly the names the core sy
 - **THEN** the request fails with an error naming the duplicate tool and the model receives no prompt
 
 ### Requirement: The core connection is configured by property and starts lazily
-The backend SHALL connect to the core system over Streamable HTTP with one connection per persona, `core-adjuster` and `core-claimant`, at `http://localhost:8081` by default (`CORE_MCP_URL`), and SHALL offer each connection's tools as its own provider, `adjusterCoreTools` and `claimantCoreTools`. It SHALL start without the core system and the auth-server and connect on the first request that needs the tools. Only the adjuster agent uses a provider; the claim intake files confirmed claims over the `core-claimant` connection directly (claim-intake).
+The backend SHALL connect to the core system over Streamable HTTP with one connection per persona, `core-adjuster` and `core-claimant`, at `http://localhost:8081` by default (`CORE_MCP_URL`), and SHALL offer each connection's tools as its own provider, `adjusterCoreTools` and `claimantCoreTools`. It SHALL start without the core system and the auth-server and connect on the first request that needs the tools.
 
 #### Scenario: Committed configuration points at the core
 - **WHEN** the committed configuration is loaded with the MCP client auto-configurations
@@ -57,6 +57,10 @@ The backend SHALL connect to the core system over Streamable HTTP with one conne
 #### Scenario: Core system unreachable becomes an error event
 - **WHEN** the adjuster's tool provider fails while listing the tools (as it does when the core system is down) and a client posts an adjuster request
 - **THEN** the response status is 200, the only event is one error event whose message does not contain the exception text, and the model received no prompt
+
+#### Scenario: Only the adjuster agent uses a provider
+- **WHEN** a confirmed claim is filed by the claim intake
+- **THEN** it is filed over the `core-claimant` connection directly (claim-intake) and not through a tool provider; only the adjuster agent uses a provider
 
 ### Requirement: Paying out waits for a human decision
 A model reply that requests the tool `issuePayout` SHALL NOT run any tool call of that reply. The backend SHALL end the stream with one confirmation-request event naming the tool and its arguments and carrying an id, and SHALL NOT send a done event after it. Tools that are not configured as needing confirmation SHALL run without one. The confirmation SHALL be configured by tool name in the committed configuration, so it applies to the MCP tool as it does to a local one.
@@ -74,7 +78,7 @@ A model reply that requests the tool `issuePayout` SHALL NOT run any tool call o
 - **THEN** the manager refuses the `issuePayout` reply because it needs a confirmation and runs the `getClaim` call
 
 ### Requirement: Approving a claim waits for a human decision
-A model reply that requests `updateClaimStatus` with the status `APPROVED` SHALL pause exactly like a payout request: no tool call of the reply runs, and the stream ends with one confirmation-request event naming `updateClaimStatus` with its arguments. A `updateClaimStatus` call to any other status SHALL run without a confirmation. Arguments that cannot be read SHALL count as an approval. Denying an approval SHALL give the model the text "The adjuster did not approve this call." as the tool result (a denied payout keeps its own text), so the model cannot make a claim payable on its own.
+A model reply that requests `updateClaimStatus` with the status `APPROVED` SHALL pause exactly like a payout request: no tool call of the reply runs, and the stream ends with one confirmation-request event naming `updateClaimStatus` with its arguments. Arguments that cannot be read SHALL count as an approval. Denying an approval SHALL give the model a denial text as the tool result, so the model cannot make a claim payable on its own.
 
 #### Scenario: Approving pauses the loop
 - **WHEN** the model requests `updateClaimStatus` with `{"claimNumber":4711,"status":"APPROVED"}` and a client posts an adjuster request
@@ -88,8 +92,12 @@ A model reply that requests `updateClaimStatus` with the status `APPROVED` SHALL
 - **WHEN** an approval of claim 4711 is pending, the model is scripted to reply "Not approved." and a client posts a decision with that id and approved false
 - **THEN** no core tool ran, the last prompt received by the model holds the tool result "The adjuster did not approve this call.", and the events are the text delta "Not approved." and done
 
+#### Scenario: Denial text and other statuses
+- **WHEN** an approval is denied, or `updateClaimStatus` is called with any status other than `APPROVED`
+- **THEN** the model receives the tool result "The adjuster did not approve this call." for the denied approval (a denied payout keeps its own text), and a call to any other status runs without a confirmation
+
 ### Requirement: Approving runs the payout exactly once and continues the answer
-A decision request that approves a pending confirmation SHALL run the paused tool calls once (the calls that wait for the decision on its approval, every other call of the paused reply as it would run without a pause), hand the results to the model and stream its answer, ending with done. The continuation SHALL be the whole turn so far: the user message, every tool round that ran before the pause in the same turn (the model's tool calls and their results), the paused reply and its tool results. The pending confirmation SHALL be consumed by the decision, so the same id cannot run the tools again.
+A decision request that approves a pending confirmation SHALL run the paused tool calls once, hand the results to the model and stream its answer, ending with done. The continuation SHALL be the whole turn so far: the user message, every tool round that ran before the pause in the same turn (the model's tool calls and their results), the paused reply and its tool results. The pending confirmation SHALL be consumed by the decision, so the same id cannot run the tools again.
 
 #### Scenario: Approve runs the payout once
 - **WHEN** a payout confirmation is pending, the model is scripted to reply with the chunks "Paid " and "out" and a client posts a decision with that id and approved true
@@ -114,6 +122,10 @@ A decision request that approves a pending confirmation SHALL run the paused too
 #### Scenario: An ordinary tool error reaches the model as text
 - **WHEN** the payout tool fails with a runtime exception during an approved decision and the model is scripted to reply "Payout failed."
 - **THEN** the prompt of the continuation contains the failure message as the tool result and the events are the text delta "Payout failed." and done
+
+#### Scenario: Which calls run on approval
+- **WHEN** a client approves a pending confirmation
+- **THEN** the calls that wait for the decision run on its approval, and every other call of the paused reply runs as it would without a pause
 
 ### Requirement: Denying runs no payout and tells the model
 A decision request that denies a pending confirmation SHALL NOT run any call that waits for a decision. The model SHALL receive the denial text as the tool result of each of those calls, and every other call of the paused reply SHALL run normally and give the model its own result. The model's closing answer SHALL be streamed, ending with done.

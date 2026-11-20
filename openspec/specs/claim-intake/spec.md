@@ -116,11 +116,15 @@ When a claimant request has the action `CONFIRM_CLAIM`, the backend SHALL file t
 - **THEN** the second confirmation files nothing and the first claim is still prepared
 
 ### Requirement: Filing goes to the core system
-Filing SHALL go through a `ClaimFiling` port that returns either the new claim number or a refusal reason. Its adapter SHALL file the claim in the core system with the `fileClaim` MCP tool over the claimant agent's own connection `core-claimant` (so the call carries the claimant's token), with the arguments policy number, district, incident time (ISO-8601 with offset), kaiju class, description and the damage items (category, description, estimated amount in minor units), and with the request `_meta` `actor` `claimant-agent` and `claimantId` 1, the fixed demo claimant (customer 1, owner of `KP-1001`) until end-user login exists. The claim number SHALL be the one the core assigns. A tool result marked as an error SHALL be a refusal whose reason is the core's text; a refused claim SHALL stay prepared and the answer SHALL be one text delta with the reason, then done. When the core cannot be reached, the confirmation SHALL fail with the chat endpoint's generic error event and the claim SHALL stay prepared.
+Filing SHALL go through a `ClaimFiling` port that returns either the new claim number or a refusal reason. Its adapter SHALL file the claim in the core system with the `fileClaim` MCP tool over the claimant agent's own connection `core-claimant`, with the claim's fields and damage items as arguments and the request `_meta` `actor` `claimant-agent` and `claimantId` 1, the fixed demo claimant until end-user login exists. The claim number SHALL be the one the core assigns.
 
 #### Scenario: The core files the claim of the card
 - **WHEN** a claim card for policy `KP-1001`, district `HARBOUR`, incident `2026-11-19T15:00:00Z`, kaiju class 3 and one `VEHICLE` item "Car roof" of 800000 is confirmed
 - **THEN** the core's `fileClaim` tool received exactly those arguments, with the incident time `2026-11-19T15:00:00Z`, and the `_meta` `actor` `claimant-agent` and `claimantId` 1, and the claim number of the answer is the one the core returned
+
+#### Scenario: Argument formats and the demo claimant
+- **WHEN** a claim is filed
+- **THEN** the arguments are policy number, district, incident time (ISO-8601 with offset), kaiju class, description and the damage items (category, description, estimated amount in minor units), and `claimantId` 1 is customer 1, the owner of `KP-1001`
 
 #### Scenario: Refused policy
 - **WHEN** a claim for policy `KP-0000`, which the core does not know, is prepared and confirmed
@@ -137,6 +141,18 @@ Filing SHALL go through a `ClaimFiling` port that returns either the new claim n
 #### Scenario: Claims go over the claimant connection
 - **WHEN** the committed MCP client configuration files a claim against a stub core system that records the `Authorization` header
 - **THEN** the request carried the bearer token of `claimant-agent`
+
+### Requirement: A refused or unreachable filing keeps the claim prepared
+
+A tool result of `fileClaim` marked as an error SHALL be a refusal whose reason is the core's text; a refused claim SHALL stay prepared and the answer SHALL be one text delta with the reason, then done. When the core cannot be reached, the confirmation SHALL fail with the chat endpoint's generic error event and the claim SHALL stay prepared.
+
+#### Scenario: Refusal keeps the claim prepared
+- **WHEN** the core marks the `fileClaim` result as an error with the text "Policy KP-0000 not found"
+- **THEN** the answer is one text delta with that reason, then done, and the claim stays prepared
+
+#### Scenario: Unreachable core keeps the claim prepared
+- **WHEN** the core cannot be reached while a prepared claim is confirmed
+- **THEN** the answer is the chat endpoint's generic error event and the claim stays prepared
 
 ### Requirement: Claim actions belong to the claimant persona
 The actions `PREPARE_CLAIM` and `CONFIRM_CLAIM` SHALL be answered only for persona `CLAIMANT`; persona `ADJUSTER` SHALL get a single error event that names the persona and no model call for these actions (its messages are answered by the adjuster agent). For persona `CLAIMANT` these actions SHALL bypass the claimant agent: only action `MESSAGE` is answered by the claimant agent as the model's streamed reply.

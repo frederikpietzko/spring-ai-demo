@@ -72,7 +72,11 @@ After the claimant agent's reply stream has completed, the agent SHALL ask the d
 - **THEN** the conversation transcript holds the original reply and not the notice
 
 ### Requirement: A poisoned invoice leads to no payout on either persona
-An invoice that contains an instruction to approve a payout SHALL NOT lead to a payout, on the claimant chat or on the adjuster chat, even when the model obeys it and even when the guardrail does not flag it. Each layer SHALL hold on its own: the guardrail refuses the claimant's message, the confirmation policy pauses every `issuePayout` call and every approval of a claim (`updateClaimStatus` to `APPROVED`, see `adjuster-tools`) until a human decides, and the core refuses a payout without the `payout:write` scope or for a claim that is not approved (see `core-claims-mcp`).
+An invoice that contains an instruction to approve a payout SHALL NOT lead to a payout, on the claimant chat or on the adjuster chat, even when the model obeys it and even when the guardrail does not flag it. Each layer SHALL hold on its own: the guardrail refuses the claimant's message, the confirmation policy pauses every `issuePayout` call and every claim approval until a human decides, and the core refuses an unauthorised or unapproved payout.
+
+#### Scenario: Which layer holds what
+- **WHEN** the layers are read against the other specs
+- **THEN** the confirmation policy pauses `updateClaimStatus` to `APPROVED` (see `adjuster-tools`), and the core refuses a payout without the `payout:write` scope or for a claim that is not approved (see `core-claims-mcp`)
 
 #### Scenario: The guardrail stops the pasted invoice
 - **WHEN** a claimant pastes the invoice text with the injection and the decision model flags it

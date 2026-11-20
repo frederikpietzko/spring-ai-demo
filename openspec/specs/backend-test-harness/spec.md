@@ -173,7 +173,7 @@ The shared test context SHALL NOT export traces or metrics, whether or not a col
 - **THEN** it holds no span exporter and no OTLP meter registry, and its meter registry is the in-memory one
 
 ### Requirement: The core tools are faked and no MCP server is contacted
-The backend test context SHALL NOT create an MCP client and SHALL provide a fake tool provider under the bean name of the adjuster's real one, `adjusterCoreTools`. The fake SHALL offer `getClaim`, `updateClaimStatus`, `issuePayout`, `countClaims` and `payoutStats`, record every call with its arguments and tool context, and be emptied before each test (calls and failures). It SHALL NOT mark any tool as needing confirmation. The fake analytics tools SHALL answer in the real MCP client's shape. The context SHALL also provide a fake of the claimant's connection to the core (`ClaimantCore`), which answers `fileClaim` like the core (a new claim number, or a result marked as an error for a policy number ending in `-0000`), records every filed claim with its arguments and `_meta`, can be told to fail like an unreachable core, and forgets that failure before each test.
+The backend test context SHALL NOT create an MCP client and SHALL provide a fake tool provider under the bean name of the adjuster's real one, `adjusterCoreTools`. The fake SHALL offer `getClaim`, `updateClaimStatus`, `issuePayout`, `countClaims` and `payoutStats`, record every call with its arguments and tool context, and be emptied before each test (calls and failures). It SHALL NOT mark any tool as needing confirmation. The fake analytics tools SHALL answer in the real MCP client's shape.
 
 #### Scenario: No MCP client in the shared context
 - **WHEN** the beans of the shared test context are listed
@@ -194,6 +194,18 @@ The backend test context SHALL NOT create an MCP client and SHALL provide a fake
 #### Scenario: The fake analytics tools answer in the MCP wire shape
 - **WHEN** the fake `payoutStats` callback is called with a filter
 - **THEN** its result is a JSON list with one object whose `text` is a JSON string holding `groupBy` and `groups`, and the call is recorded with its arguments and tool context
+
+### Requirement: The claimant's connection to the core is faked
+
+The backend test context SHALL provide a fake of the claimant's connection to the core (`ClaimantCore`), which answers `fileClaim` like the core, records every filed claim with its arguments and `_meta`, can be told to fail like an unreachable core, and forgets that failure before each test.
+
+#### Scenario: The fake answers fileClaim like the core
+- **WHEN** a test files a claim through the fake `ClaimantCore`, once with an ordinary policy number and once with a policy number ending in `-0000`
+- **THEN** the first call returns a new claim number, the second a result marked as an error, and both are recorded with their arguments and `_meta`
+
+#### Scenario: An unreachable core does not reach the next test
+- **WHEN** a test tells the fake `ClaimantCore` to fail like an unreachable core and the next test starts
+- **THEN** the next test's `fileClaim` call succeeds
 
 ### Requirement: Fake chat model can request several tool calls in one reply
 The fake chat model SHALL be able to script one reply that requests several tool calls at once, in the given order, for streamed and blocking calls, so a test can cover a batch of parallel calls.
