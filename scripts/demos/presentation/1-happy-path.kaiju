@@ -1,0 +1,34 @@
+# 1 - Happy path: a claimant files a new claim end to end.
+#
+# Shows: the claimant describes the incident in plain words, presses "Prepare claim" (one structured-output model
+#   call turns the conversation into a validated claim card), confirms it, and the claim is filed in the insurer
+#   core with a new claim number. The incident is a harmless class 1 garden event (the "prize rose hedge" claim);
+#   it is filed live, so its number is whatever the core hands out next (not 4810, which belongs to script 3).
+# Preconditions: stack running (docker compose, auth-server, core-mcp, backend, Ollama) and the desktop started
+#   with DESKTOP_CONTROL_PORT=8765.
+# Seed: `seed reset` below puts the claims back to the scenario state and deletes every claim filed at runtime.
+# Run order: free. Each presentation script stands alone and can run any number of times (usual order 0, 1, 2, 3);
+#   3-back-office brings its own claim and does not need this one.
+# Run: ./kaiju demo run scripts/demos/presentation/1-happy-path.kaiju
+#   or step through it: ./kaiju demo start scripts/demos/presentation/1-happy-path.kaiju --step, then ./kaiju demo next
+#
+# Presenter: the claimant is the fixed demo claimant (customer 1, policy KP-1001), so the filed claim belongs to
+#   customer 1. Script 3 reviews the same story as the seeded claim 4810.
+
+seed reset
+
+persona claimant
+new-conversation
+
+send "A class 1 kaiju, a big lizard, ate my prize rose hedge and flattened my garden fence on Hilltop on 18 November at about 4:20 pm. Policy KP-1001. The repair estimate is 120000."
+wait-idle 3m
+reply
+
+# The claim card appears under the reply.
+prepare-claim
+wait-idle 3m
+
+# Press Confirm on the card: the claim is filed and the reply names the claim number.
+confirm-claim
+wait-idle 3m
+reply

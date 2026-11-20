@@ -45,7 +45,7 @@ Rejected: a unix domain socket (macOS path limit, the JDK `HttpClient` cannot sp
 
 ### 8. Seeding: SQL owned by `core-mcp`, applied by `./kaiju seed`
 
-`core-mcp/src/main/resources/demo-seed/reset.sql` and `desk-queue.sql` are plain idempotent SQL, authored and tested by `core-mcp`. The `cli` build copies them into its resources (a file-level input, no dependency on `core-mcp` code); a test asserts the bundled files equal `core-mcp`'s byte for byte and the `SeedSet` enum lists exactly them. The `SeedRunner` adapter runs `docker compose -f <compose.yaml> exec -T postgres psql -v ON_ERROR_STOP=1 -U demo -d core` with the SQL on standard input (`compose.yaml` next to the executable, else `KAIJU_COMPOSE_FILE`).
+`core-mcp/src/main/resources/demo-seed/reset.sql`, `desk-queue.sql` and `back-office.sql` are plain idempotent SQL, authored and tested by `core-mcp`. The `cli` build copies them into its resources (a file-level input, no dependency on `core-mcp` code); a test asserts the bundled files equal `core-mcp`'s byte for byte and the `SeedSet` enum lists exactly them. The `SeedRunner` adapter runs `docker compose -f <compose.yaml> exec -T postgres psql -v ON_ERROR_STOP=1 -U demo -d core` with the SQL on standard input (`compose.yaml` next to the executable, else `KAIJU_COMPOSE_FILE`).
 
 Rejected: seeding through MCP tools (cannot restore `FILED` or remove a payout).
 

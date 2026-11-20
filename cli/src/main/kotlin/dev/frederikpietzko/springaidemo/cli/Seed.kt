@@ -7,6 +7,9 @@ enum class SeedSet(val setName: String) {
 
     /** Adds a small queue of claims in several states. */
     DESK_QUEUE("desk-queue"),
+
+    /** Adds claim 4810, the claim the adjuster back-office script reviews; applied only by name. */
+    BACK_OFFICE("back-office"),
     ;
 
     /** The SQL of this set, read from the bundled resources. */
@@ -16,8 +19,11 @@ enum class SeedSet(val setName: String) {
 
     /** Lookup by name. */
     companion object {
-        /** The names of all sets, in the order `seed` without a name applies them. */
+        /** The names of all sets. */
         val names: List<String> get() = entries.map { it.setName }
+
+        /** The sets `seed` without a name applies, in this order. */
+        val defaults: List<SeedSet> get() = [RESET, DESK_QUEUE]
 
         /** The set called [name], or `null`. */
         fun named(name: String): SeedSet? = entries.firstOrNull { it.setName == name }

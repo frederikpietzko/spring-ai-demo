@@ -24,7 +24,7 @@ class SeedCommandTest {
         kaiju(args.toList(), mapOf(), console, KaijuServices(seeds = runner))
 
     @Test
-    fun `seed without a name applies reset and then desk-queue`() {
+    fun `seed without a name applies reset and then desk-queue, not back-office`() {
         val exit = run("seed")
 
         assertEquals(0, exit)
@@ -40,11 +40,22 @@ class SeedCommandTest {
     }
 
     @Test
+    fun `seed back-office applies only the back-office set`() {
+        val exit = run("seed", "back-office")
+
+        assertEquals(0, exit)
+        assertEquals([SeedSet.BACK_OFFICE], seeds.applied)
+    }
+
+    @Test
     fun `an unknown set exits with 1 and lists the sets`() {
         val exit = run("seed", "nonsense")
 
         assertEquals(1, exit)
-        assertTrue("reset" in console.err && "desk-queue" in console.err, console.err)
+        assertTrue(
+            "reset" in console.err && "desk-queue" in console.err && "back-office" in console.err,
+            console.err,
+        )
         assertEquals([], seeds.applied)
     }
 

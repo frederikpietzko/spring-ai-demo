@@ -90,4 +90,4 @@ PostgreSQL stays on 5432.
 
 ## Addendum 2026-11-20: `desktop-script-driver` (ADR-0011)
 
-- The seed SQL for the database `core` (`reset`, `desk-queue`) is owned and tested by `core-mcp` (`src/main/resources/demo-seed/`) and applied only by `./kaiju seed` (or a `seed` line of a demo script). It is not a Flyway migration; `backend` and `desktop` still never touch `core`.
+- The seed SQL for the database `core` (`reset`, `desk-queue`, `back-office`) is owned and tested by `core-mcp` (`src/main/resources/demo-seed/`) and applied only by `./kaiju seed` (or a `seed` line of a demo script). It is not a Flyway migration; `backend` and `desktop` still never touch `core`.

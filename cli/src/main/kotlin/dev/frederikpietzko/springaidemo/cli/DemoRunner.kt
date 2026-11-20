@@ -53,7 +53,7 @@ class DemoRunner(private val control: ControlClient, private val seeds: SeedRunn
     }
 
     private suspend fun seed(name: String?): LineOutcome {
-        val sets = name?.let { listOfNotNull(SeedSet.named(it)) } ?: SeedSet.entries
+        val sets = name?.let { listOfNotNull(SeedSet.named(it)) } ?: SeedSet.defaults
         val applied = mutableListOf<String>()
         for (set in sets) {
             when (val result = runInterruptible(Dispatchers.IO) { seeds.apply(set) }) {

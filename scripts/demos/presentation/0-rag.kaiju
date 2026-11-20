@@ -1,0 +1,39 @@
+# 0 - RAG: coverage questions answered from the policy wording, with citations.
+#
+# Shows: the claimant asks what the policy covers. Every answer names the clauses it rests on
+#   ([coverage.md - Vehicle cover], [exclusions.md - Act of Kaiju exclusion], ...), retrieved from the policy
+#   wording in pgvector. The class 5 and provoking questions land on the exclusions.
+# Preconditions: stack running (docker compose, auth-server, core-mcp, backend, Ollama) and the desktop started
+#   with DESKTOP_CONTROL_PORT=8765. Changes no data; `seed reset` below starts it from the scenario state like
+#   every presentation script.
+# Run order: free. Each presentation script stands alone and can run any number of times (usual order 0, 1, 2, 3).
+# Run: ./kaiju demo run scripts/demos/presentation/0-rag.kaiju
+#   or step through it: ./kaiju demo start scripts/demos/presentation/0-rag.kaiju --step, then ./kaiju demo next
+#
+# Presenter: while a reply streams, point at the bracketed citations. Keep the questions as written: a question
+#   that reads like a command ("Is there an exclusion for ...?") can trip the input guardrail (see script 2).
+
+seed reset
+
+persona claimant
+new-conversation
+
+# Covered? The answer cites the vehicle clause and already mentions the class 5 exclusion.
+send "Is my car covered if a kaiju steps on it?"
+wait-idle 3m
+reply
+
+# The Act of Kaiju exclusion.
+send "And what if it was a class 5 kaiju?"
+wait-idle 3m
+reply
+
+# The provoking exclusion.
+send "Does the policy cover damage if I had provoked the kaiju?"
+wait-idle 3m
+reply
+
+# Another coverage clause.
+send "Would my garden fence be covered too?"
+wait-idle 3m
+reply

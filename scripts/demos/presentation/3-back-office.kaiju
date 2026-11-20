@@ -1,0 +1,36 @@
+# 3 - Back office: the adjuster reviews claim 4810, then approves and pays it out.
+#
+# Shows: the adjuster agent looks up claim 4810 (the prize rose hedge on Hilltop, the same story as script 1),
+#   plans the work, delegates a fraud check (sighting bulletins) and a damage check to subagents, and moves the
+#   claim to review.
+#   Approving the claim and paying it out each wait for a human click (Approve) before the core system acts; the
+#   payout is the damage minus the policy deductible (120000 - 50000 = 70000). The fraud check finds sighting
+#   bulletin SB-104 and comes back CLEAR.
+# Preconditions: stack running (docker compose, auth-server, core-mcp, backend) and the desktop started with
+#   DESKTOP_CONTROL_PORT=8765.
+# Seed: `seed reset`, then `seed back-office` below, which adds claim 4810 (FILED) on customer 1's policy KP-1001.
+#   A re-run seeds it FILED again, so the script works after a previous run that paid it.
+# Run order: free. Each presentation script stands alone and can run any number of times (usual order 0, 1, 2, 3).
+# Run: ./kaiju demo run scripts/demos/presentation/3-back-office.kaiju
+#   or step through it: ./kaiju demo start scripts/demos/presentation/3-back-office.kaiju --step, then ./kaiju demo next
+#
+# Presenter: the review takes about 30 seconds (todo list, two subagents); talk about the plan and the fraud check
+#   while it works.
+
+seed reset
+seed back-office
+
+persona adjuster
+new-conversation
+
+send "Review claim 4810."
+wait-idle 5m
+reply
+
+send "Looks fine. Move it to review, approve it and pay it out."
+wait-idle 5m
+approve
+wait-idle 5m
+approve
+wait-idle 5m
+reply
