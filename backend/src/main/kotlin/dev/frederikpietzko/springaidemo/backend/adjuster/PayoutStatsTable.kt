@@ -1,6 +1,7 @@
 package dev.frederikpietzko.springaidemo.backend.adjuster
 
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
+import dev.frederikpietzko.springaidemo.chatprotocol.formatMinor
 import tools.jackson.core.JacksonException
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
@@ -33,7 +34,12 @@ private fun table(header: Pair<String, String>, groups: JsonNode): ChatEvent.Ana
         title = title,
         columns = [groupColumn, "Payouts", "Total paid", "Average paid"],
         rows = groups.values().map { group ->
-            ["group", "payouts", "totalPaidMinor", "averagePaidMinor"].map { field -> group.path(field).asString() }
+            [
+                group.path("group").asString(),
+                group.path("payouts").asString(),
+                formatMinor(group.path("totalPaidMinor").asLong()),
+                formatMinor(group.path("averagePaidMinor").asLong()),
+            ]
         },
     )
 }

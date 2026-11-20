@@ -7,10 +7,11 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * A reply that waits for a human decision: the [conversation] the model answered and its [reply] with the tool calls.
- * Kept on the server, so a client can never send (or change) the tool calls it decides on.
+ * A reply that waits for a human decision: the [conversation] the model answered and its [reply] with the tool calls,
+ * in the stored conversation [conversationId]. Kept on the server, so a client can never send (or change) the tool
+ * calls it decides on.
  */
-data class PausedTurn(val conversation: List<Message>, val reply: ChatResponse)
+data class PausedTurn(val conversationId: String, val conversation: List<Message>, val reply: ChatResponse)
 
 /**
  * The paused adjuster replies, by confirmation id. In memory: a restart forgets them, and an entry nobody decides on

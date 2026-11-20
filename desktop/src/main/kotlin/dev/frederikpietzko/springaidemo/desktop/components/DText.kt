@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -27,6 +28,17 @@ fun DText(
         maxLines = maxLines,
         overflow = if (maxLines == Int.MAX_VALUE) TextOverflow.Clip else TextOverflow.Ellipsis,
     )
+}
+
+/** Styled text (bold, italics, monospace spans) in the demo theme; the colour defaults to the theme's ink. */
+@Composable
+fun DText(
+    text: AnnotatedString,
+    modifier: Modifier = Modifier,
+    style: TextStyle = Demo.typography.body,
+    color: Color = Demo.colors.ink,
+) {
+    BasicText(text = text, modifier = modifier, style = style.copy(color = color))
 }
 
 /** Draws the accent-gradient focus ring while [focused], otherwise the theme's border. */

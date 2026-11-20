@@ -122,15 +122,15 @@ class HttpChatApiTest {
     }
 
     @Test
-    suspend fun `the conversation list is read from GET conversations`() {
+    suspend fun `the conversation list is read from GET conversations for the persona`() {
         val seen = CopyOnWriteArrayList<String>()
         val conversations = withServer(CONVERSATIONS, { exchange ->
-            seen.add("${exchange.requestMethod} ${exchange.requestURI.path}")
+            seen.add("${exchange.requestMethod} ${exchange.requestURI}")
             exchange.respondWithJson("""[{"id":"c-1","title":"Größe 🦖","startedAt":"2026-11-20T10:00:00Z"}]""")
-        }) { baseUrl -> HttpChatApi(baseUrl).use { it.conversations() } }
+        }) { baseUrl -> HttpChatApi(baseUrl).use { it.conversations(Persona.ADJUSTER) } }
 
         assertEquals([ConversationSummary("c-1", "Größe 🦖", "2026-11-20T10:00:00Z")], conversations)
-        assertEquals(["GET /conversations"], seen)
+        assertEquals(["GET /conversations?persona=ADJUSTER"], seen)
     }
 
     @Test
@@ -153,7 +153,7 @@ class HttpChatApiTest {
         val [conversations, messages] = withServer(CONVERSATIONS, { exchange ->
             exchange.sendResponseHeaders(500, -1)
             exchange.close()
-        }) { baseUrl -> HttpChatApi(baseUrl).use { Pair(it.conversations(), it.messages("c-1")) } }
+        }) { baseUrl -> HttpChatApi(baseUrl).use { Pair(it.conversations(Persona.CLAIMANT), it.messages("c-1")) } }
 
         assertEquals([], conversations)
         assertEquals([], messages)
@@ -162,7 +162,7 @@ class HttpChatApiTest {
     @Test
     suspend fun `an undecodable body gives an empty conversation list`() {
         val conversations = withServer(CONVERSATIONS, { it.respondWithJson("""{"not":"a list"}""") }) { baseUrl ->
-            HttpChatApi(baseUrl).use { it.conversations() }
+            HttpChatApi(baseUrl).use { it.conversations(Persona.CLAIMANT) }
         }
 
         assertEquals([], conversations)
@@ -172,7 +172,7 @@ class HttpChatApiTest {
     suspend fun `an unreachable backend gives an empty conversation list`() {
         val closedPort = withServer(CONVERSATIONS, { it.close() }) { baseUrl -> baseUrl }
 
-        val conversations = HttpChatApi(closedPort).use { it.conversations() }
+        val conversations = HttpChatApi(closedPort).use { it.conversations(Persona.CLAIMANT) }
 
         assertEquals([], conversations)
     }
@@ -185,7 +185,9 @@ class HttpChatApiTest {
         }
 
         withServer(CONVERSATIONS, { it.respondWithJson("[]") }) { baseUrl ->
-            assertFailsWith<StackOverflowError> { HttpChatApi(baseUrl, failingClient).use { it.conversations() } }
+            assertFailsWith<StackOverflowError> {
+                HttpChatApi(baseUrl, failingClient).use { it.conversations(Persona.CLAIMANT) }
+            }
         }
     }
 

@@ -20,6 +20,9 @@ import java.util.UUID
 /** Shown when the stream ends without a terminal event, which the protocol only allows for a dropped connection. */
 private const val CONNECTION_CLOSED = "The connection closed before the answer was complete."
 
+/** What separates the paused text of a reply from its continuation after a decision. */
+private const val PARAGRAPH = "\n\n"
+
 /**
  * The chat screen's state and actions, independent of Compose so it can be tested with a fake [ChatApi]. Every
  * conversation gets its own id from [newId].
@@ -69,27 +72,35 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
 
     /**
      * Approves or denies the pending confirmation: sends one decision, clears the confirmation and appends the
-     * continued reply to the same assistant message. Ignored when nothing is pending.
+     * continued reply to the same assistant message, after a paragraph break when the message already has text.
+     * Ignored when nothing is pending.
      */
     suspend fun decide(approved: Boolean) {
         val pending = state.value.pendingConfirmation ?: return
         mutableState.update { it.copy(pendingConfirmation = null, sending = true) }
-        streamReply(api.decide(ConfirmationDecision(pending.confirmationId, approved)))
+        streamReply(api.decide(ConfirmationDecision(pending.confirmationId, approved)), continuation = true)
     }
 
-    /** Selects the persona for the next message and clears the todo list, which belongs to the other persona. */
-    fun selectPersona(persona: Persona) {
-        mutableState.update { it.copy(persona = persona, todos = []) }
+    /**
+     * Selects the persona: starts a new conversation (a conversation belongs to one agent), clears the todo list and
+     * lists the persona's conversations. Ignored while an answer is streaming or a confirmation is pending.
+     */
+    suspend fun selectPersona(persona: Persona) {
+        if (state.value.sending || state.value.pendingConfirmation != null) return
+        mutableState.update { it.copy(persona = persona, conversationId = newId(), messages = [], todos = []) }
+        refreshConversations()
     }
 
     /**
      * Appends [events] to the last (assistant) message until a terminal event arrives. A todo update replaces the todo
      * list; a confirmation request is kept as pending; an error event, or a stream that ends without a terminal event,
-     * is shown under the (partial) reply; `sending` is reset in any case.
+     * is shown under the (partial) reply; `sending` is reset in any case. A [continuation] starts its text after a
+     * paragraph break.
      */
-    private suspend fun streamReply(events: Flow<ChatEvent>) {
+    private suspend fun streamReply(events: Flow<ChatEvent>, continuation: Boolean = false) {
         try {
             var terminated = false
+            var firstText = continuation
             events
                 // The stream ends with exactly one terminal event; stop collecting there.
                 .transformWhile { event ->
@@ -98,7 +109,11 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
                 }
                 .collect { event ->
                     when (event) {
-                        is ChatEvent.TextDelta -> updateReply { it.copy(text = it.text + event.text) }
+                        is ChatEvent.TextDelta -> {
+                            val paragraph = firstText
+                            firstText = false
+                            updateReply { it.copy(text = it.text.continuedWith(event.text, paragraph)) }
+                        }
                         is ChatEvent.ClaimCard -> updateReply { it.copy(claimCard = event) }
                         is ChatEvent.AnalyticsTable -> updateReply { it.copy(analyticsTable = event) }
                         is ChatEvent.TodoUpdate -> mutableState.update { it.copy(todos = event.todos) }
@@ -123,7 +138,7 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
 
     /** Replaces the conversation list with the backend's; an unreachable backend gives an empty list. */
     suspend fun refreshConversations() {
-        val conversations = api.conversations()
+        val conversations = api.conversations(state.value.persona)
         mutableState.update { it.copy(conversations = conversations) }
     }
 
@@ -162,3 +177,7 @@ private fun ConversationMessage.toChatMessage(): ChatMessage = when (role) {
     MessageRole.USER -> ChatMessage(ChatMessage.Author.USER, text)
     MessageRole.ASSISTANT -> ChatMessage(ChatMessage.Author.ASSISTANT, text)
 }
+
+/** Appends [delta]; after a [paragraph] break when there is text already (its trailing spaces dropped). */
+private fun String.continuedWith(delta: String, paragraph: Boolean): String =
+    if (paragraph && isNotEmpty()) trimEnd() + PARAGRAPH + delta else this + delta

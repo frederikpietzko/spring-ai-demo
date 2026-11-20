@@ -5,6 +5,7 @@ import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
 import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
+import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -28,6 +29,10 @@ class FakeChatApi(
     private val received = CopyOnWriteArrayList<ChatRequest>()
     private val opened = CopyOnWriteArrayList<String>()
     private val receivedDecisions = CopyOnWriteArrayList<ConfirmationDecision>()
+    private val listed = CopyOnWriteArrayList<Persona>()
+
+    /** The persona of every conversation-list request so far, in order. */
+    val listedFor: List<Persona> get() = listed.toList()
 
     /** Every request sent so far, in order. */
     val requests: List<ChatRequest> get() = received.toList()
@@ -48,7 +53,10 @@ class FakeChatApi(
         return decisionReply(decision)
     }
 
-    override suspend fun conversations(): List<ConversationSummary> = conversations.invoke()
+    override suspend fun conversations(persona: Persona): List<ConversationSummary> {
+        listed.add(persona)
+        return conversations.invoke()
+    }
 
     override suspend fun messages(id: String): List<ConversationMessage> {
         opened.add(id)

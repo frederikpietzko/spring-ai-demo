@@ -111,7 +111,7 @@ curl -N -X POST localhost:8080/chat -H 'Content-Type: application/json' -H 'Acce
 - With `ANTHROPIC_API_KEY` set, the reply arrives incrementally as `data: {"type":"text-delta","text":"..."}` events and ends with `data: {"type":"done"}`.
 - Without a key (or on any other failure) the stream is a single `data: {"type":"error","message":"The claims desk is unavailable."}`; the cause is in the backend log.
 - `"persona":"ADJUSTER"` is answered by the adjuster agent, which works with the core tools of `core-mcp` (see "Adjuster agent" below). A malformed body or an unknown persona is a `400`.
-- A request may carry a `conversationId` (`{"persona":"CLAIMANT","message":"Hi","conversationId":"c-1"}`): requests with the same id form one conversation, and the model sees its earlier turns. The adjuster does not remember earlier messages and ignores the id. Without an id (or with a blank one) the request starts a fresh conversation of its own. Conversations are stored in the backend database and survive restarts; after more than ten turns the prompt keeps only the five most recent ones, and the model can still find older messages with its `conversation_search` tool.
+- A request may carry a `conversationId` (`{"persona":"CLAIMANT","message":"Hi","conversationId":"c-1"}`): requests with the same id form one conversation, and the model sees its earlier turns. The adjuster remembers its conversations too: each turn sees the earlier messages of its id (text only, no tool traffic), and a turn resumed after an approve or deny decision is stored as well. Without an id (or with a blank one) the request starts a fresh conversation of its own. Conversations are stored in the backend database and survive restarts; after more than ten turns the prompt keeps only the five most recent ones, and the model can still find older messages with its `conversation_search` tool.
 - Each claimant message is grounded in the fictional policy wording (`backend/src/main/resources/corpus/policy-wording`): the closest clauses are added to the prompt, labelled `[source - title]`, and the model is asked to cite those labels when the message asks about coverage (ADR-0006).
 
 ### Preparing and confirming a claim
@@ -188,10 +188,11 @@ The claimant chat checks every typed message with a Spring AI `DecisionModel` (O
 
 ## Conversation endpoints
 
-The stored claimant conversations, newest first, and the transcript of one of them (what the claimant typed and what the assistant answered; an unknown id is a `404`):
+The stored conversations of one persona, newest first (`persona` is `CLAIMANT` or `ADJUSTER`, default `CLAIMANT`), and the transcript of one of them (what the user typed and what the assistant answered; an unknown id is a `404`). The desktop lists the conversations of the selected persona; switching persona starts a new conversation:
 
 ```bash
 curl localhost:8080/conversations
+curl 'localhost:8080/conversations?persona=ADJUSTER'
 curl localhost:8080/conversations/c-1/messages
 ```
 

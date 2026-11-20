@@ -6,6 +6,7 @@ import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
 import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
+import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import dev.frederikpietzko.springaidemo.chatprotocol.chatEventFromJson
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -73,8 +74,8 @@ class HttpChatApi(
             emit(ChatEvent.Error(describe(cause)))
         }
 
-    override suspend fun conversations(): List<ConversationSummary> =
-        getList("$baseUrl/conversations", ListSerializer(ConversationSummary.serializer()))
+    override suspend fun conversations(persona: Persona): List<ConversationSummary> =
+        getList("$baseUrl/conversations?persona=${persona.name}", ListSerializer(ConversationSummary.serializer()))
 
     override suspend fun messages(id: String): List<ConversationMessage> =
         getList(

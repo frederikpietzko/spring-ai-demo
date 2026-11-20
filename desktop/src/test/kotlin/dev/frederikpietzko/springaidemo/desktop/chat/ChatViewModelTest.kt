@@ -307,7 +307,20 @@ class ChatViewModelTest {
 
         viewModel.send("Hi")
 
-        assertEquals([ChatRequest(Persona.ADJUSTER, "Hi", "c-1")], api.requests)
+        assertEquals([ChatRequest(Persona.ADJUSTER, "Hi", "c-2")], api.requests)
+    }
+
+    @Test
+    suspend fun `selecting the adjuster starts a new conversation and lists the adjuster's conversations`() {
+        val listing = FakeChatApi()
+        val chat = ChatViewModel(listing, scriptedIds())
+        chat.send("Hello")
+
+        chat.selectPersona(Persona.ADJUSTER)
+
+        assertEquals("c-2", chat.state.value.conversationId)
+        assertEquals([], chat.state.value.messages)
+        assertEquals(Persona.ADJUSTER, listing.listedFor.last())
     }
 
     @Test
@@ -486,7 +499,7 @@ class ChatViewModelTest {
         assertEquals(
             ChatState(
                 conversationId = "c-1",
-                messages = [user("Pay claim 4711"), assistant("Ready to pay. Paid")],
+                messages = [user("Pay claim 4711"), assistant("Ready to pay.\n\nPaid")],
             ),
             paused.state.value,
         )

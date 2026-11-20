@@ -50,25 +50,23 @@ class ChatController(
      * adjuster agent answers messages only; a claim action for the adjuster gets one error event and no model call.
      */
     @PostMapping("/chat", consumes = [MediaType.APPLICATION_JSON_VALUE], produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
-    fun chat(@RequestBody request: ChatRequest): Flow<ServerSentEvent<String>> =
-        when (request.persona) {
-            Persona.CLAIMANT -> {
-                val conversationId =
-                    request.conversationId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
-                when (request.action) {
-                    ChatAction.MESSAGE -> claimantReply(conversationId, request.message)
-                    ChatAction.PREPARE_CLAIM -> prepareClaim(conversationId)
-                    ChatAction.CONFIRM_CLAIM -> confirmClaim(conversationId)
-                }
+    fun chat(@RequestBody request: ChatRequest): Flow<ServerSentEvent<String>> {
+        val conversationId = request.conversationId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
+        return when (request.persona) {
+            Persona.CLAIMANT -> when (request.action) {
+                ChatAction.MESSAGE -> claimantReply(conversationId, request.message)
+                ChatAction.PREPARE_CLAIM -> prepareClaim(conversationId)
+                ChatAction.CONFIRM_CLAIM -> confirmClaim(conversationId)
             }
             Persona.ADJUSTER ->
                 if (request.action == ChatAction.MESSAGE) {
-                    adjusterChat.stream(request.message)
+                    adjusterChat.stream(conversationId, request.message)
                 } else {
                     flowOf(ChatEvent.Error("Persona ADJUSTER does not support the claim actions"))
                 }
         }
             .asServerSentEvents()
+    }
 
     /** Carries out the adjuster's [decision] on a paused reply and streams the continued reply. */
     @PostMapping(

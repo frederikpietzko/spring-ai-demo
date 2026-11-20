@@ -33,9 +33,11 @@ import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import dev.frederikpietzko.springaidemo.chatprotocol.TodoItem
 import dev.frederikpietzko.springaidemo.chatprotocol.TodoStatus
+import dev.frederikpietzko.springaidemo.chatprotocol.formatMinor
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatApi
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatMessage
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatViewModel
+import dev.frederikpietzko.springaidemo.desktop.chat.markdown
 import dev.frederikpietzko.springaidemo.desktop.components.DButton
 import dev.frederikpietzko.springaidemo.desktop.components.DButtonStyle
 import dev.frederikpietzko.springaidemo.desktop.components.DCard
@@ -69,7 +71,10 @@ fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null) {
     LaunchedEffect(viewModel) { viewModel.refreshConversations() }
     DemoTheme(override = themeOverride) {
         Column(Modifier.fillMaxSize().background(Demo.colors.background)) {
-            Header(persona = state.persona, onPersona = viewModel::selectPersona)
+            Header(
+                persona = state.persona,
+                onPersona = { persona -> scope.launch { viewModel.selectPersona(persona) } },
+            )
             Row(Modifier.weight(1f).fillMaxWidth()) {
                 ConversationList(
                     conversations = state.conversations,
@@ -81,6 +86,7 @@ fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null) {
                     val canSend = !state.sending && state.pendingConfirmation == null
                     Conversation(
                         messages = state.messages,
+                        persona = state.persona,
                         canConfirm = canSend,
                         onConfirm = { scope.launch { viewModel.confirmClaim() } },
                         modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -154,10 +160,20 @@ private fun Header(persona: Persona, onPersona: (Persona) -> Unit) {
  * card of the last message can be confirmed: the backend files only the latest prepared claim.
  */
 @Composable
-private fun Conversation(messages: List<ChatMessage>, canConfirm: Boolean, onConfirm: () -> Unit, modifier: Modifier) {
+private fun Conversation(
+    messages: List<ChatMessage>,
+    persona: Persona,
+    canConfirm: Boolean,
+    onConfirm: () -> Unit,
+    modifier: Modifier,
+) {
     if (messages.isEmpty()) {
         Box(modifier, contentAlignment = Alignment.Center) {
-            DText("Describe the kaiju damage to get started.", color = Demo.colors.inkMuted)
+            val hint = when (persona) {
+                Persona.CLAIMANT -> "Describe the kaiju damage to get started."
+                Persona.ADJUSTER -> "Ask about a claim, for example: Process claim #4711."
+            }
+            DText(hint, color = Demo.colors.inkMuted)
         }
         return
     }
@@ -192,7 +208,8 @@ private fun MessageBubble(message: ChatMessage, canConfirm: Boolean, onConfirm: 
         ) {
             val hasContent = message.claimCard != null || message.analyticsTable != null
             when {
-                message.text.isNotEmpty() -> DText(message.text)
+                message.text.isNotEmpty() && fromUser -> DText(message.text)
+                message.text.isNotEmpty() -> DText(markdown(message.text))
                 message.error == null && !hasContent -> DText("…", color = Demo.colors.inkMuted)
             }
             message.analyticsTable?.let { AnalyticsTable(it) }
@@ -212,8 +229,8 @@ private fun ClaimCard(card: ChatEvent.ClaimCard, canConfirm: Boolean, onConfirm:
         Fact("Incident", card.incidentAt)
         Fact("Kaiju class", card.kaijuClass.toString())
         DText(card.description)
-        card.damageItems.forEach { item -> Fact(item.category, item.description, item.amountMinor.toString()) }
-        Fact("Total", card.totalMinor.toString())
+        card.damageItems.forEach { item -> Fact(item.category, item.description, formatMinor(item.amountMinor)) }
+        Fact("Total", formatMinor(card.totalMinor))
         DButton("Confirm", onClick = onConfirm, style = DButtonStyle.PRIMARY, enabled = canConfirm)
     }
 }

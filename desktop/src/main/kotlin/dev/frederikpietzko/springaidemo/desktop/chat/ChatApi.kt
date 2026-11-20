@@ -5,6 +5,7 @@ import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
 import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationMessage
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
+import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -15,8 +16,8 @@ interface ChatApi {
     /** Sends [request] and emits the reply's events. */
     fun send(request: ChatRequest): Flow<ChatEvent>
 
-    /** The stored conversations, newest first; empty when the backend cannot be read. */
-    suspend fun conversations(): List<ConversationSummary>
+    /** The stored conversations of [persona], newest first; empty when the backend cannot be read. */
+    suspend fun conversations(persona: Persona): List<ConversationSummary>
 
     /** The transcript of conversation [id]; empty when the backend cannot be read. */
     suspend fun messages(id: String): List<ConversationMessage>

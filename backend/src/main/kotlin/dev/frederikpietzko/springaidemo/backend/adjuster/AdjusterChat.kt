@@ -1,5 +1,7 @@
 package dev.frederikpietzko.springaidemo.backend.adjuster
 
+import dev.frederikpietzko.springaidemo.backend.chat.ADJUSTER_AGENT
+import dev.frederikpietzko.springaidemo.backend.chat.Conversations
 import dev.frederikpietzko.springaidemo.backend.fraud.SightingBulletinSearch
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ConfirmationDecision
@@ -20,10 +22,12 @@ import org.springframework.ai.chat.client.ChatClientResponse
 import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor
 import org.springframework.ai.chat.client.advisor.api.StreamAdvisor
 import org.springframework.ai.chat.client.advisor.api.StreamAdvisorChain
+import org.springframework.ai.chat.messages.AssistantMessage
 import org.springframework.ai.chat.messages.Message
 import org.springframework.ai.chat.messages.SystemMessage
 import org.springframework.ai.chat.messages.UserMessage
 import org.springframework.ai.chat.model.ChatResponse
+import org.springframework.ai.chat.model.Generation
 import org.springframework.ai.chat.prompt.Prompt
 import org.springframework.ai.model.tool.ToolCallDecision
 import org.springframework.ai.model.tool.ToolCallDecisions
@@ -61,13 +65,18 @@ private const val ISSUE_PAYOUT = "issuePayout"
 /** The answer to a decision on an unknown id, or on one that was decided already. */
 private const val NOTHING_WAITING = "Nothing is waiting for this decision."
 
+/** What separates the text of two model rounds of one turn. */
+private const val ROUND_BREAK = "\n\n"
+
 /**
  * The adjuster agent: answers one adjuster message with the core tools, the sighting bulletin search, its skills, the
  * `Task` tool that delegates to its subagents and its own todo list, as a stream of chat events: text deltas, a
  * [ChatEvent.TodoUpdate] for every todo write, an [ChatEvent.AnalyticsTable] for each successful `payoutStats` call of
  * a turn (not one in a batch [decide] resumes), and a [ChatEvent.ConfirmationRequest] when the reply calls a tool
  * needing confirmation (`issuePayout`, or `updateClaimStatus` to `APPROVED`); the paused reply waits in
- * [PendingConfirmations] until [decide] runs or skips its tool calls and continues the reply.
+ * [PendingConfirmations] until [decide] runs or skips its tool calls and continues the reply. Each turn sees the stored
+ * conversation and is stored in it ([Conversations], agent name `adjuster`): the user message first, the turn's text
+ * when its stream ends, also after a pause and after the resumed turn.
  */
 @Service
 class AdjusterChat(
@@ -79,12 +88,22 @@ class AdjusterChat(
     private val pendingConfirmations: PendingConfirmations,
     private val sightingBulletinSearch: SightingBulletinSearch,
     private val json: JsonMapper,
+    private val conversations: Conversations,
 ) {
-    /** Streams the reply to [message]: text deltas, todo updates, and a confirmation request if the reply pauses. */
-    fun stream(message: String): Flow<ChatEvent> {
-        val conversation: List<Message> = [UserMessage(message)]
-        return turn(conversation)
-    }
+    /**
+     * Streams the reply to [message] in conversation [conversationId]: text deltas, todo updates, and a confirmation
+     * request if the reply pauses. The model sees the conversation's earlier messages before [message].
+     */
+    fun stream(conversationId: String, message: String): Flow<ChatEvent> =
+        channelFlow {
+            val user = UserMessage(message)
+            val conversation = withContext(Dispatchers.IO) {
+                conversations.history(conversationId).also {
+                    conversations.remember(conversationId, ADJUSTER_AGENT, message, user)
+                } + user
+            }
+            turn(conversationId, conversation).collect { send(it) }
+        }.buffer(Channel.UNLIMITED)
 
     /**
      * Carries out a [decision] on a paused reply and streams the continued reply, which may pause again. Approve runs
@@ -103,7 +122,7 @@ class AdjusterChat(
             val todoWrite = todoWriteTool(channel)
             // The tool calls block (the MCP client waits for the core), so they run off the request thread.
             val conversation = withContext(Dispatchers.IO) { runToolCalls(paused, decision.approved, todoWrite) }
-            turn(conversation).collect { send(it) }
+            turn(paused.conversationId, conversation).collect { send(it) }
         }.buffer(Channel.UNLIMITED)
 
     /**
@@ -147,27 +166,38 @@ class AdjusterChat(
      * channel from the thread the tool runs on (the unlimited buffer means `trySend` never has to wait). The tool runs
      * before the next model round streams, so its table comes before the text the model writes after the call. The
      * skills, the bulletin search and `Task` are default tools of the client; the core tools and the todo tool come
-     * with each request.
+     * with each request. The turn's text is stored in conversation [conversationId] when the stream ends.
      */
-    private fun turn(conversation: List<Message>): Flow<ChatEvent> =
+    private fun turn(conversationId: String, conversation: List<Message>): Flow<ChatEvent> =
         channelFlow {
             val rounds = RoundCapture()
+            val reply = StringBuilder()
             adjusterChatClient.prompt()
                 .system { it.param("today", LocalDate.now(ZoneOffset.UTC).toString()) }
                 .messages(conversation)
                 .tools(coreToolsWithTables(), todoWriteTool(channel))
                 .toolContext(ADJUSTER_IDENTITY)
-                .advisors(rounds)
+                .advisors(rounds, RoundBreaks())
                 .stream()
                 .chatResponse()
                 .asFlow()
                 .collect { response ->
                     val text = response.result?.output?.text
                     when {
-                        ToolCallDecisions.isAwaitingDecision(response) -> send(pause(rounds.conversation, response))
-                        !text.isNullOrEmpty() -> send(ChatEvent.TextDelta(text))
+                        ToolCallDecisions.isAwaitingDecision(response) ->
+                            send(pause(conversationId, rounds.conversation, response))
+                        !text.isNullOrEmpty() -> {
+                            reply.append(text)
+                            send(ChatEvent.TextDelta(text))
+                        }
                     }
                 }
+            val text = reply.toString()
+            if (text.isNotBlank()) {
+                withContext(Dispatchers.IO) {
+                    conversations.remember(conversationId, ADJUSTER_AGENT, text, AssistantMessage(text))
+                }
+            }
         }.buffer(Channel.UNLIMITED)
 
     /** A todo tool that sends the list of every valid todo write to [events]. */
@@ -201,12 +231,16 @@ class AdjusterChat(
      * Keeps the paused [reply] with the [conversation] it answers (the tool rounds of the turn before the pause
      * included) and names the first tool call that waits for a decision.
      */
-    private fun pause(conversation: List<Message>, reply: ChatResponse): ChatEvent.ConfirmationRequest {
+    private fun pause(
+        conversationId: String,
+        conversation: List<Message>,
+        reply: ChatResponse,
+    ): ChatEvent.ConfirmationRequest {
         val toolCalls = checkNotNull(reply.result) { "a paused reply has a generation" }.output
         val waiting = ToolCallDecisions.toolCallKeys(toolCalls)
             .indexOf(ToolCallDecisions.awaitingDecision(reply).first())
         val call = toolCalls.toolCalls[waiting]
-        val confirmationId = pendingConfirmations.add(PausedTurn(conversation, reply))
+        val confirmationId = pendingConfirmations.add(PausedTurn(conversationId, conversation, reply))
         return ChatEvent.ConfirmationRequest(confirmationId, call.name(), call.arguments())
     }
 }
@@ -233,4 +267,34 @@ private class RoundCapture : StreamAdvisor {
         instructions = request.prompt().instructions
         return chain.nextStream(request)
     }
+}
+
+/**
+ * Separates the text of two model rounds of one turn: before the first text of a round, when an earlier round of the
+ * turn already wrote text, it sends a paragraph break. It sits inside the tool-calling loop next to [RoundCapture] and
+ * works on the stream itself, so the break always comes between the two texts. One instance per turn.
+ */
+private class RoundBreaks : StreamAdvisor {
+    @Volatile
+    private var wroteText = false
+
+    override fun getName(): String = "RoundBreaks"
+
+    override fun getOrder(): Int = ToolCallingAdvisor.DEFAULT_ORDER + 2
+
+    override fun adviseStream(request: ChatClientRequest, chain: StreamAdvisorChain): Flux<ChatClientResponse> {
+        var firstText = true
+        return chain.nextStream(request).concatMap { response ->
+            val hasText = !response.chatResponse()?.result?.output?.text.isNullOrEmpty()
+            val needsBreak = hasText && firstText && wroteText
+            if (hasText) {
+                firstText = false
+                wroteText = true
+            }
+            if (needsBreak) Flux.just(roundBreak(response), response) else Flux.just(response)
+        }
+    }
+
+    private fun roundBreak(next: ChatClientResponse): ChatClientResponse =
+        next.mutate().chatResponse(ChatResponse([Generation(AssistantMessage(ROUND_BREAK))])).build()
 }

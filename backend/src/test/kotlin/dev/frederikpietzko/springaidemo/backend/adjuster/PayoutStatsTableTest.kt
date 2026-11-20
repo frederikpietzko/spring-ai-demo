@@ -27,7 +27,7 @@ class PayoutStatsTableTest {
             ChatEvent.AnalyticsTable(
                 title = "Payouts by district",
                 columns = ["District", "Payouts", "Total paid", "Average paid"],
-                rows = [["HARBOUR", "3", "1120000", "373333"], ["HILLTOP", "2", "120000", "60000"]],
+                rows = [["HARBOUR", "3", "11,200.00", "3,733.33"], ["HILLTOP", "2", "1,200.00", "600.00"]],
             ),
             table,
         )
@@ -44,7 +44,7 @@ class PayoutStatsTableTest {
             ChatEvent.AnalyticsTable(
                 title = "Payouts by kaiju class",
                 columns = ["Kaiju class", "Payouts", "Total paid", "Average paid"],
-                rows = [["2", "1", "140000", "140000"]],
+                rows = [["2", "1", "1,400.00", "1,400.00"]],
             ),
             table,
         )
@@ -61,7 +61,7 @@ class PayoutStatsTableTest {
             ChatEvent.AnalyticsTable(
                 title = "Payouts",
                 columns = ["Group", "Payouts", "Total paid", "Average paid"],
-                rows = [["ALL", "2", "980000", "490000"]],
+                rows = [["ALL", "2", "9,800.00", "4,900.00"]],
             ),
             table,
         )

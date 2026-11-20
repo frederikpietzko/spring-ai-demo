@@ -47,7 +47,7 @@ class AdjusterAnalyticsTest {
                 ChatEvent.AnalyticsTable(
                     title = "Payouts by kaiju class",
                     columns = ["Kaiju class", "Payouts", "Total paid", "Average paid"],
-                    rows = [["2", "1", "140000", "140000"], ["4", "2", "980000", "490000"]],
+                    rows = [["2", "1", "1,400.00", "1,400.00"], ["4", "2", "9,800.00", "4,900.00"]],
                 ),
                 ChatEvent.TextDelta("Harbour paid out 1120000"),
                 ChatEvent.Done,

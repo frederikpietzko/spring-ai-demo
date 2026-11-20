@@ -33,7 +33,7 @@ A conversation SHALL be stored in the backend database, so that a backend that s
 - **THEN** the prompt contains the first turn
 
 ### Requirement: Conversations are listed, newest first, with a title
-The backend SHALL answer `GET /conversations` with the claimant conversations, newest first, each with its id, a title and its start time. The title SHALL be the beginning of the claimant's first message as typed (at most 60 characters), not the retrieval template. Conversations of other agents SHALL NOT be listed.
+The backend SHALL answer `GET /conversations` with the conversations of one persona, newest first, each with its id, a title and its start time. The persona SHALL come from the optional query parameter `persona` (`CLAIMANT` or `ADJUSTER`, default `CLAIMANT`). The title SHALL be the beginning of the first message as typed (at most 60 characters), not the retrieval template. Conversations of other agents SHALL NOT be listed.
 
 #### Scenario: A started conversation is listed
 - **WHEN** a claimant posts the message "Kaiju stepped on my shed" with conversation id X and the conversation list is requested
@@ -54,6 +54,10 @@ The backend SHALL answer `GET /conversations` with the claimant conversations, n
 #### Scenario: Other agents' sessions are not listed
 - **WHEN** a session of another agent exists in the session store
 - **THEN** the conversation list does not contain it
+
+#### Scenario: The adjuster's conversations are listed for the adjuster
+- **WHEN** an adjuster posts "Process claim #4711" with conversation id Y and `GET /conversations?persona=ADJUSTER` is requested
+- **THEN** the list contains an entry with id Y and the title "Process claim #4711", and `GET /conversations` without the parameter does not contain Y
 
 ### Requirement: A conversation can be read as a transcript
 The backend SHALL answer `GET /conversations/{id}/messages` with the messages of the conversation in order, each with its role (user or assistant) and text. The user text SHALL be what the claimant typed, not the retrieval template, and tool calls and tool results SHALL NOT appear. An unknown id SHALL be answered with status 404.
@@ -117,3 +121,14 @@ The claimant system message SHALL say that the conversation is remembered and th
 #### Scenario: Instructions mention recall
 - **WHEN** a claimant request is answered
 - **THEN** the system message received by the model mentions `conversation_search` and does not say the model only sees the current message
+
+### Requirement: The adjuster remembers its conversations
+The adjuster SHALL see the earlier user and assistant messages of its conversation in every turn, and SHALL store each turn in the session store under the agent name `adjuster`: the user message when the turn starts, the assistant text when the turn's stream ends, also for a turn resumed after a confirmation. Tool calls and tool results SHALL NOT be stored.
+
+#### Scenario: A second adjuster turn sees the first
+- **WHEN** the adjuster gets "Process claim #4711" with conversation id Y, answers "4711 is flagged", and then gets "Approve it anyway" with the same id
+- **THEN** the model's second prompt contains "Process claim #4711" and "4711 is flagged" before "Approve it anyway"
+
+#### Scenario: A resumed turn is remembered
+- **WHEN** an adjuster turn pauses for a confirmation, the decision resumes it and the resumed turn answers "Payout issued"
+- **THEN** the transcript of the conversation ends with an assistant message containing "Payout issued"

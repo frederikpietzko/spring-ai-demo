@@ -48,11 +48,18 @@ class FakeChatModel(private val observationRegistry: ObservationRegistry = Obser
 
     /** Queues one answer that asks for several tool executions at once, in order (tool name to JSON arguments). */
     fun requestTools(vararg calls: Pair<String, String>) {
-        val toolCalls = calls.map { (val name = first, val argumentsJson = second) ->
+        script.add(Step(AssistantMessage.builder().toolCalls(toolCalls(calls)).build(), []))
+    }
+
+    /** Queues one answer that writes [text] and asks for tool executions in the same round, as models often do. */
+    fun requestToolsAfterText(text: String, vararg calls: Pair<String, String>) {
+        script.add(Step(AssistantMessage.builder().content(text).toolCalls(toolCalls(calls)).build(), [text]))
+    }
+
+    private fun toolCalls(calls: Array<out Pair<String, String>>): List<AssistantMessage.ToolCall> =
+        calls.map { (val name = first, val argumentsJson = second) ->
             AssistantMessage.ToolCall("call-${toolCallIds.incrementAndGet()}", "function", name, argumentsJson)
         }
-        script.add(Step(AssistantMessage.builder().toolCalls(toolCalls).build(), []))
-    }
 
     /** Queues one text reply that is delivered as several chunks when streamed and joined when called. */
     fun replyChunks(vararg chunks: String) {
@@ -100,14 +107,20 @@ class FakeChatModel(private val observationRegistry: ObservationRegistry = Obser
     /**
      * Streamed text is one response per chunk. Chunk shape tolerated by the streaming tool loop (verified by
      * FakeChatModelToolsTest): a tool-call step is a single response whose AssistantMessage carries the tool calls,
-     * with no text and no finish metadata. The advisor aggregates the stream, runs the tool, and calls stream() again.
+     * with no text and no finish metadata. A step from [requestToolsAfterText] streams its text first, as providers
+     * do, then that tool-call response. The advisor aggregates the stream, runs the tool, and calls stream() again.
      */
     override fun stream(prompt: Prompt): Flux<ChatResponse> =
         Flux.defer {
             received.add(prompt)
             val step = script.poll() ?: return@defer Flux.error(IllegalStateException(exhaustedMessage(prompt)))
-            if (step.message.hasToolCalls()) {
+            if (step.message.hasToolCalls() && step.chunks.isEmpty()) {
                 Flux.just(ChatResponse([Generation(step.message)]))
+            } else if (step.message.hasToolCalls()) {
+                // Like a real provider: the round's text streams first, the tool calls come in a last chunk.
+                val toolCalls = AssistantMessage.builder().toolCalls(step.message.toolCalls).build()
+                Flux.fromIterable(step.chunks).map { ChatResponse([Generation(AssistantMessage(it))]) }
+                    .concatWith(Flux.just(ChatResponse([Generation(toolCalls)])))
             } else {
                 val chunks = Flux.fromIterable(step.chunks).map { ChatResponse([Generation(AssistantMessage(it))]) }
                 step.failure?.let { chunks.concatWith(Flux.error(it)) } ?: chunks

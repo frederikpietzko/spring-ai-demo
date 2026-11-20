@@ -706,11 +706,28 @@ Ollama was upgraded to 0.40.16 and `d1-omni:600m` pulled. The backend's health t
 
 Local data: claims 4700 and 4711 were back to their seed status FILED before the adjuster run; the first e2e run had approved them through the bug fixed in 14cf78c (no payouts existed).
 
-Found in this follow-up (open):
+Found in this follow-up (all fixed by the change `adjuster-memory` below):
 
 - Major (demo flow): the adjuster has no conversation memory. A follow-up such as "approve it anyway" loses the claim from the previous turn, and adjuster conversations do not appear in the desktop list. Session memory was wired for the claimant only (merge decision); giving the adjuster the session advisors is the follow-up.
 - Minor: the desktop shows the model's Markdown raw (`**bold**`, backticks).
 - Minor: amounts show as raw minor units (800000) in the claim card and the analytics table.
 - Minor: text from two model rounds is joined without a space ("numbers.In", "asked.Claim").
 - Minor: the empty-state hint says "Describe the kaiju damage" for the adjuster too.
+
+### Follow-up change `adjuster-memory`
+
+Done directly by the orchestrator with a short OpenSpec change, test-first, plus one lenient sonnet spec reviewer (no blockers). Binding text: `openspec/changes/archive/2026-11-20-adjuster-memory/design.md`.
+
+**Decisions**
+
+- **Adjuster memory without session advisors:** before each turn the adjuster loads the conversation's stored user and assistant text messages from the same JDBC session store (agent name `adjuster`), stores the user message right away and the turn's text when its stream ends, also after a pause and after the resumed turn. *Why:* the adjuster resumes a paused reply from an explicit message list; the session advisors would add the history to that list a second time.
+- **One list per persona:** `GET /conversations?persona=ADJUSTER`, with the claimant as the default. The desktop starts a new conversation on a persona switch, so one id never mixes agents; the switch is ignored while an answer streams or a confirmation waits. *Why:* simplest way to keep agents apart without a schema change.
+- **Round breaks in the stream:** a small `RoundBreaks` advisor inside the tool loop puts a paragraph break before a later round's first text; the desktop adds one before a resumed reply. *Why:* a counter read in `collect` would race with Reactor's buffering. The fake chat model now streams a round's text before its tool-call chunk, as providers do.
+- **Money in one place:** `formatMinor` in `chat-protocol` (comma grouping, two decimals, `Locale.ROOT`); the backend formats the payouts table, the desktop formats the claim card.
+- **Markdown:** a small function renders bold, italics, inline code and bullets for assistant text; user text stays plain. *Why:* no library for four constructs.
+
+**Follow-ups**
+
+- A paused turn and its resumed turn are stored as two consecutive assistant messages (harmless; consecutive turns are merged by the provider).
+- The desktop UI was not re-driven after this change; it is covered by the view-model and semantics tests.
 

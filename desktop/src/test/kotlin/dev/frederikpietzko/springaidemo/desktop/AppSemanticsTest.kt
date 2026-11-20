@@ -211,10 +211,10 @@ class AppSemanticsTest {
             onNodeWithText("Prepare my claim").assertIsDisplayed()
             onNodeWithText("KP-1001").assertIsDisplayed()
             onNodeWithText("Car roof").assertIsDisplayed()
-            onNodeWithText("800000").assertIsDisplayed()
+            onNodeWithText("8,000.00").assertIsDisplayed()
             onNodeWithText("Garden gnome").assertIsDisplayed()
-            onNodeWithText("25000").assertIsDisplayed()
-            onNodeWithText("825000").assertIsDisplayed()
+            onNodeWithText("250.00").assertIsDisplayed()
+            onNodeWithText("8,250.00").assertIsDisplayed()
             onNodeWithText("Confirm").assertIsEnabled()
         }
 
@@ -352,6 +352,33 @@ class AppSemanticsTest {
         onNode(hasSetTextAction()).performTextInput(text)
         onNodeWithText("Send").performClick()
         waitForIdle()
+    }
+
+    @Test
+    fun `the adjuster gets its own hint and the conversation list is asked for the adjuster`() =
+        runDesktopComposeUiTest {
+            val api = FakeChatApi()
+            setContent { App(api) }
+            waitForIdle()
+
+            choosePersona("Adjuster")
+
+            onNodeWithText("Ask about a claim, for example: Process claim #4711.").assertIsDisplayed()
+            assertEquals(Persona.ADJUSTER, api.listedFor.last())
+        }
+
+    @Test
+    fun `Markdown in a reply is rendered without its markers`() = runDesktopComposeUiTest {
+        val reply = "Claim 4711 is **APPROVED**, see `issuePayout`"
+        val api = FakeChatApi { flowOf(ChatEvent.TextDelta(reply), ChatEvent.Done) }
+        setContent { App(api) }
+        waitForIdle()
+
+        onNode(hasSetTextAction()).performTextInput("Status?")
+        onNodeWithText("Send").performClick()
+        waitForIdle()
+
+        onNodeWithText("Claim 4711 is APPROVED, see issuePayout").assertIsDisplayed()
     }
 
     private fun ComposeUiTest.choosePersona(label: String) {
