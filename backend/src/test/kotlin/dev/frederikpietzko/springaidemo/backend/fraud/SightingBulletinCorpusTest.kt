@@ -52,10 +52,10 @@ class SightingBulletinCorpusTest {
     @ParameterizedTest
     @ValueSource(
         strings = [
-            "observedAt: 2026-11-18T14:45:00Z\nplace: SALTMARSH\n\nA class 3 kaiju.",
-            "id: SB-900\nplace: SALTMARSH\n\nA class 3 kaiju.",
-            "id: SB-900\nobservedAt: yesterday afternoon\nplace: SALTMARSH\n\nA class 3 kaiju.",
-            "id: SB-900\nobservedAt: 2026-11-18T14:45:00Z\n\nA class 3 kaiju.",
+            "---\nobservedAt: 2026-11-18T14:45:00Z\nplace: SALTMARSH\n---\n\nA class 3 kaiju.",
+            "---\nid: SB-900\nplace: SALTMARSH\n---\n\nA class 3 kaiju.",
+            "---\nid: SB-900\nobservedAt: yesterday afternoon\nplace: SALTMARSH\n---\n\nA class 3 kaiju.",
+            "---\nid: SB-900\nobservedAt: 2026-11-18T14:45:00Z\n---\n\nA class 3 kaiju.",
         ],
     )
     fun `a malformed bulletin file is rejected by name`(content: String) {

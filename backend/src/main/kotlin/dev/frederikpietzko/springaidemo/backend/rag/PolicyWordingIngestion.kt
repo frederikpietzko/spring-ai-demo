@@ -18,9 +18,8 @@ private val log = LoggerFactory.getLogger(PolicyWordingIngestion::class.java)
 private const val CORPUS_FILES = "classpath:corpus/policy-wording/*.md"
 
 /**
- * Loads the policy wording into the vector store at every start (ETL): Markdown sections, token chunks, one embedding
- * call for all chunks, then an upsert with stable ids, so a re-run replaces rows instead of adding them. A failing
- * embedding call aborts startup; nothing is written before all chunks are embedded.
+ * ETL at every start: Markdown sections, token chunks, one embedding call for all chunks, then an upsert with stable
+ * ids, so a re-run replaces rows instead of adding them.
  */
 @Component
 @MustUseReturnValues

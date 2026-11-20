@@ -13,10 +13,7 @@ private const val MAX_MATCHES = 5
  */
 @Component
 class ConversationSearch(private val conversations: Conversations) {
-    /**
-     * The five most recent messages of this conversation that contain [query] (ignoring case), oldest first, as
-     * `user: ...` or `assistant: ...` lines. The conversation comes from the request's tool context.
-     */
+    /** The most recent messages containing [query], oldest first; the conversation comes from the tool context. */
     @Tool(
         name = "conversation_search",
         description = "Searches every earlier message of this conversation, also those no longer in your context, " +

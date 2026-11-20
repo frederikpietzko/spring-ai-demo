@@ -107,7 +107,6 @@ class ArchitectureTest {
                 "${BackendApplication::class.java.packageName}.intake..",
                 "${BackendApplication::class.java.packageName}.observability..",
                 "${BackendApplication::class.java.packageName}.rag..",
-                "${BackendApplication::class.java.packageName}.springai..",
                 "dev.frederikpietzko.springaidemo.chatprotocol..",
                 "org.jetbrains.exposed..",
             )

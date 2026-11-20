@@ -18,9 +18,8 @@ const val OBSERVED_AT_EPOCH_SECOND = "observedAtEpochSecond"
 private val log = LoggerFactory.getLogger(SightingBulletinIngestion::class.java)
 
 /**
- * Loads the sighting bulletins into the vector store at every start: one document per bulletin (a bulletin is short,
- * so no splitter) with its place and observation time as metadata, one embedding call for all of them, then an upsert
- * with stable ids `sighting-bulletin/<id>`. A failing embedding call aborts startup before anything is written.
+ * Loads the sighting bulletins into the vector store at every start: one document per bulletin with its place and
+ * observation time as metadata, one embedding call for all, then an upsert with stable ids.
  */
 @Component
 @MustUseReturnValues

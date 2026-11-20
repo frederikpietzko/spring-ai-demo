@@ -79,7 +79,7 @@ class McpClientWiringTest {
             assertEquals("http://localhost:8081", connections["core-adjuster"]?.url())
             assertEquals("http://localhost:8081", connections["core-claimant"]?.url())
             assertEquals(
-                setOf("adjusterCoreTools", "claimantCoreTools"),
+                setOf("adjusterCoreTools"),
                 context.getBeansOfType(SyncMcpToolCallbackProvider::class.java).keys,
             )
         }
@@ -115,16 +115,12 @@ class McpClientWiringTest {
     }
 
     @Test
-    fun `each connection sends its persona's token to the core system`() {
+    fun `the adjuster connection sends the adjuster's token to the core system`() {
         StubAuthServerAndCore().use { stub ->
             runner.withPropertyValues(*stub.urls).run { context ->
                 assertFails { context.getBean("adjusterCoreTools", ToolCallbackProvider::class.java).toolCallbacks }
-                val adjusterRequests = stub.coreAuthorizations.toList()
-                assertFails { context.getBean("claimantCoreTools", ToolCallbackProvider::class.java).toolCallbacks }
-                val claimantRequests = stub.coreAuthorizations.drop(adjusterRequests.size)
 
-                assertEquals("Bearer t-$ADJUSTER", adjusterRequests.firstOrNull())
-                assertEquals("Bearer t-$CLAIMANT", claimantRequests.firstOrNull())
+                assertEquals("Bearer t-$ADJUSTER", stub.coreAuthorizations.firstOrNull())
             }
         }
     }

@@ -147,7 +147,7 @@ class AdjusterTodoTest {
 
     private companion object {
         const val ADJUSTER_REVIEW_4711 = """{"persona":"ADJUSTER","message":"Review claim 4711"}"""
-        const val DENIED = "The adjuster did not approve this payout."
+        const val DENIED = "The adjuster did not approve this call."
         const val FIRST_LIST = """{"todos":[""" +
             """{"content":"Verify the policy","status":"in_progress","activeForm":"Verifying the policy"},""" +
             """{"content":"Check coverage","status":"pending","activeForm":"Checking coverage"}]}"""

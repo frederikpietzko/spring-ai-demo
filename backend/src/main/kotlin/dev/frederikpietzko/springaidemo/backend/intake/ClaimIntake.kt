@@ -1,8 +1,8 @@
 package dev.frederikpietzko.springaidemo.backend.intake
 
-import dev.frederikpietzko.springaidemo.backend.springai.entity
 import org.slf4j.LoggerFactory
 import org.springframework.ai.chat.client.ChatClient
+import org.springframework.ai.chat.client.entity
 import org.springframework.ai.chat.messages.Message
 import org.springframework.ai.chat.messages.UserMessage
 import org.springframework.beans.factory.annotation.Value
@@ -25,10 +25,9 @@ private val NOTHING_REPORTED = ClaimReport(null, null, null, null, null, null)
 const val NO_PREPARED_CLAIM = "there is no prepared claim to confirm"
 
 /**
- * Turns a claimant conversation into a claim report with one blocking structured-output call, keeps a complete one as
- * the conversation's prepared claim and files it on confirmation. Its chat client is private and has no advisors: the
- * session advisors of the claimant chat would store the extraction as a turn, and a second `ChatClient` bean would make
- * the claimant chat's injection by type ambiguous.
+ * Structured output: turns a claimant conversation into a typed [ClaimReport] with one blocking call, keeps a complete
+ * one as the conversation's prepared claim and files it on confirmation. Its chat client has no advisors, so the
+ * extraction is not stored as a turn of the conversation.
  */
 @Service
 class ClaimIntake(
@@ -42,11 +41,8 @@ class ClaimIntake(
     private val preparedClaims = ConcurrentHashMap<String, ValidClaim>()
 
     /**
-     * Extracts a claim report from [history], the conversation [conversationId] as plain user and assistant messages
-     * in order, and validates it; a complete report becomes the conversation's prepared claim, replacing an earlier
-     * one, which any other outcome drops. A reply that is no claim report is [IntakeResult.Unreadable]; a failing model
-     * call throws. Without a user message there is nothing to extract: every detail is missing and the model is not
-     * asked.
+     * Extracts and validates a claim report from [history]. A complete report becomes the conversation's prepared
+     * claim; any other outcome drops the earlier one. A failing model call throws.
      */
     fun prepare(conversationId: String, history: List<Message>): IntakeResult {
         // Whatever happens below, the card the claimant saw before is outdated.
@@ -56,26 +52,28 @@ class ClaimIntake(
         return result
     }
 
-    /**
-     * Files the prepared claim of conversation [conversationId] and forgets it. Nothing prepared is rejected; a claim
-     * the filing refuses stays prepared, and so does one whose filing fails (the core system is unreachable), which
-     * then throws.
-     */
+    /** Files the conversation's prepared claim and forgets it; a refused or failed filing keeps it prepared. */
     fun confirm(conversationId: String): FilingResult {
         val claim = preparedClaims.remove(conversationId) ?: return FilingResult.Rejected(NO_PREPARED_CLAIM)
         var filed = false
         try {
             return claimFiling.file(claim).also { filed = it is FilingResult.Filed }
         } finally {
-            // Refused or failed: the claim stays prepared, unless a prepare that ran meanwhile made a newer card.
+            // Unless a prepare that ran meanwhile made a newer card.
             if (!filed) preparedClaims.putIfAbsent(conversationId, claim)
         }
     }
 
     private fun extractAndValidate(history: List<Message>): IntakeResult {
+        // Nothing said yet: every detail is missing and the model is not asked.
         if (history.none { it is UserMessage }) return NOTHING_REPORTED.validate()
         val report = try {
-            extract(history)
+            chatClient.prompt()
+                .system { it.param("today", LocalDate.now(ZoneOffset.UTC).toString()) }
+                .messages(history)
+                .user(INSTRUCTION)
+                .call()
+                .entity<ClaimReport>()
         } catch (e: JacksonException) {
             // Malformed JSON, an unknown enum constant or a value of the wrong type.
             log.warn("Unreadable claim report", e)
@@ -83,13 +81,4 @@ class ClaimIntake(
         }
         return report?.validate() ?: IntakeResult.Unreadable
     }
-
-    /** The one blocking structured-output call; `null` when the model produced no generation at all. */
-    private fun extract(history: List<Message>): ClaimReport? =
-        chatClient.prompt()
-            .system { it.param("today", LocalDate.now(ZoneOffset.UTC).toString()) }
-            .messages(history)
-            .user(INSTRUCTION)
-            .call()
-            .entity<ClaimReport>()
 }

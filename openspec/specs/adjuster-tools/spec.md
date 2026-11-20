@@ -44,11 +44,11 @@ The core tools SHALL be offered to the model under exactly the names the core sy
 - **THEN** the request fails with an error naming the duplicate tool and the model receives no prompt
 
 ### Requirement: The core connection is configured by property and starts lazily
-The backend SHALL connect to the core system over Streamable HTTP with one connection per persona, `core-adjuster` and `core-claimant`, at `http://localhost:8081` by default (`CORE_MCP_URL`), and SHALL offer each connection's tools as its own provider, `adjusterCoreTools` and `claimantCoreTools`. It SHALL start without the core system and the auth-server and connect on the first request that needs the tools.
+The backend SHALL connect to the core system over Streamable HTTP with one connection per persona, `core-adjuster` and `core-claimant`, at `http://localhost:8081` by default (`CORE_MCP_URL`), and SHALL offer the adjuster connection's tools as the provider `adjusterCoreTools`. It SHALL start without the core system and the auth-server and connect on the first request that needs the tools.
 
 #### Scenario: Committed configuration points at the core
 - **WHEN** the committed configuration is loaded with the MCP client auto-configurations
-- **THEN** the connections `core-adjuster` and `core-claimant` both have the URL `http://localhost:8081` and exactly two MCP tool callback providers exist, named `adjusterCoreTools` and `claimantCoreTools`
+- **THEN** the connections `core-adjuster` and `core-claimant` both have the URL `http://localhost:8081` and exactly one MCP tool callback provider exists, named `adjusterCoreTools`
 
 #### Scenario: Starts without the core system
 - **WHEN** that context starts while nothing listens on port 8081 or port 9000
@@ -94,7 +94,7 @@ A model reply that requests `updateClaimStatus` with the status `APPROVED` SHALL
 
 #### Scenario: Denial text and other statuses
 - **WHEN** an approval is denied, or `updateClaimStatus` is called with any status other than `APPROVED`
-- **THEN** the model receives the tool result "The adjuster did not approve this call." for the denied approval (a denied payout keeps its own text), and a call to any other status runs without a confirmation
+- **THEN** the model receives the tool result "The adjuster did not approve this call." for the denied approval (a denied payout gets the same text), and a call to any other status runs without a confirmation
 
 ### Requirement: Approving runs the payout exactly once and continues the answer
 A decision request that approves a pending confirmation SHALL run the paused tool calls once, hand the results to the model and stream its answer, ending with done. The continuation SHALL be the whole turn so far: the user message, every tool round that ran before the pause in the same turn (the model's tool calls and their results), the paused reply and its tool results. The pending confirmation SHALL be consumed by the decision, so the same id cannot run the tools again.
@@ -202,7 +202,7 @@ The backend SHALL register one OAuth client per persona for the grant `client_cr
 Every request of a connection to the core system SHALL carry the bearer token of its persona's OAuth client, and the backend's own endpoints SHALL stay without security.
 
 #### Scenario: Each connection sends its persona's token
-- **WHEN** the adjuster provider and the claimant provider each list tools against a stub core system that records the `Authorization` header and answers 401, with a stub token endpoint that issues the token `t-<client id>`
+- **WHEN** the adjuster provider lists tools and the claim filing calls `fileClaim` against a stub core system that records the `Authorization` header and answers 401, with a stub token endpoint that issues the token `t-<client id>`
 - **THEN** the first request of the adjuster connection carried the bearer token `t-adjuster-agent` and that of the claimant connection the bearer token `t-claimant-agent`
 
 #### Scenario: Backend endpoints stay open

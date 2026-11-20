@@ -10,51 +10,32 @@ import java.time.format.DateTimeFormatter
 /** The core tool that files a claim. */
 private const val FILE_CLAIM = "fileClaim"
 
-/**
- * The customer whose claims the claimant chat files: a fixed demo claimant (customer 1 of the core's seed, owner of
- * policy `KP-1001`) until end-user login exists (ADR-0009).
- */
+/** A fixed demo claimant (customer 1 of the core's seed, owner of `KP-1001`) until end-user login exists (ADR-0009). */
 const val DEMO_CLAIMANT_ID = 1L
 
-/**
- * Who files: the identity keys the core reads from the MCP `_meta` of a claimant call (ADR-0009). They travel in the
- * request's `_meta` only, never in a message.
- */
+/** Who files: sent as MCP `_meta` only, never in a message (ADR-0009). */
 private val CLAIMANT_IDENTITY: Map<String, Any> = mapOf("actor" to "claimant-agent", "claimantId" to DEMO_CLAIMANT_ID)
-
-/** Files a validated claim report as a claim. */
-fun interface ClaimFiling {
-    /** Files [claim]: its new claim number, or the reason it was refused. */
-    fun file(claim: ValidClaim): FilingResult
-}
 
 /** The outcome of filing a claim. */
 sealed interface FilingResult {
-    /** The claim was filed under [claimNumber]. */
     data class Filed(val claimNumber: Long) : FilingResult
 
-    /** The claim was not filed; [reason] is meant for the claimant. */
+    /** Not filed; [reason] is meant for the claimant. */
     data class Rejected(val reason: String) : FilingResult
 }
 
-/**
- * The claimant agent's connection to the core system (`core-mcp`, MCP connection `core-claimant`, ADR-0009): one MCP
- * tool call. A refusal of the core is a result marked as an error; an unreachable core throws.
- */
+/** One MCP tool call on the claimant's connection to the core (`core-claimant`); the seam the tests fake. */
 fun interface ClaimantCore {
-    /** Calls the tool [request] names and returns its result. */
     fun callTool(request: CallToolRequest): CallToolResult
 }
 
 /**
- * Files claims in the core system with its `fileClaim` MCP tool, as the claimant agent for the [DEMO_CLAIMANT_ID]
- * (ADR-0003: the core owns claims and their numbers). The claim number is the one the core assigns; a claim the core
- * refuses (an unknown policy, an incident outside the policy's validity, another customer's policy) is rejected with
- * the core's own words. An unreachable core, or an answer without a claim number, throws.
+ * Files a validated claim in the core system with its `fileClaim` MCP tool (ADR-0003: the core owns claims and their
+ * numbers). A claim the core refuses is rejected with the core's own words; an unreachable core throws.
  */
 @Component
-class CoreClaimFiling(private val core: ClaimantCore, private val json: JsonMapper) : ClaimFiling {
-    override fun file(claim: ValidClaim): FilingResult {
+class ClaimFiling(private val core: ClaimantCore, private val json: JsonMapper) {
+    fun file(claim: ValidClaim): FilingResult {
         val request = CallToolRequest.builder(FILE_CLAIM)
             .arguments(claim.toArguments())
             .meta(CLAIMANT_IDENTITY)

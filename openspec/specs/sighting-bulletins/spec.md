@@ -7,7 +7,7 @@ Provides the fictional sighting bulletins as a searchable corpus in the vector s
 ## Requirements
 
 ### Requirement: Sighting bulletin corpus places the kaiju in the neighbouring town at the time of claim 4711
-The backend SHALL ship fictional sighting bulletins as Markdown files, each with a header (id, UTC observation time, place) and a text that contains "kaiju" and states its class. The corpus SHALL place the kaiju at the neighbouring town `SALTMARSH`, about 40 km from the harbour, around the incident time of seed claim 4711 (`2026-11-18T15:00:00Z`), with no `HARBOUR` bulletin in the hours around it, and SHALL agree with seed claims 4712 and 4713.
+The backend SHALL ship fictional sighting bulletins as Markdown files, each with frontmatter (id, UTC observation time, place) and a text that contains "kaiju" and states its class. The corpus SHALL place the kaiju at the neighbouring town `SALTMARSH`, about 40 km from the harbour, around the incident time of seed claim 4711 (`2026-11-18T15:00:00Z`), with no `HARBOUR` bulletin in the hours around it, and SHALL agree with seed claims 4712 and 4713.
 
 #### Scenario: Neighbouring-town bulletin contradicts claim 4711
 - **WHEN** the bulletin documents are read

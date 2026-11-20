@@ -1,16 +1,23 @@
 package dev.frederikpietzko.springaidemo.coremcp.mcp
 
+import dev.frederikpietzko.springaidemo.coremcp.security.CallerAccess
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult
 import tools.jackson.databind.json.JsonMapper
 
-/**
- * The two shapes a tool answers with: the JSON of a value, or an error the model can read. Domain failures are tool
- * errors (`isError = true`), never protocol errors, so the agent sees what went wrong and can react.
- */
-object ToolResults {
-    fun ok(json: JsonMapper, value: Any): CallToolResult =
-        CallToolResult.builder().addTextContent(json.writeValueAsString(value)).build()
+/** A tool answer with the JSON of [value]. */
+fun JsonMapper.ok(value: Any): CallToolResult =
+    CallToolResult.builder().addTextContent(writeValueAsString(value)).build()
 
-    fun error(message: String): CallToolResult =
-        CallToolResult.builder().isError(true).addTextContent(message).build()
-}
+/** A tool error the model can read; domain failures are tool errors (`isError`), never protocol errors. */
+fun toolError(message: String): CallToolResult =
+    CallToolResult.builder().isError(true).addTextContent(message).build()
+
+/**
+ * Runs [block] only if the token has [scope] and [denial] (a further check, run after the scope check) allows the
+ * call; otherwise answers with the denial as tool error (ADR-0009).
+ */
+inline fun CallerAccess.withScope(
+    scope: String,
+    denial: () -> String? = { null },
+    block: () -> CallToolResult,
+): CallToolResult = (scopeDenial(scope) ?: denial())?.let(::toolError) ?: block()

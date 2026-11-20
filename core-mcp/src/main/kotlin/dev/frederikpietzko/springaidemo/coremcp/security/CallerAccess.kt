@@ -12,9 +12,8 @@ private const val CLAIMANT_AGENT = "claimant-agent"
 private const val CLAIMANT_ID = "claimantId"
 
 /**
- * What the caller of a tool may do (ADR-0009). It reads the caller's access token from the security context, which
- * Spring AI sets on the request thread that runs a synchronous tool. Each check answers `null` when the call is
- * allowed, otherwise the sentence the tool returns as its error.
+ * What the caller of a tool may do (ADR-0009), read from the security context of the request thread (synchronous
+ * tools only). Each check answers `null` when allowed, otherwise the sentence the tool returns as its error.
  */
 @Component
 class CallerAccess {

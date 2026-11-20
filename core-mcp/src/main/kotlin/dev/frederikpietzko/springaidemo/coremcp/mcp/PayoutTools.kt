@@ -14,7 +14,7 @@ import java.time.Instant
 /** What `issuePayout` answers: the payout and whether this call created it. */
 data class PayoutReceipt(val claimNumber: Long, val amountMinor: Long, val issuedAt: Instant, val newlyIssued: Boolean)
 
-/** The MCP tool that pays claims; only a token with `payout:write` (the adjuster agent's) may call it. */
+/** The MCP tool that pays claims; needs the scope `payout:write` (the adjuster agent). */
 @Component
 class PayoutTools(private val payouts: PayoutService, private val json: JsonMapper, private val access: CallerAccess) {
     @McpTool(
@@ -22,15 +22,16 @@ class PayoutTools(private val payouts: PayoutService, private val json: JsonMapp
             "the claim becomes PAID. Calling it again for a paid claim returns the existing payout.",
         annotations = McpTool.McpAnnotations(idempotentHint = true),
     )
-    fun issuePayout(@McpToolParam(description = "Claim number, for example 4711") claimNumber: Long): CallToolResult {
-        access.scopeDenial("payout:write")?.let { return ToolResults.error(it) }
-        return when (val result = payouts.issue(claimNumber)) {
+    fun issuePayout(
+        @McpToolParam(description = "Claim number, for example 4711") claimNumber: Long,
+    ): CallToolResult = access.withScope("payout:write") {
+        when (val result = payouts.issue(claimNumber)) {
             is PayoutResult.Issued -> receipt(claimNumber, result.payout, newlyIssued = true)
             is PayoutResult.AlreadyIssued -> receipt(claimNumber, result.payout, newlyIssued = false)
-            PayoutResult.NotFound -> ToolResults.error("Claim $claimNumber not found")
+            PayoutResult.NotFound -> toolError("Claim $claimNumber not found")
             is PayoutResult.NotApproved ->
-                ToolResults.error("Claim $claimNumber is ${result.status}; only APPROVED claims can be paid")
-            is PayoutResult.NothingPayable -> ToolResults.error(
+                toolError("Claim $claimNumber is ${result.status}; only APPROVED claims can be paid")
+            is PayoutResult.NothingPayable -> toolError(
                 "Claim $claimNumber: the damage of ${result.totalEstimatedMinor} does not exceed " +
                     "the deductible of ${result.deductibleMinor}; nothing to pay",
             )
@@ -38,5 +39,5 @@ class PayoutTools(private val payouts: PayoutService, private val json: JsonMapp
     }
 
     private fun receipt(claimNumber: Long, payout: Payout, newlyIssued: Boolean): CallToolResult =
-        ToolResults.ok(json, PayoutReceipt(claimNumber, payout.amountMinor, payout.issuedAt, newlyIssued))
+        json.ok(PayoutReceipt(claimNumber, payout.amountMinor, payout.issuedAt, newlyIssued))
 }

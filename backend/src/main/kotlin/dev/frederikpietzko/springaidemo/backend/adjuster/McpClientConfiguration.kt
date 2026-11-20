@@ -13,67 +13,39 @@ import org.springframework.context.annotation.Configuration
 /** The tool-context keys that say who calls: the persona (`actor`) and, for the claimant, the customer id. */
 private val IDENTITY_KEYS: Set<String> = ["actor", "claimantId"]
 
-/**
- * What the core system receives of a tool context as MCP `_meta`: the identity keys only. Everything else, such as the
- * claimant's conversation id, stays in the backend (the default converter would forward every entry).
- */
+/** Only the identity keys of a tool context travel to the core as MCP `_meta`; the rest stays in the backend. */
 fun identityMeta(toolContext: ToolContext?): Map<String, Any> =
     toolContext?.context.orEmpty().filterKeys { it in IDENTITY_KEYS }
 
 /**
- * Wiring of the MCP client that connects the agents to the core system (`core-mcp`): one connection and one tool
- * provider per persona (ADR-0009), so each persona's tools reach the core with that persona's token, and the claimant's
- * direct calls for filing claims. These beans exist only while the MCP client is on (the shared test context switches
- * it off and fakes them).
+ * The MCP client side of the core system (`core-mcp`): one connection per persona (ADR-0009), each sending that
+ * persona's token. The shared test context switches the MCP client off and fakes these beans.
  */
 @Configuration(proxyBeanMethods = false)
+@ConditionalOnBooleanProperty("spring.ai.mcp.client.enabled", matchIfMissing = true)
 class McpClientConfiguration {
-    /**
-     * Core tool names stay exactly as published: the confirmation property (`spring.ai.tools.confirmation.tools`)
-     * matches by name. The default generator would rename a second `issuePayout` to `alt_1_issuePayout`, which the
-     * property no longer gates; with this one a duplicate name fails instead.
-     */
+    /** Tool names stay as published: `spring.ai.tools.confirmation.tools` matches `issuePayout` by name. */
     @Bean
     fun mcpToolNamePrefixGenerator(): McpToolNamePrefixGenerator = McpToolNamePrefixGenerator.noPrefix()
 
     /** The core tools as the adjuster agent sees them (connection `core-adjuster`). */
     @Bean
-    @ConditionalOnBooleanProperty("spring.ai.mcp.client.enabled", matchIfMissing = true)
     fun adjusterCoreTools(
         @Qualifier("mcpSyncClients") clients: List<McpSyncClient>,
         toolNames: McpToolNamePrefixGenerator,
-    ): SyncMcpToolCallbackProvider = personaTools(clients, "core-adjuster", toolNames)
-
-    /**
-     * The claimant agent's direct calls to the core (connection `core-claimant`, so they carry the claimant's token):
-     * the claim intake files a confirmed claim through them with `fileClaim`. The client connects on the first call.
-     */
-    @Bean
-    @ConditionalOnBooleanProperty("spring.ai.mcp.client.enabled", matchIfMissing = true)
-    fun claimantCore(@Qualifier("mcpSyncClients") clients: List<McpSyncClient>): ClaimantCore =
-        ClaimantCore(personaClient(clients, "core-claimant")::callTool)
-
-    /** The core tools as the claimant agent sees them (connection `core-claimant`); no chat client uses them yet. */
-    @Bean
-    @ConditionalOnBooleanProperty("spring.ai.mcp.client.enabled", matchIfMissing = true)
-    fun claimantCoreTools(
-        @Qualifier("mcpSyncClients") clients: List<McpSyncClient>,
-        toolNames: McpToolNamePrefixGenerator,
-    ): SyncMcpToolCallbackProvider = personaTools(clients, "core-claimant", toolNames)
-
-    /** The one client of [connection] (the auto-configuration puts the connection name in the title). */
-    private fun personaClient(clients: List<McpSyncClient>, connection: String): McpSyncClient =
-        clients.single { it.clientInfo.title() == connection }
-
-    /** The tools of the one client of [connection]. */
-    private fun personaTools(
-        clients: List<McpSyncClient>,
-        connection: String,
-        toolNames: McpToolNamePrefixGenerator,
     ): SyncMcpToolCallbackProvider =
         SyncMcpToolCallbackProvider.builder()
-            .mcpClients(personaClient(clients, connection))
+            .mcpClients(clients.of("core-adjuster"))
             .toolNamePrefixGenerator(toolNames)
             .toolContextToMcpMetaConverter(::identityMeta)
             .build()
+
+    /** The claimant's direct tool calls (connection `core-claimant`): the claim intake files claims through it. */
+    @Bean
+    fun claimantCore(@Qualifier("mcpSyncClients") clients: List<McpSyncClient>): ClaimantCore =
+        ClaimantCore(clients.of("core-claimant")::callTool)
+
+    /** The auto-configuration puts the connection name in the client's title. */
+    private fun List<McpSyncClient>.of(connection: String): McpSyncClient =
+        single { it.clientInfo.title() == connection }
 }

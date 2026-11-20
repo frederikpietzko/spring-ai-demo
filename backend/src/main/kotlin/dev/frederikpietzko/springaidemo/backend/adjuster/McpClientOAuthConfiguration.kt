@@ -27,9 +27,8 @@ private val PERSONA_OF_CONNECTION: Map<String, String> =
     mapOf("core-adjuster" to ADJUSTER_AGENT, "core-claimant" to CLAIMANT_AGENT)
 
 /**
- * The MCP connections to `core-mcp` authenticate with OAuth 2 `client_credentials`, one client per persona (ADR-0009).
- * Written in Kotlin because the backend has no Boot security starter (it would lock the backend's own endpoints), so
- * `spring.security.oauth2.client.*` is not bound. Nothing contacts the auth-server before the first tool listing.
+ * OAuth 2 `client_credentials` for the MCP connections to `core-mcp`, one client per persona (ADR-0009). In Kotlin,
+ * because the backend has no Boot security starter (it would lock the backend's own endpoints).
  */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnBooleanProperty("spring.ai.mcp.client.enabled", matchIfMissing = true)

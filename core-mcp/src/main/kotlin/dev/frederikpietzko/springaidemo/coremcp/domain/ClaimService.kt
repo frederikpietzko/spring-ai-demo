@@ -18,7 +18,6 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
-import java.time.format.DateTimeParseException
 
 private const val EXAMPLE_TIME = "2026-11-18T15:00:00Z"
 
@@ -146,11 +145,6 @@ class ClaimService(private val policies: PolicyService, private val clock: Clock
     }
 }
 
-private fun parseIncidentAt(text: String): OffsetDateTime? =
-    try {
-        OffsetDateTime.parse(text)
-    } catch (_: DateTimeParseException) {
-        null
-    }
+private fun parseIncidentAt(text: String): OffsetDateTime? = runCatching { OffsetDateTime.parse(text) }.getOrNull()
 
 private fun OffsetDateTime.utcDate() = withOffsetSameInstant(ZoneOffset.UTC).toLocalDate()

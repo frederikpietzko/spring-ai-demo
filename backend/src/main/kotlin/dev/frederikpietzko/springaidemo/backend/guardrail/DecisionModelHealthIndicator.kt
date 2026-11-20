@@ -16,11 +16,8 @@ private val PROBE: Map<String, YesNoQuestion> = mapOf(
 )
 
 /**
- * The health of the claimant chat's guardrail (component `decisionModel`): asks the [DecisionModel] one short question.
- * The guardrail fails closed, so while the model cannot answer (an Ollama older than 0.40.4, which has no decision
- * endpoint, or `d1-omni:600m` not pulled) every claimant message ends in the generic error event. Any answer, a
- * refusal included, is up; a failed call is down, and with it the backend's overall health. It costs one small model
- * call per health request.
+ * Health component `decisionModel`: the guardrail fails closed, so while the decision model cannot answer (an Ollama
+ * older than 0.40.4, or `d1-omni:600m` not pulled) every claimant message fails. One small model call per request.
  */
 @Component
 class DecisionModelHealthIndicator(private val decisionModel: DecisionModel) :

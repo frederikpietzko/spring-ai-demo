@@ -23,11 +23,8 @@ const val KEPT_TURNS = 5
 @Configuration(proxyBeanMethods = false)
 class ChatConfiguration {
     /**
-     * The claimant agent's chat client: the claimant instructions as its system prompt, the [AuditAdvisor], the
-     * prompt-injection [GuardrailAdvisor], the policy wording retrieval (ADR-0006), the session advisors (conversation
-     * memory) and the recall tool. The prompt has no parameters, so it is not rendered as a template and may contain
-     * braces. The advisors are sorted by order: audit (outermost, sees the typed text), the guardrail (before anything
-     * stores or retrieves the message), session turn, retrieval, the tool-calling loop and, inside it, session memory.
+     * The claimant agent: system prompt, advisors and the recall tool. The advisors run by order, not as listed:
+     * audit (outermost), guardrail, session turn, retrieval (ADR-0006), the tool loop and, inside it, session memory.
      */
     @Bean
     @Suppress("LongParameterList") // A bean function takes what it wires.

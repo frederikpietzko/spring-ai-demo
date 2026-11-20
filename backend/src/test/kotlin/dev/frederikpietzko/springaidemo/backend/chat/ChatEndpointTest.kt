@@ -6,7 +6,6 @@ import dev.frederikpietzko.springaidemo.backend.testsupport.sseEvents
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatRequest
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
-import kotlinx.coroutines.flow.toList
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.springframework.ai.chat.messages.SystemMessage
@@ -18,7 +17,6 @@ import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.client.EntityExchangeResult
 import org.springframework.test.web.servlet.client.RestTestClient
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -32,9 +30,6 @@ class ChatEndpointTest {
 
     @Autowired
     private lateinit var auditTrail: AuditTrail
-
-    @Autowired
-    private lateinit var controller: ChatController
 
     @Test
     fun `streams the reply chunks in order and then done`() {
@@ -87,15 +82,6 @@ class ChatEndpointTest {
         val result = postChat("""{"persona":"ADJUSTER","message":"Pay 4711"}""")
 
         assertIs<ChatEvent.ConfirmationRequest>(sseEvents(result.responseBody ?: byteArrayOf()).single())
-    }
-
-    @Test
-    suspend fun `an Error from the model is rethrown instead of becoming an error event`() {
-        // Over HTTP an Error can only break the connection, so the controller's event flow is collected directly. Not a
-        // StackOverflowError: Reactor throws JVM-fatal errors on its scheduler thread, and the stream never ends.
-        fake.replyChunksThenFail(NotImplementedError("simulated"), "Hel")
-
-        assertFailsWith<NotImplementedError> { controller.chat(ChatRequest(Persona.CLAIMANT, "Hi")).toList() }
     }
 
     @Test

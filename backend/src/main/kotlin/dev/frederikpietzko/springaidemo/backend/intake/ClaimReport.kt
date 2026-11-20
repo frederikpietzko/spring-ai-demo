@@ -2,7 +2,6 @@ package dev.frederikpietzko.springaidemo.backend.intake
 
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import java.time.OffsetDateTime
-import java.time.format.DateTimeParseException
 
 /** The kaiju classes a report may name: 1 (large lizard) to 5 (city-level). */
 val KAIJU_CLASS_RANGE = 1..5
@@ -69,10 +68,7 @@ sealed interface IntakeResult {
     data object Unreadable : IntakeResult
 }
 
-/**
- * Checks this report: [IntakeResult.Ready] when every detail is present and valid, else [IntakeResult.NeedsDetails]
- * with each missing or invalid detail. Never [IntakeResult.Unreadable]: a report that exists was read.
- */
+/** [IntakeResult.Ready] when every detail is present and valid, else [IntakeResult.NeedsDetails] naming each one. */
 fun ClaimReport.validate(): IntakeResult = with(Details()) {
     val policy = policyNumber?.takeIf { it.isNotBlank() }.orMissing("policy number")
     val district = district.orMissing("district")
@@ -116,9 +112,4 @@ private class Details {
     }
 }
 
-private fun String.toIncidentTime(): OffsetDateTime? =
-    try {
-        OffsetDateTime.parse(this)
-    } catch (_: DateTimeParseException) {
-        null
-    }
+private fun String.toIncidentTime(): OffsetDateTime? = runCatching { OffsetDateTime.parse(this) }.getOrNull()

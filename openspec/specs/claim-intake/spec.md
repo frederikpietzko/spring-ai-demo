@@ -116,7 +116,7 @@ When a claimant request has the action `CONFIRM_CLAIM`, the backend SHALL file t
 - **THEN** the second confirmation files nothing and the first claim is still prepared
 
 ### Requirement: Filing goes to the core system
-Filing SHALL go through a `ClaimFiling` port that returns either the new claim number or a refusal reason. Its adapter SHALL file the claim in the core system with the `fileClaim` MCP tool over the claimant agent's own connection `core-claimant`, with the claim's fields and damage items as arguments and the request `_meta` `actor` `claimant-agent` and `claimantId` 1, the fixed demo claimant until end-user login exists. The claim number SHALL be the one the core assigns.
+Filing SHALL return either the new claim number or a refusal reason. It SHALL file the claim in the core system with the `fileClaim` MCP tool over the claimant agent's own connection `core-claimant`, with the claim's fields and damage items as arguments and the request `_meta` `actor` `claimant-agent` and `claimantId` 1, the fixed demo claimant until end-user login exists. The claim number SHALL be the one the core assigns.
 
 #### Scenario: The core files the claim of the card
 - **WHEN** a claim card for policy `KP-1001`, district `HARBOUR`, incident `2026-11-19T15:00:00Z`, kaiju class 3 and one `VEHICLE` item "Car roof" of 800000 is confirmed

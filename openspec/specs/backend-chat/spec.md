@@ -18,7 +18,7 @@ The backend SHALL accept `POST /chat` with a JSON chat request and SHALL answer 
 - **THEN** the text delta event decodes to the same text
 
 ### Requirement: A stream ends with exactly one terminal event
-Every chat stream that starts SHALL end with exactly one terminal event: done when the model reply completed, error when it failed with an exception, confirmation-request when the reply is waiting for a human decision (see `adjuster-tools`). Done SHALL follow every completed reply whose last event is not itself terminal. Done SHALL NOT follow an error or a confirmation-request. The error message SHALL be generic and the cause only logged. A JVM error SHALL be rethrown without a terminal event.
+Every chat stream that starts SHALL end with exactly one terminal event: done when the model reply completed, error when it failed with an exception, confirmation-request when the reply is waiting for a human decision (see `adjuster-tools`). Done SHALL follow every completed reply whose last event is not itself terminal. Done SHALL NOT follow an error or a confirmation-request. The error message SHALL be generic and the cause only logged.
 
 #### Scenario: Failure after some chunks
 - **WHEN** the model streams the chunk "Hel" and then fails with the message "provider exploded"
@@ -27,10 +27,6 @@ Every chat stream that starts SHALL end with exactly one terminal event: done wh
 #### Scenario: Failure before the first chunk
 - **WHEN** the model fails before streaming any chunk
 - **THEN** the only event is one error event
-
-#### Scenario: A JVM error is rethrown
-- **WHEN** the model streams the chunk "Hel" and then fails with a JVM error instead of an exception
-- **THEN** collecting the stream fails with that error and no error event is produced for it
 
 #### Scenario: A confirmation request is terminal
 - **WHEN** an adjuster reply pauses for a payout confirmation

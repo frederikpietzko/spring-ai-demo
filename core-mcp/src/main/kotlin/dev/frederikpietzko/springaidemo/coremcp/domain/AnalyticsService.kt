@@ -18,7 +18,6 @@ import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
-import java.time.format.DateTimeParseException
 
 /** Counts and aggregates claims by a typed filter, in SQL. No free SQL reaches the database. */
 @Service
@@ -90,9 +89,4 @@ private fun Query.matching(filter: ClaimFilter): Query = apply {
 
 private fun startOfUtcDay(day: LocalDate): OffsetDateTime = day.atStartOfDay().atOffset(ZoneOffset.UTC)
 
-private fun parseDate(text: String): LocalDate? =
-    try {
-        LocalDate.parse(text)
-    } catch (_: DateTimeParseException) {
-        null
-    }
+private fun parseDate(text: String): LocalDate? = runCatching { LocalDate.parse(text) }.getOrNull()

@@ -151,7 +151,7 @@ class AdjusterConfirmationTest {
 
         assertEquals([ChatEvent.TextDelta("Understood, no payout."), ChatEvent.Done], events)
         assertEquals([], coreTools.calls)
-        assertEquals("The adjuster did not approve this payout.", lastToolResult())
+        assertEquals("The adjuster did not approve this call.", lastToolResult())
     }
 
     @Test
@@ -167,7 +167,7 @@ class AdjusterConfirmationTest {
         val results = fake.prompts.last().instructions.filterIsInstance<ToolResponseMessage>().last().responses
             .associate { it.name to it.responseData }
         assertTrue(results["getClaim"].orEmpty().contains("\"status\":\"FILED\""), results.toString())
-        assertEquals("The adjuster did not approve this payout.", results["issuePayout"])
+        assertEquals("The adjuster did not approve this call.", results["issuePayout"])
     }
 
     @Test

@@ -73,8 +73,8 @@ spring:
         # Connect on the first adjuster request instead of at startup, so the backend starts without core-mcp.
         initialized: false
         toolcallback:
-          # The auto-configured provider would publish the tools of both connections under the same names. Each
-          # persona gets its own provider instead (adjusterCoreTools, claimantCoreTools in McpClientConfiguration).
+          # The auto-configured provider would publish the tools of both connections under the same names; the
+          # adjuster gets its own provider instead (adjusterCoreTools in McpClientConfiguration).
           enabled: false
         streamable-http:
           connections:

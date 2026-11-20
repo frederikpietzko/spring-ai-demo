@@ -1,7 +1,7 @@
 package dev.frederikpietzko.springaidemo.backend.testsupport
 
-import dev.frederikpietzko.springaidemo.backend.springai.entity
-import dev.frederikpietzko.springaidemo.backend.springai.responseEntity
+import org.springframework.ai.chat.client.entity
+import org.springframework.ai.chat.client.responseEntity
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.chat.messages.SystemMessage
 import org.springframework.ai.chat.messages.UserMessage

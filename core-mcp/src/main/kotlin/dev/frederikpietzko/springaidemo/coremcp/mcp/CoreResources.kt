@@ -11,9 +11,8 @@ import org.springframework.stereotype.Component
 import tools.jackson.databind.json.JsonMapper
 
 /**
- * MCP resources: documents a client can read by URI. An unknown id throws; the annotation callback turns that into an
- * MCP error whose message ends with the exception's message (`... Cause: Claim 999999 not found`). They need no
- * scope, only a valid token, and a claimant reads only their own claims and policies (a denial throws the same way).
+ * MCP resources, readable by URI with any valid token; a claimant reads only their own. An unknown id or a denial
+ * throws; the annotation callback turns that into an MCP error ending in the message (`... Cause: Claim 9 not found`).
  */
 @Component
 class CoreResources(

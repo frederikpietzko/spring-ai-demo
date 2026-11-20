@@ -30,11 +30,8 @@ private val log = LoggerFactory.getLogger(ChatController::class.java)
 private const val GENERIC_ERROR = "The claims desk is unavailable."
 
 /**
- * The chat endpoints: one chat request, or one decision on a paused adjuster reply, in; the reply as server-sent
- * events out, one JSON [ChatEvent] per event. The persona picks the agent: the claimant agent or the adjuster agent.
- * Every stream ends with exactly one terminal event: [ChatEvent.Done] on success, [ChatEvent.Error] on failure, or the
- * agent's own [ChatEvent.ConfirmationRequest] (or error event) when the reply waits for a human decision (or nothing
- * waits for the decision). A JVM `Error` is not a failed reply: it is rethrown and breaks the stream.
+ * The chat endpoints: a chat request, or a decision on a paused adjuster reply, in; the reply as server-sent events
+ * out, one JSON [ChatEvent] per event. Every stream ends with exactly one terminal event.
  */
 @RestController
 class ChatController(
@@ -44,10 +41,8 @@ class ChatController(
     private val claimIntake: ClaimIntake,
 ) {
     /**
-     * Streams the answer to [request]; the persona picks the agent. A request without a conversation id, or with a
-     * blank one, gets a fresh conversation of its own. For the claimant, the action decides who answers: a message is
-     * answered by the claimant agent, the claim actions by the [ClaimIntake], whatever the request's message says. The
-     * adjuster agent answers messages only; a claim action for the adjuster gets one error event and no model call.
+     * Streams the answer to [request]; the persona picks the agent. For the claimant, the claim actions are answered
+     * by the [ClaimIntake] instead of the agent.
      */
     @PostMapping("/chat", consumes = [MediaType.APPLICATION_JSON_VALUE], produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
     fun chat(@RequestBody request: ChatRequest): Flow<ServerSentEvent<String>> {
@@ -86,10 +81,7 @@ class ChatController(
         claimantChat.stream(conversationId, message)
             .map<String, ChatEvent> { ChatEvent.TextDelta(it) }
 
-    /**
-     * Turns the stored conversation into a claim card or a follow-up question. The extraction is a blocking model
-     * call, so it runs on the IO dispatcher: Spring MVC collects the flow on the request (or a Reactor) thread.
-     */
+    /** Turns the stored conversation into a claim card or a follow-up question. The model call blocks, hence IO. */
     private fun prepareClaim(conversationId: String): Flow<ChatEvent> =
         flow {
             val history = conversations.transcript(conversationId).orEmpty().map { it.toMessage() }
@@ -101,12 +93,7 @@ class ChatController(
     private fun confirmClaim(conversationId: String): Flow<ChatEvent> =
         flow { emit(claimIntake.confirm(conversationId).toEvent()) }
 
-    /**
-     * Done only for a completed reply that did not end itself: after any event that is not terminal (text, a claim
-     * card, an analytics table, a todo update) or after nothing, never after a confirmation request or an error event
-     * of the agent. A failed or cancelled stream throws out of `collect`, so it gets no Done; the `catch` below maps
-     * the failure.
-     */
+    /** Ends a reply that did not end itself with `Done`, and a failed one with a generic `Error`. */
     private fun Flow<ChatEvent>.withTerminalEvent(): Flow<ChatEvent> =
         flow {
             var last: ChatEvent? = null
@@ -115,14 +102,8 @@ class ChatController(
                 emit(event)
             }
             if (last?.isTerminal != true) emit(ChatEvent.Done)
+        }.catch { cause ->
+            log.warn("Chat stream failed", cause)
+            emit(ChatEvent.Error(GENERIC_ERROR))
         }
-
-            .catch { cause ->
-                // Only exceptions are a failed reply; an Error is rethrown (`catch` rethrows cancellation itself).
-                // It is searched in the cause chain: advisors built on BaseAdvisor (the policy wording retrieval)
-                // wrap every stream failure in an IllegalStateException.
-                generateSequence(cause) { it.cause }.firstOrNull { it !is Exception }?.let { throw it }
-                log.warn("Chat stream failed", cause)
-                emit(ChatEvent.Error(GENERIC_ERROR))
-            }
 }

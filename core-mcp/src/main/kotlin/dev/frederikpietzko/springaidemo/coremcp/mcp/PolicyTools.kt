@@ -25,13 +25,12 @@ class PolicyTools(
     fun findPolicy(
         @McpToolParam(description = "Policy number, for example KP-1001") policyNumber: String,
         meta: McpMeta,
-    ): CallToolResult {
-        access.scopeDenial("policies:read")?.let { return ToolResults.error(it) }
-        return when (val result = policies.find(policyNumber)) {
+    ): CallToolResult = access.withScope("policies:read") {
+        when (val result = policies.find(policyNumber)) {
             is PolicyLookup.Found ->
-                access.ownershipDenial(meta, result.policy.customerId, "policy $policyNumber")?.let(ToolResults::error)
-                    ?: ToolResults.ok(json, result.policy)
-            PolicyLookup.NotFound -> ToolResults.error("Policy $policyNumber not found")
+                access.ownershipDenial(meta, result.policy.customerId, "policy $policyNumber")?.let(::toolError)
+                    ?: json.ok(result.policy)
+            PolicyLookup.NotFound -> toolError("Policy $policyNumber not found")
         }
     }
 }

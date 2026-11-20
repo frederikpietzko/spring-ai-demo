@@ -11,18 +11,12 @@ data class Citation(val source: String, val title: String)
 /** The model's answer to a coverage question and the clauses retrieved for it. */
 data class CoverageAnswer(val text: String, val citations: List<Citation>)
 
-/**
- * Answers coverage questions from the policy wording. Its chat client is private: the claimant chat receives its
- * `ChatClient` by type, so a second `ChatClient` bean would make that ambiguous.
- */
+/** The minimal RAG example: answers a coverage question from the policy wording, with citations. */
 @Service
 class CoverageQuestions(builder: ChatClient.Builder, policyWordingAdvisor: RetrievalAugmentationAdvisor) {
     private val chatClient = builder.defaultAdvisors(policyWordingAdvisor).build()
 
-    /**
-     * Asks the model [question] with the retrieved wording in the prompt. The citations are the retrieved clauses,
-     * not necessarily the ones the model relied on.
-     */
+    /** The citations are the retrieved clauses, not necessarily the ones the model relied on. */
     fun answer(question: String): CoverageAnswer {
         val response = chatClient.prompt().user(question).call().chatClientResponse()
         val clauses = response.context()[RetrievalAugmentationAdvisor.DOCUMENT_CONTEXT] as? List<*>

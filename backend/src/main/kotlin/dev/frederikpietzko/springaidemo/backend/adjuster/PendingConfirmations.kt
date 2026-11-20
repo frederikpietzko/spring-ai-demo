@@ -6,11 +6,7 @@ import org.springframework.stereotype.Component
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * A reply that waits for a human decision: the [conversation] the model answered and its [reply] with the tool calls,
- * in the stored conversation [conversationId]. Kept on the server, so a client can never send (or change) the tool
- * calls it decides on.
- */
+/** A reply that waits for a human decision. Kept on the server: a client never sends the tool calls it decides on. */
 data class PausedTurn(val conversationId: String, val conversation: List<Message>, val reply: ChatResponse)
 
 /**

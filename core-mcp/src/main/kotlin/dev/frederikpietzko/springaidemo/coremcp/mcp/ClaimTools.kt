@@ -31,9 +31,8 @@ data class DamageItemInput(
 )
 
 /**
- * MCP tools about claims: read, file and move them along the status flow. Each checks the scope of its caller first;
- * for a claimant, the claim, customer or policy must also be the claimant's own (the `_meta` the backend sends,
- * [McpMeta], is no part of the tool schema).
+ * MCP tools to read, file and move claims. Each checks the caller's scope first; a claimant also needs the claim,
+ * customer or policy to be their own (via the `_meta` the backend sends, [McpMeta], which is not in the tool schema).
  */
 @Component
 class ClaimTools(
@@ -50,13 +49,12 @@ class ClaimTools(
     fun getClaim(
         @McpToolParam(description = "Claim number, for example 4711") claimNumber: Long,
         meta: McpMeta,
-    ): CallToolResult {
-        access.scopeDenial("claims:read")?.let { return ToolResults.error(it) }
-        return when (val result = claims.find(claimNumber)) {
+    ): CallToolResult = access.withScope("claims:read") {
+        when (val result = claims.find(claimNumber)) {
             is ClaimLookup.Found ->
-                access.ownershipDenial(meta, result.claim.customerId, "claim $claimNumber")?.let(ToolResults::error)
-                    ?: ToolResults.ok(json, result.claim)
-            ClaimLookup.NotFound -> ToolResults.error("Claim $claimNumber not found")
+                access.ownershipDenial(meta, result.claim.customerId, "claim $claimNumber")?.let(::toolError)
+                    ?: json.ok(result.claim)
+            ClaimLookup.NotFound -> toolError("Claim $claimNumber not found")
         }
     }
 
@@ -68,13 +66,12 @@ class ClaimTools(
     fun listClaimsForCustomer(
         @McpToolParam(description = "Customer id, for example 1") customerId: Long,
         meta: McpMeta,
-    ): CallToolResult {
-        access.scopeDenial("claims:read")?.let { return ToolResults.error(it) }
-        return when (val result = claims.listForCustomer(customerId)) {
+    ): CallToolResult = access.withScope("claims:read") {
+        when (val result = claims.listForCustomer(customerId)) {
             is CustomerClaims.Found ->
-                access.ownershipDenial(meta, customerId, "customer $customerId")?.let(ToolResults::error)
-                    ?: ToolResults.ok(json, result.summaries)
-            CustomerClaims.UnknownCustomer -> ToolResults.error("Customer $customerId not found")
+                access.ownershipDenial(meta, customerId, "customer $customerId")?.let(::toolError)
+                    ?: json.ok(result.summaries)
+            CustomerClaims.UnknownCustomer -> toolError("Customer $customerId not found")
         }
     }
 
@@ -94,9 +91,7 @@ class ClaimTools(
         @McpToolParam(description = "At least one damaged item with its estimated cost")
         damageItems: List<DamageItemInput>,
         meta: McpMeta,
-    ): CallToolResult {
-        (access.scopeDenial("claims:write") ?: policyOwnershipDenial(meta, policyNumber))
-            ?.let { return ToolResults.error(it) }
+    ): CallToolResult = access.withScope("claims:write", denial = { policyOwnershipDenial(meta, policyNumber) }) {
         val request = FileClaimRequest(
             policyNumber = policyNumber,
             district = district,
@@ -105,14 +100,14 @@ class ClaimTools(
             description = description,
             damageItems = damageItems.map { DamageItem(it.category, it.description, it.estimatedAmountMinor) },
         )
-        return when (val result = claims.file(request)) {
-            is FileResult.Filed -> ToolResults.ok(json, result.claim)
-            FileResult.PolicyNotFound -> ToolResults.error("Policy $policyNumber not found")
-            is FileResult.IncidentOutsidePolicy -> ToolResults.error(
+        when (val result = claims.file(request)) {
+            is FileResult.Filed -> json.ok(result.claim)
+            FileResult.PolicyNotFound -> toolError("Policy $policyNumber not found")
+            is FileResult.IncidentOutsidePolicy -> toolError(
                 "Incident $incidentAt is outside the validity of policy $policyNumber " +
                     "(${result.validFrom} to ${result.validTo})",
             )
-            is FileResult.Invalid -> ToolResults.error("Invalid ${result.field}: ${result.reason}")
+            is FileResult.Invalid -> toolError("Invalid ${result.field}: ${result.reason}")
         }
     }
 
@@ -123,15 +118,16 @@ class ClaimTools(
     fun updateClaimStatus(
         @McpToolParam(description = "Claim number, for example 4711") claimNumber: Long,
         @McpToolParam(description = "The new status") status: ClaimStatus,
-    ): CallToolResult {
+    ): CallToolResult = access.withScope(
+        "claims:write",
         // claims:write also lets the claimant file claims; reviewing them is the adjuster's job only.
-        (access.scopeDenial("claims:write") ?: access.claimantDenial("change a claim status"))
-            ?.let { return ToolResults.error(it) }
-        return when (val result = claims.updateStatus(claimNumber, status)) {
-            is StatusUpdate.Updated -> ToolResults.ok(json, result.claim)
-            StatusUpdate.NotFound -> ToolResults.error("Claim $claimNumber not found")
+        denial = { access.claimantDenial("change a claim status") },
+    ) {
+        when (val result = claims.updateStatus(claimNumber, status)) {
+            is StatusUpdate.Updated -> json.ok(result.claim)
+            StatusUpdate.NotFound -> toolError("Claim $claimNumber not found")
             is StatusUpdate.IllegalTransition ->
-                ToolResults.error("Cannot change claim $claimNumber from ${result.from} to ${result.to}")
+                toolError("Cannot change claim $claimNumber from ${result.from} to ${result.to}")
         }
     }
 

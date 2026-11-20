@@ -85,3 +85,5 @@ PostgreSQL stays on 5432.
 - The section "mcp-security fallback" is closed: `mcp-security` 0.1.14 works on Spring AI 2.1.0-RC2, no module pins Spring AI 2.0, and the pin is recorded in ADR-0009 (ADR-0007 does not exist in this repository).
 - The data-ownership boundary now carries the security story: `core-mcp` checks the token, the scope of each tool and, for the claimant agent, that the data is the claimant's own (ADR-0009).
 - Start order for local development: database, `auth-server`, `core-mcp`, backend. `core-mcp` and the backend also start without the auth-server; the adjuster's first tool call needs it.
+
+> Note 2026-11-20 (simplification pass): the `ClaimFiling` port and its adapter `CoreClaimFiling` are one class, `ClaimFiling`; it had a single implementation, and the tests fake the `ClaimantCore` connection below it.

@@ -44,13 +44,10 @@ data class ClaimFilterInput(
     fun toFilter(): ClaimFilter = ClaimFilter(district, kaijuClass, status, from, to)
 }
 
-/** The scope every analytics tool needs (ADR-0009); only the adjuster agent's token has it. */
+/** The scope of every analytics tool (ADR-0009); only the adjuster agent has it. */
 private const val ANALYTICS_READ = "analytics:read"
 
-/**
- * Read-only MCP tools that count and aggregate claims by a typed filter; the model never writes SQL. Only a token
- * with `analytics:read` (the adjuster agent's) may call them.
- */
+/** Read-only MCP tools that count and aggregate claims by a typed filter; the model never writes SQL. */
 @Component
 class AnalyticsTools(
     private val analytics: AnalyticsService,
@@ -62,11 +59,12 @@ class AnalyticsTools(
             "Use it for every question about how many claims there are; never estimate a count.",
         annotations = McpTool.McpAnnotations(readOnlyHint = true),
     )
-    fun countClaims(@McpToolParam(description = FILTER_DESCRIPTION) filter: ClaimFilterInput): CallToolResult {
-        access.scopeDenial(ANALYTICS_READ)?.let { return ToolResults.error(it) }
-        return when (val result = analytics.countClaims(filter.toFilter())) {
-            is CountResult.Counted -> ToolResults.ok(json, result)
-            is InvalidFilter -> ToolResults.error("Invalid filter: ${result.message}")
+    fun countClaims(
+        @McpToolParam(description = FILTER_DESCRIPTION) filter: ClaimFilterInput,
+    ): CallToolResult = access.withScope(ANALYTICS_READ) {
+        when (val result = analytics.countClaims(filter.toFilter())) {
+            is CountResult.Counted -> json.ok(result)
+            is InvalidFilter -> toolError("Invalid filter: ${result.message}")
         }
     }
 
@@ -80,11 +78,10 @@ class AnalyticsTools(
         @McpToolParam(description = FILTER_DESCRIPTION) filter: ClaimFilterInput,
         @McpToolParam(description = "Group by DISTRICT or KAIJU_CLASS; leave it out for one total", required = false)
         groupBy: StatsGrouping?,
-    ): CallToolResult {
-        access.scopeDenial(ANALYTICS_READ)?.let { return ToolResults.error(it) }
-        return when (val result = analytics.payoutStats(filter.toFilter(), groupBy)) {
-            is StatsResult.Stats -> ToolResults.ok(json, result)
-            is InvalidFilter -> ToolResults.error("Invalid filter: ${result.message}")
+    ): CallToolResult = access.withScope(ANALYTICS_READ) {
+        when (val result = analytics.payoutStats(filter.toFilter(), groupBy)) {
+            is StatsResult.Stats -> json.ok(result)
+            is InvalidFilter -> toolError("Invalid filter: ${result.message}")
         }
     }
 }

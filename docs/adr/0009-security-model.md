@@ -85,3 +85,5 @@ Resources are checked by ownership only: both clients hold `claims:read` and `po
 - Scope denials are tool errors, so the roadmap's "a claimant token calling `issuePayout` gets 403" is a tool error naming `payout:write` instead; only a missing or invalid token is an HTTP status (401).
 - Every new tool or resource class must use `CallerAccess` (enforced by ArchUnit); choosing the right scope stays a review item and is covered by the tool's tests.
 - The `core-mcp` test run starts one extra JVM (a few seconds).
+
+> Note 2026-11-20 (simplification pass): the unused tool provider `claimantCoreTools` is removed; the claimant connection `core-claimant` stays and is used by the claim filing (`ClaimantCore`).

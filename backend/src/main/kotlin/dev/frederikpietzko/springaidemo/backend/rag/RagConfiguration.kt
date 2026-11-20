@@ -16,16 +16,8 @@ const val POLICY_WORDING_CORPUS = "policy-wording"
 
 private const val TOP_K = 4
 
-/**
- * After the session turn advisor (`HIGHEST_PRECEDENCE + 200`), before the tool-calling advisor (`+ 300`): retrieval
- * runs once per user turn. The session memory advisor sits inside the tool loop (`+ 1000`), after retrieval, so it
- * stores the user message as retrieval left it.
- */
+/** After the session turn advisor (+200), before the tool loop (+300): retrieval runs once per user turn. */
 private const val RAG_ORDER = Advisor.DEFAULT_CHAT_MEMORY_PRECEDENCE_ORDER + 50
-
-private const val CITE_LABELS = "cite the [labels] of the clauses you rely on"
-
-private const val OTHERWISE = "Otherwise answer normally."
 
 /**
  * Wraps the claimant's message (`{query}`) with the retrieved clauses (`{context}`). Conditional, because every
@@ -35,18 +27,15 @@ private const val CITING_TEMPLATE = """Policy wording clauses, each labelled [so
 ---------------------
 {context}
 ---------------------
-If the message asks about coverage, answer from the policy wording above and $CITE_LABELS; if the wording does not
-answer it, say so. $OTHERWISE
+If the message asks about coverage, answer from the policy wording above and
+cite the [labels] of the clauses you rely on; if the wording does not answer it, say so. Otherwise answer normally.
 
 Message: {query}"""
 
 /** Retrieval over the policy wording, shared by the coverage service and the claimant chat. */
 @Configuration(proxyBeanMethods = false)
 class RagConfiguration {
-    /**
-     * The four policy wording clauses closest to a question. No similarity threshold: a value tuned for real
-     * embeddings would filter out everything under the test embedding model, and tests share this configuration.
-     */
+    /** The four closest policy wording clauses. No similarity threshold: the tests' fake embeddings would fail it. */
     @Bean
     fun policyWordingRetriever(vectorStore: VectorStore): VectorStoreDocumentRetriever =
         VectorStoreDocumentRetriever.builder()
@@ -55,10 +44,7 @@ class RagConfiguration {
             .filterExpression(FilterExpressionBuilder().eq("corpus", POLICY_WORDING_CORPUS).build())
             .build()
 
-    /**
-     * Adds the retrieved clauses, each labelled `[source - title]`, to the user message. One bean for every chat
-     * client: the advisor owns a thread pool for the blocking retrieval.
-     */
+    /** Adds the retrieved clauses, each labelled `[source - title]`, to the user message. */
     @Bean
     fun policyWordingAdvisor(policyWordingRetriever: VectorStoreDocumentRetriever): RetrievalAugmentationAdvisor =
         RetrievalAugmentationAdvisor.builder()

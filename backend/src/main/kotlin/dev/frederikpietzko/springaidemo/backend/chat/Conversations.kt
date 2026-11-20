@@ -17,10 +17,7 @@ const val CLAIMANT_AGENT = "claimant"
 /** The `agentName` session attribute of adjuster conversations. */
 const val ADJUSTER_AGENT = "adjuster"
 
-/**
- * User-message metadata key holding the text the claimant typed. The retrieval advisor rewrites the user message
- * before it is stored, so the typed text travels next to it.
- */
+/** User-message metadata key of the text the claimant typed; retrieval rewrites the message itself. */
 const val CLAIMANT_TEXT = "claimantText"
 
 /** Tool-context key of the conversation a request belongs to. */
@@ -51,8 +48,8 @@ class Conversations(private val sessionService: SessionService) {
             }
 
     /**
-     * What the claimant typed and what the assistant answered in conversation [id], in order, also the turns that
-     * compaction removed from the prompt; tool calls and tool results are left out. `null` for an unknown id.
+     * The user and assistant texts of conversation [id] in order, also the turns compaction removed from the prompt;
+     * `null` for an unknown id.
      */
     fun transcript(id: String): List<ConversationMessage>? {
         if (sessionService.findById(id) == null) return null
@@ -67,10 +64,7 @@ class Conversations(private val sessionService: SessionService) {
         }
     }
 
-    /**
-     * The user and assistant messages of conversation [id] with text, oldest first, for an agent that sends the history
-     * itself (the adjuster); empty for an unknown id.
-     */
+    /** The user and assistant messages of conversation [id] with text, oldest first; empty for an unknown id. */
     fun history(id: String): List<Message> =
         if (sessionService.findById(id) == null) {
             []
@@ -80,10 +74,7 @@ class Conversations(private val sessionService: SessionService) {
             }
         }
 
-    /**
-     * Stores [message] in conversation [id] of [agent]; a new conversation is created first, titled with the beginning
-     * of [title].
-     */
+    /** Stores [message] in conversation [id] of [agent]; a new conversation is titled with the start of [title]. */
     fun remember(id: String, agent: String, title: String, message: Message) {
         val _ = sessionService.findOrCreate(
             CreateSessionRequest.builder()

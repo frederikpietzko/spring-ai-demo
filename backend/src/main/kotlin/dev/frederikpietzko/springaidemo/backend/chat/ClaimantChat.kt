@@ -13,9 +13,8 @@ import org.springframework.stereotype.Service
 @Service
 class ClaimantChat(@Qualifier("claimantChatClient") private val claimantChatClient: ChatClient) {
     /**
-     * Streams the model's reply to [message] in the conversation [conversationId]; Spring AI streams a `Flux`, bridged
-     * here to a Kotlin `Flow`. The session advisors add the earlier turns and store this one. The typed text also
-     * travels as metadata, because the retrieval advisor rewrites the user message before it is stored.
+     * Streams the reply to [message]: Spring AI's `Flux` as a Kotlin `Flow`. The session advisors add the earlier
+     * turns and store this one; the typed text also travels as metadata, because retrieval rewrites the user message.
      */
     fun stream(conversationId: String, message: String): Flow<String> =
         claimantChatClient.prompt()

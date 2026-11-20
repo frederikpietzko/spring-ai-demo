@@ -30,9 +30,8 @@ number: it does not see this conversation. Subagents run one at a time, in the f
 not supported. The adjuster does not see the subagent's answer: sum it up in your reply."""
 
 /**
- * A subagent of the adjuster, read from a Markdown file with single-line frontmatter (`name`, `description`, `model`,
- * `tools`, `skills`) and its instructions as the body. The library's Claude definition reads those lines; only the
- * kind differs, so the library's own Claude executor never runs it.
+ * A subagent read from a Markdown file with frontmatter (`name`, `description`, `model`, `tools`, `skills`). Only the
+ * kind differs from the library's Claude definition, so [AdjusterSubagents] runs it, not the library's executor.
  */
 class AdjusterSubagent(reference: SubagentReference, frontMatter: Map<String, Any>, content: String) :
     ClaudeSubagentDefinition(reference, frontMatter, content) {
@@ -50,10 +49,7 @@ object AdjusterSubagentResolver : SubagentResolver {
     }
 }
 
-/**
- * Refuses background tasks, fail closed: the library would otherwise run a background subagent whose answer nobody
- * reads. The `Task` call ends as an error and no subagent runs.
- */
+/** Refuses background tasks: the library would otherwise run a subagent whose answer nobody reads. */
 object NoBackgroundTasks : TaskRepository {
     override fun getTasks(taskId: String): BackgroundTask? = null
 
@@ -65,10 +61,7 @@ object NoBackgroundTasks : TaskRepository {
     override fun clear() = Unit
 }
 
-/**
- * The adjuster's `Task` tool: the model names one of the two subagents (`fraud-investigator`, `damage-assessor`) and
- * gives it a prompt; [executor] runs it and its answer is the tool result.
- */
+/** The `Task` tool: the model names a subagent and gives it a prompt; [executor] runs it. */
 fun adjusterTaskTool(executor: SubagentExecutor): ToolCallback =
     TaskTool.builder()
         .subagentReferences(
