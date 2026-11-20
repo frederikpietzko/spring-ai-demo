@@ -683,8 +683,34 @@ Open:
 
 ### Not verified
 
-- The real guardrail classifier: needs Ollama 0.40.4 or later and `d1-omni:600m`; only the backend's handling of yes/no verdicts was checked, not detection quality.
-- Desktop interaction (persona switch, sending, opening a conversation): no accessibility access for UI automation on the test machine.
+- ~~The real guardrail classifier~~: verified afterwards with Ollama 0.40.16 and `d1-omni:600m` (see the follow-up below); detection quality was only tried on the demo's own messages.
+- ~~Desktop interaction~~: verified afterwards once UI automation was allowed (see the follow-up below).
 - Scenarios 5, 6, 8, 9 were not repeated after the fixes; the approval gate and tool-round replay were seen again in the re-check.
 - The core's "FILED claim cannot be paid" rule against the poisoned claim 4700: local data from the first run had it APPROVED already, so only the human confirmation and the scope denial were exercised.
 - Observability fixes and the evaluation judge change: no dedicated re-run beyond the evaluation runs above.
+
+### Follow-up: real guardrail and desktop UI (2026-11-20, afternoon)
+
+Ollama was upgraded to 0.40.16 and `d1-omni:600m` pulled. The backend's health then reports `decisionModel` UP. The desktop app was driven by clicks and keystrokes against the live stack (real model through the local proxy profile).
+
+| Scenario | Result | Evidence |
+| --- | --- | --- |
+| Real guardrail, normal claimant message | Pass | Streams 40 text deltas and `done`; cites the garden cover and the Act of Kaiju exclusion. |
+| Real guardrail, poisoned invoice (curl and desktop) | Pass | Fixed refusal; the conversation is never stored (`404` on its messages, no new entry in the desktop list). |
+| Desktop: claimant streaming | Pass | "…" placeholder and disabled buttons while waiting, then the reply; the conversation moves to the top of the list. |
+| Desktop: claim intake | Pass | Prepare claim shows the claim card (policy, district, incident, class, two damage items, total); Confirm files claim 4715, which core-mcp returns as FILED with the same data. |
+| Desktop: open a stored conversation | Pass | The memory test's conversation, including the turn after the restart, loads in full; the entry is highlighted. |
+| Desktop: persona switch and adjuster on claim #4711 | Pass | Live todo panel (`[x]`, `[>]`, `[ ]`), delegation to fraud-investigator and damage-assessor, verdict FLAGGED (SB-102/SB-103, about 40 km away); the claim only moves to UNDER_REVIEW. |
+| Desktop: approval gate | Pass | "Confirm updateClaimStatus" panel with the exact arguments, Approve and Deny, input disabled meanwhile; Deny leaves 4711 UNDER_REVIEW with no payout (checked in the database). |
+| Desktop: analytics table | Pass | "Payouts" table (2 payouts, total 980000, average 490000) next to the text answer. |
+
+Local data: claims 4700 and 4711 were back to their seed status FILED before the adjuster run; the first e2e run had approved them through the bug fixed in 14cf78c (no payouts existed).
+
+Found in this follow-up (open):
+
+- Major (demo flow): the adjuster has no conversation memory. A follow-up such as "approve it anyway" loses the claim from the previous turn, and adjuster conversations do not appear in the desktop list. Session memory was wired for the claimant only (merge decision); giving the adjuster the session advisors is the follow-up.
+- Minor: the desktop shows the model's Markdown raw (`**bold**`, backticks).
+- Minor: amounts show as raw minor units (800000) in the claim card and the analytics table.
+- Minor: text from two model rounds is joined without a space ("numbers.In", "asked.Claim").
+- Minor: the empty-state hint says "Describe the kaiju damage" for the adjuster too.
+
