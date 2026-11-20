@@ -42,7 +42,7 @@ class AppSemanticsTest {
             setContent { App(FakeChatApi()) }
             waitForIdle()
 
-            onNodeWithText("spring-ai-demo").assertIsDisplayed()
+            onNodeWithText(APP_NAME).assertIsDisplayed()
             onNodeWithText("New conversation").assertIsDisplayed()
             onNodeWithText("Describe the kaiju damage to get started.").assertIsDisplayed()
             onNode(hasSetTextAction()).assertIsDisplayed()

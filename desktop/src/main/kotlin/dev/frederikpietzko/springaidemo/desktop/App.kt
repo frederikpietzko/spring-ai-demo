@@ -1,6 +1,29 @@
 package dev.frederikpietzko.springaidemo.desktop
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.sp
+import dev.frederikpietzko.springaidemo.desktop.theme.KaijuMascot
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,26 +44,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
-import dev.frederikpietzko.springaidemo.chatprotocol.TodoItem
-import dev.frederikpietzko.springaidemo.chatprotocol.TodoStatus
-import dev.frederikpietzko.springaidemo.chatprotocol.formatMinor
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatApi
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatMessage
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatViewModel
 import dev.frederikpietzko.springaidemo.desktop.chat.markdown
 import dev.frederikpietzko.springaidemo.desktop.components.DButton
 import dev.frederikpietzko.springaidemo.desktop.components.DButtonStyle
-import dev.frederikpietzko.springaidemo.desktop.components.DCard
 import dev.frederikpietzko.springaidemo.desktop.components.DSelect
 import dev.frederikpietzko.springaidemo.desktop.components.DText
 import dev.frederikpietzko.springaidemo.desktop.components.DTextField
@@ -57,31 +75,37 @@ private val personaOptions: List<SelectOption<Persona>> = [
 ]
 
 /**
- * The chat screen: a header with the application name and the persona switch, the conversation list with "New
- * conversation" on the left, the conversation, the pending confirmation (if any) and an input row in the middle, and
- * the adjuster's todo list on the right while it has items.
+ * The chat screen: a header with the mascot, the application name and the persona switch, the conversation list with
+ * "New conversation" on the left, the conversation, the pending confirmation (if any) and an input row in the middle,
+ * and the adjuster's todo list on the right while it has items.
  * [chatApi] talks to the backend (a fake in tests); [themeOverride] forces the light or dark appearance, `null`
- * follows the system.
+ * follows the system. [titleBar] lets the window blend the header into its title bar: the room to leave for the
+ * window controls and a wrapper that makes the header drag the window.
  */
 @Composable
-fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null) {
+fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null, titleBar: TitleBar = TitleBar()) {
     val viewModel = remember(chatApi) { ChatViewModel(chatApi) }
     val state by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
     LaunchedEffect(viewModel) { viewModel.refreshConversations() }
     DemoTheme(override = themeOverride) {
         Column(Modifier.fillMaxSize().background(Demo.colors.background)) {
-            Header(
-                persona = state.persona,
-                onPersona = { persona -> scope.launch { viewModel.selectPersona(persona) } },
-            )
+            titleBar.container {
+                Header(
+                    persona = state.persona,
+                    startInset = titleBar.startInset,
+                    onPersona = { persona -> scope.launch { viewModel.selectPersona(persona) } },
+                )
+            }
             Row(Modifier.weight(1f).fillMaxWidth()) {
                 ConversationList(
                     conversations = state.conversations,
+                    currentId = state.conversationId,
                     onNew = viewModel::newConversation,
                     onOpen = { conversation -> scope.launch { viewModel.open(conversation) } },
-                    modifier = Modifier.width(240.dp).fillMaxHeight(),
+                    modifier = Modifier.width(260.dp).fillMaxHeight(),
                 )
+                VerticalDivider()
                 Column(Modifier.weight(1f).fillMaxHeight()) {
                     val canSend = !state.sending && state.pendingConfirmation == null
                     Conversation(
@@ -104,54 +128,142 @@ fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null) {
                     )
                 }
                 if (state.todos.isNotEmpty()) {
-                    TodoPanel(state.todos, Modifier.width(260.dp).fillMaxHeight())
+                    VerticalDivider()
+                    TodoPanel(state.todos, Modifier.width(280.dp).fillMaxHeight())
                 }
             }
         }
     }
 }
 
-/** "New conversation" and the stored conversations by title, newest first; a click opens one. */
+/**
+ * How the header blends into the window's title bar: [startInset] leaves room for window controls drawn over the
+ * header, [container] wraps the header (e.g. to make it drag the window). The default is a plain header.
+ */
+class TitleBar(
+    val startInset: Dp = 0.dp,
+    val container: @Composable (content: @Composable () -> Unit) -> Unit = { it() },
+)
+
+@Composable
+private fun VerticalDivider() {
+    Box(Modifier.width(1.dp).fillMaxHeight().background(Demo.colors.border))
+}
+
+/** A muted, spaced-out section heading. */
+@Composable
+internal fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+    DText(
+        text.uppercase(),
+        style = Demo.typography.caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp),
+        color = Demo.colors.inkMuted,
+        modifier = modifier,
+    )
+}
+
+/**
+ * "New conversation" and the stored conversations by title, newest first; a click opens one. The open conversation
+ * is marked with the accent bar.
+ */
 @Composable
 private fun ConversationList(
     conversations: List<ConversationSummary>,
+    currentId: String,
     onNew: () -> Unit,
     onOpen: (ConversationSummary) -> Unit,
     modifier: Modifier,
 ) {
-    Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        DButton("New conversation", onClick = onNew, modifier = Modifier.fillMaxWidth())
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        DButton(
+            "New conversation",
+            onClick = onNew,
+            modifier = Modifier.fillMaxWidth(),
+            style = DButtonStyle.PRIMARY,
+        )
+        SectionLabel("Conversations", Modifier.padding(start = 4.dp, top = 8.dp))
+        if (conversations.isEmpty()) {
+            DText(
+                "No conversations yet.",
+                style = Demo.typography.caption,
+                color = Demo.colors.inkMuted,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             items(conversations) { conversation ->
-                DButton(
-                    conversation.title,
-                    onClick = { onOpen(conversation) },
-                    modifier = Modifier.fillMaxWidth(),
-                    style = DButtonStyle.GHOST,
-                )
+                ConversationRow(conversation.title, conversation.id == currentId) { onOpen(conversation) }
             }
         }
     }
 }
 
 @Composable
-private fun Header(persona: Persona, onPersona: (Persona) -> Unit) {
+private fun ConversationRow(title: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = Demo.colors
+    val shape = Demo.shapes.small
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(60.dp)
-            .background(Demo.colors.surface)
-            .padding(horizontal = 24.dp),
+            .clip(shape)
+            .background(if (selected || hovered) colors.surfaceRaised else Color.Transparent, shape)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .height(IntrinsicSize.Min),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        DText("spring-ai-demo", style = Demo.typography.display)
-        Spacer(Modifier.weight(1f))
-        DSelect(
-            options = personaOptions,
-            selectedLabel = personaOptions.first { it.value == persona }.label,
-            onSelect = onPersona,
-            modifier = Modifier.width(160.dp),
+        Box(
+            Modifier
+                .width(3.dp)
+                .fillMaxHeight()
+                .background(if (selected) colors.accentGradient else SolidColor(Color.Transparent)),
         )
+        DText(
+            title,
+            maxLines = 1,
+            color = if (selected) colors.ink else colors.inkMuted,
+            style = if (selected) Demo.typography.body.copy(fontWeight = FontWeight.Medium) else Demo.typography.body,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+        )
+    }
+}
+
+/** The mascot, the application name with the desk being served, and the persona switch; underlined by the accent. */
+@Composable
+private fun Header(persona: Persona, startInset: Dp, onPersona: (Persona) -> Unit) {
+    Column(Modifier.fillMaxWidth().background(Demo.colors.surface)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(64.dp).padding(start = 20.dp + startInset, end = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                Modifier.size(40.dp).background(Demo.colors.surfaceRaised, Demo.shapes.medium).padding(4.dp),
+            ) {
+                KaijuMascot(Modifier.fillMaxSize())
+            }
+            Column {
+                DText(APP_NAME, style = Demo.typography.display)
+                DText(
+                    when (persona) {
+                        Persona.CLAIMANT -> "Claims desk · we cover the unthinkable"
+                        Persona.ADJUSTER -> "Adjuster workbench · claims, payouts, fraud checks"
+                    },
+                    style = Demo.typography.caption,
+                    color = Demo.colors.inkMuted,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            DText("Acting as", style = Demo.typography.label, color = Demo.colors.inkMuted)
+            DSelect(
+                options = personaOptions,
+                selectedLabel = personaOptions.first { it.value == persona }.label,
+                onSelect = onPersona,
+                modifier = Modifier.width(160.dp),
+            )
+        }
+        Box(Modifier.fillMaxWidth().height(2.dp).background(Demo.colors.accentGradient))
     }
 }
 
@@ -168,13 +280,7 @@ private fun Conversation(
     modifier: Modifier,
 ) {
     if (messages.isEmpty()) {
-        Box(modifier, contentAlignment = Alignment.Center) {
-            val hint = when (persona) {
-                Persona.CLAIMANT -> "Describe the kaiju damage to get started."
-                Persona.ADJUSTER -> "Ask about a claim, for example: Process claim #4711."
-            }
-            DText(hint, color = Demo.colors.inkMuted)
-        }
+        EmptyConversation(persona, modifier)
         return
     }
     val listState = rememberLazyListState()
@@ -182,8 +288,8 @@ private fun Conversation(
     LazyColumn(
         modifier = modifier,
         state = listState,
-        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         items(messages) { message ->
             MessageBubble(
@@ -195,110 +301,98 @@ private fun Conversation(
     }
 }
 
+/** The mascot, a greeting and the persona's hint while nothing has been said yet. */
+@Composable
+private fun EmptyConversation(persona: Persona, modifier: Modifier) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            KaijuMascot(Modifier.size(112.dp))
+            Spacer(Modifier.height(4.dp))
+            DText(
+                when (persona) {
+                    Persona.CLAIMANT -> "Stomped, scorched or swallowed?"
+                    Persona.ADJUSTER -> "Ready when you are, adjuster."
+                },
+                style = Demo.typography.display,
+            )
+            val hint = when (persona) {
+                Persona.CLAIMANT -> "Describe the kaiju damage to get started."
+                Persona.ADJUSTER -> "Ask about a claim, for example: Process claim #4711."
+            }
+            DText(hint, color = Demo.colors.inkMuted)
+        }
+    }
+}
+
 @Composable
 private fun MessageBubble(message: ChatMessage, canConfirm: Boolean, onConfirm: () -> Unit) {
+    val colors = Demo.colors
     val fromUser = message.author == ChatMessage.Author.USER
-    Box(Modifier.fillMaxWidth(), contentAlignment = if (fromUser) Alignment.CenterEnd else Alignment.CenterStart) {
+    val corner = 16.dp
+    val tail = 4.dp
+    val shape = if (fromUser) {
+        RoundedCornerShape(topStart = corner, topEnd = tail, bottomEnd = corner, bottomStart = corner)
+    } else {
+        RoundedCornerShape(topStart = tail, topEnd = corner, bottomEnd = corner, bottomStart = corner)
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp, if (fromUser) Alignment.End else Alignment.Start),
+        verticalAlignment = Alignment.Top,
+    ) {
+        if (!fromUser) Avatar()
         Column(
             modifier = Modifier
-                .widthIn(max = 560.dp)
-                .background(if (fromUser) Demo.colors.surfaceRaised else Demo.colors.surface, Demo.shapes.medium)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+                .widthIn(max = 620.dp)
+                .then(
+                    if (fromUser) {
+                        Modifier.background(colors.accentGradient, shape)
+                    } else {
+                        Modifier.background(colors.surface, shape).border(1.dp, colors.border, shape)
+                    },
+                )
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             val hasContent = message.claimCard != null || message.analyticsTable != null
             when {
-                message.text.isNotEmpty() && fromUser -> DText(message.text)
+                message.text.isNotEmpty() && fromUser -> DText(message.text, color = colors.onAccent)
                 message.text.isNotEmpty() -> DText(markdown(message.text))
-                message.error == null && !hasContent -> DText("…", color = Demo.colors.inkMuted)
+                message.error == null && !hasContent -> DText("…", color = colors.inkMuted)
             }
             message.analyticsTable?.let { AnalyticsTable(it) }
             message.claimCard?.let { ClaimCard(it, canConfirm, onConfirm) }
-            message.error?.let { DText(it, style = Demo.typography.caption, color = Demo.colors.danger) }
+            message.error?.let { DText(it, style = Demo.typography.caption, color = colors.danger) }
         }
     }
 }
 
-/** A prepared claim to check: its facts, the damage items with their amounts in minor units, the total and Confirm. */
+/** The assistant's avatar: the mascot on a round raised surface. */
 @Composable
-private fun ClaimCard(card: ChatEvent.ClaimCard, canConfirm: Boolean, onConfirm: () -> Unit) {
-    DCard(Modifier.fillMaxWidth(), highlighted = true) {
-        DText("Claim to confirm", style = Demo.typography.label)
-        Fact("Policy", card.policyNumber)
-        Fact("District", card.district)
-        Fact("Incident", card.incidentAt)
-        Fact("Kaiju class", card.kaijuClass.toString())
-        DText(card.description)
-        card.damageItems.forEach { item -> Fact(item.category, item.description, formatMinor(item.amountMinor)) }
-        Fact("Total", formatMinor(card.totalMinor))
-        DButton("Confirm", onClick = onConfirm, style = DButtonStyle.PRIMARY, enabled = canConfirm)
-    }
-}
-
-/** One line of the claim card: a muted [label] and its [values]. */
-@Composable
-private fun Fact(label: String, vararg values: String) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        DText(label, color = Demo.colors.inkMuted, modifier = Modifier.width(96.dp))
-        values.forEach { DText(it) }
+private fun Avatar() {
+    Box(
+        Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(Demo.colors.surfaceRaised)
+            .border(1.dp, Demo.colors.border, CircleShape)
+            .padding(5.dp),
+    ) {
+        KaijuMascot(Modifier.fillMaxSize())
     }
 }
 
 /**
- * The adjuster's latest todo list, one row per item: a status marker, then the active form of the item in progress
- * and the content of every other item.
- */
-@Composable
-private fun TodoPanel(todos: List<TodoItem>, modifier: Modifier) {
-    Column(
-        modifier = modifier.background(Demo.colors.surface).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        DText("Todo list", style = Demo.typography.label)
-        todos.forEach { todo ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DText(todo.status.marker, color = Demo.colors.inkMuted)
-                DText(if (todo.status == TodoStatus.IN_PROGRESS) todo.activeForm else todo.content)
-            }
-        }
-    }
-}
-
-/** The text marker of a todo status in the todo panel. */
-private val TodoStatus.marker: String
-    get() = when (this) {
-        TodoStatus.PENDING -> "[ ]"
-        TodoStatus.IN_PROGRESS -> "[>]"
-        TodoStatus.COMPLETED -> "[x]"
-    }
-
-/** A tool call that waits for the user: the tool, its arguments and the two choices. */
-@Composable
-private fun ConfirmationPanel(pending: ChatEvent.ConfirmationRequest, onDecide: (Boolean) -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .background(Demo.colors.surfaceRaised, Demo.shapes.medium)
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        DText("Confirm ${pending.toolName}", style = Demo.typography.title)
-        DText(pending.arguments, style = Demo.typography.caption, color = Demo.colors.inkMuted)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DButton("Approve", onClick = { onDecide(true) }, style = DButtonStyle.PRIMARY)
-            DButton("Deny", onClick = { onDecide(false) })
-        }
-    }
-}
-
-/**
- * The message input with "Send" and "Prepare claim". Keeps a 16 dp transparent margin, so the window background shows
- * around it (see the render tests).
+ * The message input with "Send" and "Prepare claim"; Enter sends too. Keeps a 16 dp transparent margin, so the window
+ * background shows around it (see the render tests).
  */
 @Composable
 private fun InputRow(canSend: Boolean, onSend: (String) -> Unit, onPrepare: () -> Unit) {
     var input by remember { mutableStateOf("") }
+    val send = {
+        onSend(input)
+        input = ""
+    }
     Row(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -307,18 +401,14 @@ private fun InputRow(canSend: Boolean, onSend: (String) -> Unit, onPrepare: () -
         DTextField(
             value = input,
             onValueChange = { input = it },
-            modifier = Modifier.weight(1f),
-            placeholder = "Type a message",
-        )
-        DButton(
-            "Send",
-            onClick = {
-                onSend(input)
-                input = ""
+            modifier = Modifier.weight(1f).onPreviewKeyEvent { event ->
+                val enter = event.type == KeyEventType.KeyDown && event.key == Key.Enter
+                if (enter && canSend && input.isNotBlank()) send()
+                enter
             },
-            style = DButtonStyle.PRIMARY,
-            enabled = canSend,
+            placeholder = "Type a message and press Enter",
         )
+        DButton("Send", onClick = send, style = DButtonStyle.PRIMARY, enabled = canSend)
         DButton("Prepare claim", onClick = onPrepare, style = DButtonStyle.SECONDARY, enabled = canSend)
     }
 }

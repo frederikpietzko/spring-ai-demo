@@ -72,3 +72,25 @@ val DarkDemoColors = DemoColors(
     warning = Color(0xFFE5B94E),
     success = Color(0xFF5FB865),
 )
+
+/** The palette of the pixel-art kaiju mascot; the same in both appearances. */
+@Immutable
+data class KaijuPalette(
+    val outline: Color,
+    val body: Color,
+    val belly: Color,
+    val eye: Color,
+    val pupil: Color,
+    val tooth: Color,
+    val horn: Color,
+)
+
+val DefaultKaijuPalette = KaijuPalette(
+    outline = Color(0xFF173B22),
+    body = Color(0xFF4FB862),
+    belly = Color(0xFFCDEBA7),
+    eye = Color(0xFFFFFFFF),
+    pupil = Color(0xFF111316),
+    tooth = Color(0xFFFFFFFF),
+    horn = KotlinPink,
+)
