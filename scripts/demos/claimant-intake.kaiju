@@ -1,0 +1,15 @@
+# A claimant asks about coverage and prepares a claim.
+typing-speed 40ms
+highlight 300ms
+
+persona claimant
+new-conversation
+send "A kaiju stepped on my car in the harbour last night. Am I covered under policy KP-1001?"
+wait-idle 3m
+reply
+
+send "Please prepare the claim: one crushed car, 18000 EUR."
+wait-idle 3m
+prepare-claim
+wait-idle 3m
+state

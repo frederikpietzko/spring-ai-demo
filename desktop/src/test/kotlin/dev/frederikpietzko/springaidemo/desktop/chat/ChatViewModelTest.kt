@@ -649,6 +649,47 @@ class ChatViewModelTest {
         scriptedIds(),
     )
 
+    @Test
+    fun `the input text is part of the state`() {
+        viewModel.setInput("dra")
+
+        assertEquals("dra", viewModel.state.value.input)
+    }
+
+    @Test
+    suspend fun `submitting the input sends it and empties the input`() {
+        events.send(ChatEvent.Done)
+        viewModel.setInput("Hi")
+
+        viewModel.submitInput()
+
+        assertEquals([ChatRequest(Persona.CLAIMANT, "Hi", "c-1")], api.requests)
+        assertEquals("", viewModel.state.value.input)
+    }
+
+    @Test
+    suspend fun `a blank input is not submitted`() {
+        viewModel.setInput("   ")
+
+        viewModel.submitInput()
+
+        assertEquals([], api.requests)
+    }
+
+    @Test
+    suspend fun `the input is not submitted and kept while an answer streams`() = coroutineScope {
+        val sending = launch { viewModel.send("First") }
+        viewModel.state.await { it.sending }
+        viewModel.setInput("Again")
+
+        viewModel.submitInput()
+
+        assertEquals(["First"], api.requests.map { it.message })
+        assertEquals("Again", viewModel.state.value.input)
+        events.send(ChatEvent.Done)
+        sending.join()
+    }
+
     private fun user(text: String) = ChatMessage(ChatMessage.Author.USER, text)
 
     private fun assistant(text: String, error: String? = null) =

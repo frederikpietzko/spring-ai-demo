@@ -19,7 +19,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import dev.frederikpietzko.springaidemo.desktop.theme.Demo
 
-/** A single-line text field with an optional [label] above and [supportingText] below. */
+/**
+ * A single-line text field with an optional [label] above and [supportingText] below. [fieldModifier] applies to the
+ * editable field itself (not the label), so its semantics land on the field's node.
+ */
 @Composable
 fun DTextField(
     value: String,
@@ -32,6 +35,7 @@ fun DTextField(
     enabled: Boolean = true,
     numeric: Boolean = false,
     monospace: Boolean = false,
+    fieldModifier: Modifier = Modifier,
 ) {
     val colors = Demo.colors
     val shape = Demo.shapes.small
@@ -53,7 +57,7 @@ fun DTextField(
             } else {
                 KeyboardOptions.Default
             },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = fieldModifier.fillMaxWidth(),
             decorationBox = { inner ->
                 Box(
                     Modifier

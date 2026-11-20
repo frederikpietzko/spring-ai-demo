@@ -8,6 +8,7 @@ val basePackage = providers.gradleProperty("basePackage").get()
 
 dependencies {
     implementation(project(":chat-protocol"))
+    implementation(project(":control-protocol"))
     implementation(compose.desktop.currentOs)
     implementation(libs.kotlinx.coroutinesSwing)
     // The chat client (SSE into a Flow); kotlinx.serialization comes through chat-protocol's api.

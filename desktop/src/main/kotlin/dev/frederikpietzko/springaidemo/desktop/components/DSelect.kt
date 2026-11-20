@@ -43,7 +43,8 @@ private const val POPUP_GAP_PX = 4
 
 /**
  * A dropdown select. [selectedLabel] is the text in the closed field; [supportingText] is shown below the
- * field, in the error colour when [isError] is true.
+ * field, in the error colour when [isError] is true. [fieldModifier] applies to the clickable field itself (not the
+ * label), so its semantics land on the field's node.
  */
 @Composable
 fun <T> DSelect(
@@ -56,6 +57,7 @@ fun <T> DSelect(
     enabled: Boolean = true,
     supportingText: String? = null,
     isError: Boolean = false,
+    fieldModifier: Modifier = Modifier,
 ) {
     val colors = Demo.colors
     val shape = Demo.shapes.small
@@ -68,7 +70,7 @@ fun <T> DSelect(
         label?.let { DText(it, style = Demo.typography.label, color = colors.inkMuted) }
         Box {
             Row(
-                modifier = Modifier
+                modifier = fieldModifier
                     .fillMaxWidth()
                     .onSizeChanged { anchorHeight = it.height; anchorWidth = it.width }
                     .alpha(if (enabled) 1f else DISABLED_FIELD_ALPHA)

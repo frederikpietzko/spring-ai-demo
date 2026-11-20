@@ -1,0 +1,5 @@
+{
+  "resources": [
+    { "glob": "demo-seed/*.sql" }
+  ]
+}

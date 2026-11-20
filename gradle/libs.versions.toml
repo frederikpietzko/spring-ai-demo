@@ -14,6 +14,10 @@ ktor = "3.6.1"
 springAiAgentUtils = "0.13.0"
 # Community MCP security (ADR-0009): built against Spring AI 2.0, verified by this project on 2.1.0-RC2.
 mcpSecurity = "0.1.14"
+# kaiju CLI (ADR-0011): clikt-core without mordant, which keeps the native image free of terminal libraries.
+clikt = "5.2.1"
+# Native image of the kaiju CLI (ADR-0011); GraalVM 25 only for :cli:nativeCompile.
+graalvmNative = "1.1.18"
 
 [libraries]
 # Plugins used by the convention plugin in build-logic
@@ -55,6 +59,10 @@ kotlinx-coroutinesSwing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-s
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
 
+# kaiju CLI
+clikt-core = { module = "com.github.ajalt.clikt:clikt-core", version.ref = "clikt" }
+kotlinx-coroutinesCore = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+
 [plugins]
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlinSpring = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotlin" }
@@ -63,3 +71,4 @@ composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "k
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 springBoot = { id = "org.springframework.boot", version.ref = "springBoot" }
 exposed = { id = "org.jetbrains.exposed.plugin", version.ref = "exposed" }
+graalvmNative = { id = "org.graalvm.buildtools.native", version.ref = "graalvmNative" }

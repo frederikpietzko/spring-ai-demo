@@ -1,6 +1,6 @@
 # ADR-0003: Domain and module topology
 
-- Status: accepted; extended by ADR-0005 (chat protocol): the module and package tables gain the shared library module `chat-protocol` (package `chatprotocol`), which is not a runtime module and has no port; updated by the change `core-mcp-claims`: the `core-mcp` row's status "planned" (the module exists), the sentence "`core-mcp` and `auth-server` do not exist yet" (now true for `auth-server` only), "Pending" for the database `core` (it exists) and the consequence "Only `backend` and `desktop` exist; no code, ports or database named `core` are created" (see the addendum); updated by ADR-0009 (security model, change `mcp-security`): the `auth-server` row's status "planned" (the module exists), the sentence "`core-mcp` and `auth-server` do not exist yet" (both exist), the section "mcp-security fallback" (closed: not needed) and the `core-mcp` addendum's "It depends on no other module" (its tests resolve `:auth-server`; see the addendum 2026-11-20 `mcp-security`)
+- Status: accepted; extended by ADR-0005 (chat protocol): the module and package tables gain the shared library module `chat-protocol` (package `chatprotocol`), which is not a runtime module and has no port; updated by the change `core-mcp-claims`: the `core-mcp` row's status "planned" (the module exists), the sentence "`core-mcp` and `auth-server` do not exist yet" (now true for `auth-server` only), "Pending" for the database `core` (it exists) and the consequence "Only `backend` and `desktop` exist; no code, ports or database named `core` are created" (see the addendum); updated by ADR-0009 (security model, change `mcp-security`): the `auth-server` row's status "planned" (the module exists), the sentence "`core-mcp` and `auth-server` do not exist yet" (both exist), the section "mcp-security fallback" (closed: not needed) and the `core-mcp` addendum's "It depends on no other module" (its tests resolve `:auth-server`; see the addendum 2026-11-20 `mcp-security`); extended by ADR-0011 (demo driver and seeding): the seed SQL of `core` (see the addendum `desktop-script-driver`)
 - Date: 2026-11-19
 - Change: `test-foundation`
 
@@ -87,3 +87,7 @@ PostgreSQL stays on 5432.
 - Start order for local development: database, `auth-server`, `core-mcp`, backend. `core-mcp` and the backend also start without the auth-server; the adjuster's first tool call needs it.
 
 > Note 2026-11-20 (simplification pass): the `ClaimFiling` port and its adapter `CoreClaimFiling` are one class, `ClaimFiling`; it had a single implementation, and the tests fake the `ClaimantCore` connection below it.
+
+## Addendum 2026-11-20: `desktop-script-driver` (ADR-0011)
+
+- The seed SQL for the database `core` (`reset`, `desk-queue`) is owned and tested by `core-mcp` (`src/main/resources/demo-seed/`) and applied only by `./kaiju seed` (or a `seed` line of a demo script). It is not a Flyway migration; `backend` and `desktop` still never touch `core`.

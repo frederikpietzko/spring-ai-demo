@@ -15,3 +15,7 @@ build/
 # OS
 .DS_Store
 **/__pycache__
+
+# kaiju CLI: the native executable and the daemon state directory
+/kaiju
+.kaiju/

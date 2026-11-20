@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatEvent
 import dev.frederikpietzko.springaidemo.chatprotocol.TodoItem
 import dev.frederikpietzko.springaidemo.chatprotocol.TodoStatus
@@ -29,11 +30,30 @@ import dev.frederikpietzko.springaidemo.desktop.components.DButton
 import dev.frederikpietzko.springaidemo.desktop.components.DButtonStyle
 import dev.frederikpietzko.springaidemo.desktop.components.DCard
 import dev.frederikpietzko.springaidemo.desktop.components.DText
+import dev.frederikpietzko.springaidemo.desktop.control.PressFeedback
+import dev.frederikpietzko.springaidemo.desktop.control.PressTarget
+import dev.frederikpietzko.springaidemo.desktop.control.pressFeedback
 import dev.frederikpietzko.springaidemo.desktop.theme.Demo
+
+/** A muted, spaced-out section heading. */
+@Composable
+internal fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+    DText(
+        text.uppercase(),
+        style = Demo.typography.caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp),
+        color = Demo.colors.inkMuted,
+        modifier = modifier,
+    )
+}
 
 /** A prepared claim to check: its facts, the damage items with their amounts in minor units, the total and Confirm. */
 @Composable
-internal fun ClaimCard(card: ChatEvent.ClaimCard, canConfirm: Boolean, onConfirm: () -> Unit) {
+internal fun ClaimCard(
+    card: ChatEvent.ClaimCard,
+    canConfirm: Boolean,
+    onConfirm: () -> Unit,
+    confirmModifier: Modifier = Modifier,
+) {
     DCard(Modifier.fillMaxWidth(), highlighted = true) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DText("Claim to confirm", style = Demo.typography.title, modifier = Modifier.weight(1f))
@@ -59,7 +79,7 @@ internal fun ClaimCard(card: ChatEvent.ClaimCard, canConfirm: Boolean, onConfirm
             onClick = onConfirm,
             style = DButtonStyle.PRIMARY,
             enabled = canConfirm,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = confirmModifier.fillMaxWidth(),
         )
     }
 }
@@ -129,7 +149,12 @@ private fun TodoRow(todo: TodoItem) {
 
 /** A tool call that waits for the user: the tool, its arguments and the two choices. */
 @Composable
-internal fun ConfirmationPanel(pending: ChatEvent.ConfirmationRequest, onDecide: (Boolean) -> Unit) {
+internal fun ConfirmationPanel(
+    pending: ChatEvent.ConfirmationRequest,
+    enabled: Boolean,
+    onDecide: (Boolean) -> Unit,
+    feedback: PressFeedback,
+) {
     DCard(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp), highlighted = true) {
         DText("APPROVAL NEEDED", style = Demo.typography.caption, color = Demo.colors.warning)
         DText("Confirm ${pending.toolName}", style = Demo.typography.title)
@@ -143,8 +168,19 @@ internal fun ConfirmationPanel(pending: ChatEvent.ConfirmationRequest, onDecide:
                 .padding(10.dp),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DButton("Approve", onClick = { onDecide(true) }, style = DButtonStyle.PRIMARY)
-            DButton("Deny", onClick = { onDecide(false) })
+            DButton(
+                "Approve",
+                onClick = { onDecide(true) },
+                style = DButtonStyle.PRIMARY,
+                enabled = enabled,
+                modifier = Modifier.pressFeedback(feedback, PressTarget.Approve),
+            )
+            DButton(
+                "Deny",
+                onClick = { onDecide(false) },
+                enabled = enabled,
+                modifier = Modifier.pressFeedback(feedback, PressTarget.Deny),
+            )
         }
     }
 }

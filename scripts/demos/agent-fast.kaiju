@@ -1,0 +1,16 @@
+# The adjuster payout run without pacing, for agents and quick checks.
+seed
+typing-speed 0ms
+highlight 0ms
+
+persona adjuster
+new-conversation
+send --instant "Process claim #4713"
+wait-idle 5m
+send --instant "Yes, approve it and pay it out."
+wait-idle 5m
+approve
+wait-idle 5m
+approve
+wait-idle 5m
+reply

@@ -8,10 +8,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import dev.frederikpietzko.springaidemo.desktop.chat.ChatViewModel
 import dev.frederikpietzko.springaidemo.desktop.chat.HttpChatApi
 import dev.frederikpietzko.springaidemo.desktop.chat.backendBaseUrl
+import dev.frederikpietzko.springaidemo.desktop.control.DesktopControl
+import dev.frederikpietzko.springaidemo.desktop.control.PressFeedback
+import dev.frederikpietzko.springaidemo.desktop.control.startControlServer
 import dev.frederikpietzko.springaidemo.desktop.theme.KaijuPainter
 import dev.frederikpietzko.springaidemo.desktop.theme.kaijuIconImage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import java.awt.Taskbar
 
 /** The name of the application, shown in the window title and the header. */
@@ -22,13 +30,23 @@ private const val DOCK_ICON_SIZE = 512
 /** The room the macOS traffic lights take at the start of the header. */
 private val MAC_WINDOW_CONTROLS = 64.dp
 
-/** Opens the demo window. The one HTTP client is created here and closed when the window closes. */
+/**
+ * Opens the demo window. The one HTTP client, the one view model and the press feedback are created here and shared
+ * with the control endpoint, which is started only when `DESKTOP_CONTROL_PORT` is a valid port. The client and the
+ * endpoint are closed when the window closes.
+ */
 fun main() {
     val chatApi = HttpChatApi(backendBaseUrl(System::getenv))
+    val viewModel = ChatViewModel(chatApi)
+    val feedback = PressFeedback()
+    val controlScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val controlServer = startControlServer(System::getenv, DesktopControl(viewModel, feedback, controlScope))
     showDockIcon()
     application {
         Window(
             onCloseRequest = {
+                controlServer?.close()
+                controlScope.cancel()
                 chatApi.close()
                 exitApplication()
             },
@@ -50,7 +68,7 @@ fun main() {
             } else {
                 TitleBar()
             }
-            App(chatApi, titleBar = titleBar)
+            App(viewModel, feedback, titleBar = titleBar)
         }
     }
 }

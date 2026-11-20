@@ -45,6 +45,22 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
         exchange(userLine = text, message = text, action = ChatAction.MESSAGE)
     }
 
+    /** Replaces the text in the message input. */
+    fun setInput(text: String) {
+        mutableState.update { it.copy(input = text) }
+    }
+
+    /**
+     * Sends the text in the message input like [send] and empties the input; what Send and Enter do. A blank input, or
+     * a call while Send is not usable ([ChatState.canSend]), is ignored and keeps the input.
+     */
+    suspend fun submitInput() {
+        val text = state.value.input
+        if (text.isBlank() || !state.value.canSend) return
+        mutableState.update { it.copy(input = "") }
+        send(text)
+    }
+
     /**
      * Asks the backend to turn the conversation into a claim card, shown as the user line "Prepare my claim"; the
      * answer is streamed like a reply to [send]. Ignored while an answer is streaming or a confirmation is pending.
@@ -67,7 +83,10 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
         val question: List<ChatMessage> =
             [ChatMessage(ChatMessage.Author.USER, userLine), ChatMessage(ChatMessage.Author.ASSISTANT, "")]
         mutableState.update { it.copy(messages = it.messages + question, sending = true) }
-        streamReply(api.send(ChatRequest(state.value.persona, message, state.value.conversationId, action)))
+        val request = ChatRequest(state.value.persona, message, state.value.conversationId, action)
+        mutableState.streamReply(api.send(request))
+        // After streamReply's finally: a GET against a dead backend can take a while and must not block the input.
+        refreshConversations()
     }
 
     /**
@@ -78,7 +97,9 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
     suspend fun decide(approved: Boolean) {
         val pending = state.value.pendingConfirmation ?: return
         mutableState.update { it.copy(pendingConfirmation = null, sending = true) }
-        streamReply(api.decide(ConfirmationDecision(pending.confirmationId, approved)), continuation = true)
+        val decision = ConfirmationDecision(pending.confirmationId, approved)
+        mutableState.streamReply(api.decide(decision), continuation = true)
+        refreshConversations()
     }
 
     /**
@@ -88,51 +109,6 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
     suspend fun selectPersona(persona: Persona) {
         if (state.value.sending || state.value.pendingConfirmation != null) return
         mutableState.update { it.copy(persona = persona, conversationId = newId(), messages = [], todos = []) }
-        refreshConversations()
-    }
-
-    /**
-     * Appends [events] to the last (assistant) message until a terminal event arrives. A todo update replaces the todo
-     * list; a confirmation request is kept as pending; an error event, or a stream that ends without a terminal event,
-     * is shown under the (partial) reply; `sending` is reset in any case. A [continuation] starts its text after a
-     * paragraph break.
-     */
-    private suspend fun streamReply(events: Flow<ChatEvent>, continuation: Boolean = false) {
-        try {
-            var terminated = false
-            var firstText = continuation
-            events
-                // The stream ends with exactly one terminal event; stop collecting there.
-                .transformWhile { event ->
-                    emit(event)
-                    !event.isTerminal
-                }
-                .collect { event ->
-                    when (event) {
-                        is ChatEvent.TextDelta -> {
-                            val paragraph = firstText
-                            firstText = false
-                            updateReply { it.copy(text = it.text.continuedWith(event.text, paragraph)) }
-                        }
-                        is ChatEvent.ClaimCard -> updateReply { it.copy(claimCard = event) }
-                        is ChatEvent.AnalyticsTable -> updateReply { it.copy(analyticsTable = event) }
-                        is ChatEvent.TodoUpdate -> mutableState.update { it.copy(todos = event.todos) }
-                        ChatEvent.Done -> terminated = true
-                        is ChatEvent.ConfirmationRequest -> {
-                            terminated = true
-                            mutableState.update { it.copy(pendingConfirmation = event) }
-                        }
-                        is ChatEvent.Error -> {
-                            terminated = true
-                            updateReply { it.copy(error = event.message) }
-                        }
-                    }
-                }
-            if (!terminated) updateReply { it.copy(error = CONNECTION_CLOSED) }
-        } finally {
-            mutableState.update { it.copy(sending = false) }
-        }
-        // Outside the finally: a GET against a dead backend can take a while and must not block the input.
         refreshConversations()
     }
 
@@ -167,10 +143,53 @@ class ChatViewModel(private val api: ChatApi, private val newId: () -> String = 
         if (state.value.sending || state.value.pendingConfirmation != null) return
         mutableState.update { it.copy(conversationId = newId(), messages = [], todos = []) }
     }
+}
 
-    private fun updateReply(change: (ChatMessage) -> ChatMessage) {
-        mutableState.update { it.copy(messages = it.messages.dropLast(1) + change(it.messages.last())) }
+/**
+ * Appends [events] to the last (assistant) message until a terminal event arrives. A todo update replaces the todo
+ * list; a confirmation request is kept as pending; an error event, or a stream that ends without a terminal event,
+ * is shown under the (partial) reply; `sending` is reset in any case. A [continuation] starts its text after a
+ * paragraph break. The caller refreshes the conversation list afterwards.
+ */
+private suspend fun MutableStateFlow<ChatState>.streamReply(events: Flow<ChatEvent>, continuation: Boolean = false) {
+    try {
+        var terminated = false
+        var firstText = continuation
+        events
+            // The stream ends with exactly one terminal event; stop collecting there.
+            .transformWhile { event ->
+                emit(event)
+                !event.isTerminal
+            }
+            .collect { event ->
+                when (event) {
+                    is ChatEvent.TextDelta -> {
+                        val paragraph = firstText
+                        firstText = false
+                        updateReply { it.copy(text = it.text.continuedWith(event.text, paragraph)) }
+                    }
+                    is ChatEvent.ClaimCard -> updateReply { it.copy(claimCard = event) }
+                    is ChatEvent.AnalyticsTable -> updateReply { it.copy(analyticsTable = event) }
+                    is ChatEvent.TodoUpdate -> update { it.copy(todos = event.todos) }
+                    ChatEvent.Done -> terminated = true
+                    is ChatEvent.ConfirmationRequest -> {
+                        terminated = true
+                        update { it.copy(pendingConfirmation = event) }
+                    }
+                    is ChatEvent.Error -> {
+                        terminated = true
+                        updateReply { it.copy(error = event.message) }
+                    }
+                }
+            }
+        if (!terminated) updateReply { it.copy(error = CONNECTION_CLOSED) }
+    } finally {
+        update { it.copy(sending = false) }
     }
+}
+
+private fun MutableStateFlow<ChatState>.updateReply(change: (ChatMessage) -> ChatMessage) {
+    update { it.copy(messages = it.messages.dropLast(1) + change(it.messages.last())) }
 }
 
 private fun ConversationMessage.toChatMessage(): ChatMessage = when (role) {

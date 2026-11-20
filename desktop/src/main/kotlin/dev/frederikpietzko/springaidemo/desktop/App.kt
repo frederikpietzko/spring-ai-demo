@@ -20,9 +20,10 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.sp
 import dev.frederikpietzko.springaidemo.desktop.theme.KaijuMascot
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,8 +45,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -55,6 +54,7 @@ import dev.frederikpietzko.springaidemo.chatprotocol.ConversationSummary
 import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatApi
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatMessage
+import dev.frederikpietzko.springaidemo.desktop.chat.ChatState
 import dev.frederikpietzko.springaidemo.desktop.chat.ChatViewModel
 import dev.frederikpietzko.springaidemo.desktop.chat.markdown
 import dev.frederikpietzko.springaidemo.desktop.components.DButton
@@ -63,6 +63,9 @@ import dev.frederikpietzko.springaidemo.desktop.components.DSelect
 import dev.frederikpietzko.springaidemo.desktop.components.DText
 import dev.frederikpietzko.springaidemo.desktop.components.DTextField
 import dev.frederikpietzko.springaidemo.desktop.components.SelectOption
+import dev.frederikpietzko.springaidemo.desktop.control.PressFeedback
+import dev.frederikpietzko.springaidemo.desktop.control.PressTarget
+import dev.frederikpietzko.springaidemo.desktop.control.pressFeedback
 import dev.frederikpietzko.springaidemo.desktop.theme.Demo
 import dev.frederikpietzko.springaidemo.desktop.theme.DemoTheme
 import dev.frederikpietzko.springaidemo.desktop.theme.ThemeMode
@@ -85,6 +88,21 @@ private val personaOptions: List<SelectOption<Persona>> = [
 @Composable
 fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null, titleBar: TitleBar = TitleBar()) {
     val viewModel = remember(chatApi) { ChatViewModel(chatApi) }
+    App(viewModel, themeOverride = themeOverride, titleBar = titleBar)
+}
+
+/**
+ * The chat screen over a prepared [viewModel], so `main` can share it with the control endpoint, and [feedback], which
+ * shows the control the endpoint presses (by default one of its own that nothing presses). The other parameters are
+ * those of the `App(chatApi)` overload; the enablement of every control comes from the [ChatState] rules.
+ */
+@Composable
+fun App(
+    viewModel: ChatViewModel,
+    feedback: PressFeedback = remember { PressFeedback() },
+    themeOverride: ThemeMode? = null,
+    titleBar: TitleBar = TitleBar(),
+) {
     val state by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
     LaunchedEffect(viewModel) { viewModel.refreshConversations() }
@@ -93,37 +111,43 @@ fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null, titleBar: TitleBar =
             titleBar.container {
                 Header(
                     persona = state.persona,
+                    enabled = state.canSelectPersona,
                     startInset = titleBar.startInset,
                     onPersona = { persona -> scope.launch { viewModel.selectPersona(persona) } },
+                    feedback = feedback,
                 )
             }
             Row(Modifier.weight(1f).fillMaxWidth()) {
                 ConversationList(
-                    conversations = state.conversations,
-                    currentId = state.conversationId,
+                    state = state,
                     onNew = viewModel::newConversation,
                     onOpen = { conversation -> scope.launch { viewModel.open(conversation) } },
+                    feedback = feedback,
                     modifier = Modifier.width(260.dp).fillMaxHeight(),
                 )
                 VerticalDivider()
                 Column(Modifier.weight(1f).fillMaxHeight()) {
-                    val canSend = !state.sending && state.pendingConfirmation == null
                     Conversation(
                         messages = state.messages,
                         persona = state.persona,
-                        canConfirm = canSend,
+                        canConfirm = state.canConfirmClaim,
                         onConfirm = { scope.launch { viewModel.confirmClaim() } },
+                        feedback = feedback,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                     state.pendingConfirmation?.let { pending ->
                         ConfirmationPanel(
                             pending,
+                            enabled = state.canDecide,
                             onDecide = { approved -> scope.launch { viewModel.decide(approved) } },
+                            feedback = feedback,
                         )
                     }
                     InputRow(
-                        canSend = canSend,
-                        onSend = { text -> scope.launch { viewModel.send(text) } },
+                        state = state,
+                        feedback = feedback,
+                        onInput = viewModel::setInput,
+                        onSubmit = { scope.launch { viewModel.submitInput() } },
                         onPrepare = { scope.launch { viewModel.prepareClaim() } },
                     )
                 }
@@ -150,38 +174,28 @@ private fun VerticalDivider() {
     Box(Modifier.width(1.dp).fillMaxHeight().background(Demo.colors.border))
 }
 
-/** A muted, spaced-out section heading. */
-@Composable
-internal fun SectionLabel(text: String, modifier: Modifier = Modifier) {
-    DText(
-        text.uppercase(),
-        style = Demo.typography.caption.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp),
-        color = Demo.colors.inkMuted,
-        modifier = modifier,
-    )
-}
-
 /**
  * "New conversation" and the stored conversations by title, newest first; a click opens one. The open conversation
- * is marked with the accent bar.
+ * is marked with the accent bar (and as selected for accessibility).
  */
 @Composable
 private fun ConversationList(
-    conversations: List<ConversationSummary>,
-    currentId: String,
+    state: ChatState,
     onNew: () -> Unit,
     onOpen: (ConversationSummary) -> Unit,
+    feedback: PressFeedback,
     modifier: Modifier,
 ) {
     Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         DButton(
             "New conversation",
             onClick = onNew,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().pressFeedback(feedback, PressTarget.NewConversation),
             style = DButtonStyle.PRIMARY,
+            enabled = state.canStartNewConversation,
         )
         SectionLabel("Conversations", Modifier.padding(start = 4.dp, top = 8.dp))
-        if (conversations.isEmpty()) {
+        if (state.conversations.isEmpty()) {
             DText(
                 "No conversations yet.",
                 style = Demo.typography.caption,
@@ -190,25 +204,43 @@ private fun ConversationList(
             )
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            items(conversations) { conversation ->
-                ConversationRow(conversation.title, conversation.id == currentId) { onOpen(conversation) }
+            items(state.conversations) { conversation ->
+                ConversationRow(
+                    title = conversation.title,
+                    selected = conversation.id == state.conversationId,
+                    enabled = state.canOpenConversation,
+                    modifier = Modifier.pressFeedback(feedback, PressTarget.Conversation(conversation.id)),
+                ) { onOpen(conversation) }
             }
         }
     }
 }
 
 @Composable
-private fun ConversationRow(title: String, selected: Boolean, onClick: () -> Unit) {
+private fun ConversationRow(
+    title: String,
+    selected: Boolean,
+    enabled: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
     val colors = Demo.colors
     val shape = Demo.shapes.small
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(shape)
             .background(if (selected || hovered) colors.surfaceRaised else Color.Transparent, shape)
-            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .semantics { this.selected = selected }
             .pointerHoverIcon(PointerIcon.Hand)
             .height(IntrinsicSize.Min),
         verticalAlignment = Alignment.CenterVertically,
@@ -231,7 +263,13 @@ private fun ConversationRow(title: String, selected: Boolean, onClick: () -> Uni
 
 /** The mascot, the application name with the desk being served, and the persona switch; underlined by the accent. */
 @Composable
-private fun Header(persona: Persona, startInset: Dp, onPersona: (Persona) -> Unit) {
+private fun Header(
+    persona: Persona,
+    enabled: Boolean,
+    startInset: Dp,
+    onPersona: (Persona) -> Unit,
+    feedback: PressFeedback,
+) {
     Column(Modifier.fillMaxWidth().background(Demo.colors.surface)) {
         Row(
             modifier = Modifier.fillMaxWidth().height(64.dp).padding(start = 20.dp + startInset, end = 20.dp),
@@ -261,6 +299,8 @@ private fun Header(persona: Persona, startInset: Dp, onPersona: (Persona) -> Uni
                 selectedLabel = personaOptions.first { it.value == persona }.label,
                 onSelect = onPersona,
                 modifier = Modifier.width(160.dp),
+                enabled = enabled,
+                fieldModifier = Modifier.pressFeedback(feedback, PressTarget.Persona),
             )
         }
         Box(Modifier.fillMaxWidth().height(2.dp).background(Demo.colors.accentGradient))
@@ -277,6 +317,7 @@ private fun Conversation(
     persona: Persona,
     canConfirm: Boolean,
     onConfirm: () -> Unit,
+    feedback: PressFeedback,
     modifier: Modifier,
 ) {
     if (messages.isEmpty()) {
@@ -292,10 +333,12 @@ private fun Conversation(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         items(messages) { message ->
+            val newest = message === messages.last()
             MessageBubble(
                 message = message,
-                canConfirm = canConfirm && message === messages.last(),
+                canConfirm = canConfirm && newest,
                 onConfirm = onConfirm,
+                confirmModifier = if (newest) Modifier.pressFeedback(feedback, PressTarget.ConfirmClaim) else Modifier,
             )
         }
     }
@@ -325,7 +368,12 @@ private fun EmptyConversation(persona: Persona, modifier: Modifier) {
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage, canConfirm: Boolean, onConfirm: () -> Unit) {
+private fun MessageBubble(
+    message: ChatMessage,
+    canConfirm: Boolean,
+    onConfirm: () -> Unit,
+    confirmModifier: Modifier,
+) {
     val colors = Demo.colors
     val fromUser = message.author == ChatMessage.Author.USER
     val corner = 16.dp
@@ -361,7 +409,7 @@ private fun MessageBubble(message: ChatMessage, canConfirm: Boolean, onConfirm: 
                 message.error == null && !hasContent -> DText("…", color = colors.inkMuted)
             }
             message.analyticsTable?.let { AnalyticsTable(it) }
-            message.claimCard?.let { ClaimCard(it, canConfirm, onConfirm) }
+            message.claimCard?.let { ClaimCard(it, canConfirm, onConfirm, confirmModifier) }
             message.error?.let { DText(it, style = Demo.typography.caption, color = colors.danger) }
         }
     }
@@ -383,32 +431,47 @@ private fun Avatar() {
 }
 
 /**
- * The message input with "Send" and "Prepare claim"; Enter sends too. Keeps a 16 dp transparent margin, so the window
- * background shows around it (see the render tests).
+ * The message input with "Send" and "Prepare claim"; Enter sends too. The input text is the [state]'s, so the control
+ * endpoint's typing shows here. Keeps a 16 dp transparent margin, so the window background shows around it (see the
+ * render tests).
  */
 @Composable
-private fun InputRow(canSend: Boolean, onSend: (String) -> Unit, onPrepare: () -> Unit) {
-    var input by remember { mutableStateOf("") }
-    val send = {
-        onSend(input)
-        input = ""
-    }
+private fun InputRow(
+    state: ChatState,
+    feedback: PressFeedback,
+    onInput: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onPrepare: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         DTextField(
-            value = input,
-            onValueChange = { input = it },
+            value = state.input,
+            onValueChange = onInput,
             modifier = Modifier.weight(1f).onPreviewKeyEvent { event ->
                 val enter = event.type == KeyEventType.KeyDown && event.key == Key.Enter
-                if (enter && canSend && input.isNotBlank()) send()
+                if (enter && state.canSend && state.input.isNotBlank()) onSubmit()
                 enter
             },
             placeholder = "Type a message and press Enter",
+            fieldModifier = Modifier.pressFeedback(feedback, PressTarget.Input),
         )
-        DButton("Send", onClick = send, style = DButtonStyle.PRIMARY, enabled = canSend)
-        DButton("Prepare claim", onClick = onPrepare, style = DButtonStyle.SECONDARY, enabled = canSend)
+        DButton(
+            "Send",
+            onClick = onSubmit,
+            style = DButtonStyle.PRIMARY,
+            enabled = state.canSend,
+            modifier = Modifier.pressFeedback(feedback, PressTarget.Send),
+        )
+        DButton(
+            "Prepare claim",
+            onClick = onPrepare,
+            style = DButtonStyle.SECONDARY,
+            enabled = state.canPrepareClaim,
+            modifier = Modifier.pressFeedback(feedback, PressTarget.PrepareClaim),
+        )
     }
 }

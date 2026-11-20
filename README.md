@@ -9,6 +9,8 @@ Small, runnable examples of Spring AI 2.1 features (Kotlin, Spring Boot 4.2). Th
 | `chat-protocol` | Shared library module (no runtime): chat request (with the optional conversation id), persona, chat events, conversation summaries and transcript messages with their JSON form (ADR-0005) |
 | `core-mcp` | Spring Boot 4.2 application on port 8081: the insurer core system (policies, claims, payouts) as a Spring AI MCP server over Streamable HTTP, Exposed, Flyway, its own database `core` (ADR-0003); an OAuth 2 resource server that checks token, scope and claimant ownership (ADR-0009) |
 | `auth-server` | Spring Boot 4.2 application on port 9000: OAuth 2 authorization server (Spring Authorization Server with the community `mcp-authorization-server`) for the two agent clients (ADR-0009) |
+| `control-protocol` | Shared library module (no runtime): the desktop control's command and script syntax, `render`, `parseScript` and the `state` snapshot type, used by `desktop` and `cli` (ADR-0011) |
+| `cli` | The `kaiju` command line (Clikt), built as one native executable `./kaiju`: drives the desktop app, runs demo scripts through a small daemon, seeds the demo data (ADR-0011) |
 | `build-logic` | Included build with the `demo.kotlin-jvm` convention plugin (Kotlin flags, JUnit 6, power-assert, detekt) |
 
 Decisions are recorded in `docs/adr/`, behavior in `openspec/`.
@@ -34,6 +36,8 @@ docker compose up -d                 # local PostgreSQL (pgvector/pgvector:pg18)
 ./gradlew :core-mcp:bootRun          # run the core system on port 8081 (start the database first: docker compose up -d)
 ./gradlew :core-mcp:test             # core-mcp tests (needs Docker)
 ./gradlew :core-mcp:generateMigrations # write migration SQL for new core-mcp tables (needs Docker)
+./gradlew :cli:installKaiju          # build the native ./kaiju executable (GraalVM 25 via toolchain; see Driving the desktop)
+./gradlew :cli:nativeSmokeTest       # run the built executable's smoke test (not part of check)
 docker compose stop lgtm             # stop only the observability stack (bootRun keeps it stopped while the database runs)
 docker compose down                  # stop the database and the observability stack
 ```
@@ -211,6 +215,50 @@ The column on the left lists the stored conversations, loaded at start and after
 
 Once the claimant has described what happened, what was damaged and the policy number, **Prepare claim** (next to Send) asks the backend for a claim card: the policy, district, incident time, kaiju class, description, the damage items with their amounts and the total. **Confirm** on the card files the claim and shows its claim number. Only the newest card can be confirmed; after any later message press Prepare claim again for a fresh card. A reopened conversation shows its text only, not its cards.
 
+## Driving the desktop
+
+A script or an agent can press the desktop's controls the way a user does, visibly (the input fills character by character, each pressed control is outlined first), wait for answers and read the screen back (ADR-0011).
+
+**Build `./kaiju`.** `./gradlew :cli:installKaiju` compiles the `cli` module into one native executable `./kaiju` in the project root (git-ignored, no JDK needed to run it). Only this task needs GraalVM 25: Gradle downloads it as a toolchain through the foojay resolver on first use (the native compile takes a minute or two and a few GB of RAM). If that is not possible (offline, no build for the platform), install one yourself (`sdk install java 25-graalce`, or any GraalVM 25 with `native-image`) and run with `GRAALVM_HOME` pointing at it. `./gradlew check` needs no GraalVM.
+
+**Open the control endpoint.** Start the desktop with a port: `DESKTOP_CONTROL_PORT=8765 ./gradlew :desktop:run`. Without the variable the app opens no port. The endpoint listens on `127.0.0.1` only and refuses requests from web pages. `kaiju` talks to `KAIJU_CONTROL_URL` (default `http://127.0.0.1:8765`).
+
+**Commands** (`./kaiju --help`, `./kaiju <command> --help`):
+
+```bash
+./kaiju persona adjuster             # switch the persona (claimant | adjuster)
+./kaiju new-conversation             # press "New conversation"
+./kaiju open "Gnome"                 # open the stored conversation with this title
+./kaiju send "Process claim #4711"   # type the text into the input, then press Send (--instant: all at once)
+./kaiju prepare-claim                # press "Prepare claim"
+./kaiju confirm-claim                # press "Confirm" on the newest claim card
+./kaiju approve                      # press "Approve" on the pending confirmation (deny: "Deny")
+./kaiju typing-speed 40ms            # pause after each typed character (0ms: none)
+./kaiju highlight 300ms              # how long a pressed control is outlined before it acts (0ms: none)
+./kaiju wait-idle 5m                 # wait until the answer has ended (default 3m)
+./kaiju sleep 2s                     # a fixed pause
+./kaiju reply                        # the newest assistant message
+./kaiju state                        # a readable summary of the screen (--json: the snapshot for agents)
+```
+
+Actions return once the click has happened, not when the answer ends: follow them with `wait-idle`, which waits on the app's state and prints `idle` or `idle: confirmation pending (<tool>)`; use `sleep` only for pacing in front of an audience. Exit codes: 0 ok, 1 refused (the control is not usable, the reply ended in an error, the wait timed out) or wrong usage, 2 the desktop app does not answer, 3 the demo daemon could not start.
+
+**Agent recipe.** `./kaiju state --json` (one JSON object: persona, `sending`, `input`, `pressed`, messages, pending confirmation, todos, conversations, `enabled` per control), act, `./kaiju wait-idle`, then `./kaiju reply` or `state --json` again. For speed: `typing-speed 0ms`, `highlight 0ms` or `send --instant`.
+
+**Demo scripts.** One command per line, `#` comments, blank lines, and `seed [reset|desk-queue]` lines; examples in `scripts/demos/` (`adjuster-payout.kaiju` is paced for a live audience, `agent-fast.kaiju` is not). A script is checked completely before its first line runs.
+
+```bash
+./kaiju demo run scripts/demos/adjuster-payout.kaiju            # in the foreground; stops at the first failing line
+./kaiju demo start scripts/demos/adjuster-payout.kaiju --step   # in the background, paused before each line
+./kaiju demo next                    # run exactly the current line and print its output
+./kaiju demo status                  # file, current line, state (none, running, waiting-step, failed, done, stopped)
+./kaiju demo stop                    # stop it, also during a wait
+```
+
+`demo start`, `next`, `status` and `stop` go through a small background daemon that `./kaiju` starts by itself (it relaunches the same file), one per state directory. It owns only the running demo and exits after 5 minutes without one (`KAIJU_DAEMON_IDLE`, a duration); a newer build of `./kaiju` replaces it. Its state directory is `.kaiju/` next to the executable (`daemon.lock`, `daemon.json`, `daemon.log`; git-ignored), or `KAIJU_STATE_DIR`. Direct commands and `state` never need it.
+
+**Seeding.** `./kaiju seed` puts the `core` database of the compose PostgreSQL into the demo state: `reset` (claims 4700 and 4711-4713 back to `FILED` without payouts, runtime claims removed) and then `desk-queue` (claims 4801 `FILED`, 4802 `UNDER_REVIEW`, 4803 `APPROVED`). `./kaiju seed reset` applies one set. The SQL is `core-mcp`'s (`core-mcp/src/main/resources/demo-seed/`), bundled into the executable; it runs `psql` in the compose service `postgres` through the `compose.yaml` next to `./kaiju` (elsewhere: `KAIJU_COMPOSE_FILE`). Start the database first (`docker compose up -d`). Run `reset` before each rehearsal: a paid claim stays paid otherwise.
+
 ## Observability
 
 The backend exports traces and metrics over OTLP (ADR-0010). Spring AI observes every chat client call, each advisor, the retrieval (vector store), each tool call and each model call, and counts the model's input and output tokens (`gen_ai.client.token.usage`). Every trace is sampled and metrics are pushed every 10 seconds.
@@ -243,6 +291,12 @@ The backend exports traces and metrics over OTLP (ADR-0010). Spring AI observes 
 | `AUTH_SERVER_URL` | `http://localhost:9000` | Issuer of the auth-server: its own issuer, the issuer `core-mcp` accepts and the backend's token endpoint (`/oauth2/token`) |
 | `CLAIMANT_AGENT_SECRET` | `claimant-local-secret` | Client secret of `claimant-agent` (auth-server and backend; the default is for local development only) |
 | `ADJUSTER_AGENT_SECRET` | `adjuster-local-secret` | Client secret of `adjuster-agent` (auth-server and backend; the default is for local development only) |
+| `DESKTOP_CONTROL_PORT` | none | Opens the desktop's control endpoint on `127.0.0.1:<port>` (no port without it) |
+| `KAIJU_CONTROL_URL` | `http://127.0.0.1:8765` | Address of the desktop control endpoint used by `./kaiju` |
+| `KAIJU_STATE_DIR` | `.kaiju/` next to `./kaiju` | State directory of the demo daemon |
+| `KAIJU_DAEMON_IDLE` | `5m` | Idle time after which the demo daemon exits |
+| `KAIJU_COMPOSE_FILE` | `compose.yaml` next to `./kaiju` | Compose file `./kaiju seed` uses when there is none next to the executable |
+| `GRAALVM_HOME` | none | GraalVM 25 for `:cli:nativeCompile` instead of the provisioned toolchain |
 
 The defaults match `compose.yaml` (databases `backend` and `core`, user and password `demo`) and are for local development only.
 

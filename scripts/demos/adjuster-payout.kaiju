@@ -1,0 +1,28 @@
+# Adjuster processes the clean claim 4713, then approves the status change and the payout.
+# (Claim 4711 is the fraud scenario: the adjuster flags it and asks for no payout.)
+# Paced for a live audience. Run: ./kaiju demo run scripts/demos/adjuster-payout.kaiju
+# or step through it: ./kaiju demo start scripts/demos/adjuster-payout.kaiju --step, then ./kaiju demo next
+
+# Known data: the scenario claims back to FILED, plus the desk queue.
+seed
+
+typing-speed 40ms
+highlight 300ms
+
+persona adjuster
+sleep 1s
+new-conversation
+send "Process claim #4713"
+
+# The adjuster checks policy, fraud and damage, moves the claim to review and asks before approving.
+wait-idle 5m
+reply
+send "Yes, approve it and pay it out."
+
+# Two confirmations: the status change to APPROVED, then the payout.
+wait-idle 5m
+approve
+wait-idle 5m
+approve
+wait-idle 5m
+reply

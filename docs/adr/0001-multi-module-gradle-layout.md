@@ -1,6 +1,6 @@
 # ADR-0001: Multi-module Gradle layout
 
-- Status: accepted; partially superseded by ADR-0004 (test strategy): the consequence "No test is committed by the scaffold ..."; extended by ADR-0005 (chat protocol): the statement "There is no shared contract module yet; ..." and the consequence "Sharing code between backend and desktop needs a new module and a new ADR" are settled by the shared library module `chat-protocol`
+- Status: accepted; partially superseded by ADR-0004 (test strategy): the consequence "No test is committed by the scaffold ..."; extended by ADR-0005 (chat protocol): the statement "There is no shared contract module yet; ..." and the consequence "Sharing code between backend and desktop needs a new module and a new ADR" are settled by the shared library module `chat-protocol`; extended by ADR-0011 (demo driver and seeding): the shared library module `control-protocol` and the runtime module `cli` (the `kaiju` native executable)
 - Date: 2026-11-19
 - Change: `scaffold-project`
 
