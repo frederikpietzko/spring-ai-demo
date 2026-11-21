@@ -12,12 +12,19 @@ import java.nio.file.Path
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class DemoRunTest {
     private val answers = mutableMapOf<String, FakeAnswer>()
     private val endpoint = FakeControlEndpoint { line -> answers[line] ?: FakeAnswer(200, "ok") }
     private val seeds = FakeSeedRunner()
     private val console = RecordingConsole()
+
+    /** Each pause the runner took, with the number of command lines the desktop had received before it. */
+    private val pauses = java.util.concurrent.CopyOnWriteArrayList<Pair<Int, Duration>>()
+    private val recordingPause: suspend (Duration) -> Unit = { pauses += endpoint.lines.size to it }
 
     @TempDir
     private lateinit var dir: Path
@@ -31,7 +38,7 @@ class DemoRunTest {
         ["demo", "run", file.toString()],
         mapOf("KAIJU_CONTROL_URL" to url, "KAIJU_STATE_DIR" to dir.resolve("state").toString()),
         console,
-        KaijuServices(seeds = seeds),
+        KaijuServices(seeds = seeds, pause = recordingPause),
     )
 
     @Test
@@ -134,5 +141,89 @@ class DemoRunTest {
         assertEquals(1, exit)
         assertEquals([], endpoint.lines)
         assertTrue("missing.kaiju" in console.err && "does not exist" in console.err, console.err)
+    }
+
+    @Test
+    fun `two actions in a row are separated by the pace`() {
+        val exit = runDemo(script("persona adjuster\nnew-conversation\n"))
+
+        assertEquals(0, exit)
+        assertEquals([1 to 1200.milliseconds], pauses.toList())
+    }
+
+    @Test
+    fun `the read pause follows wait-idle and pauses do not add up`() {
+        val exit = runDemo(script("send \"Hi\"\nwait-idle\nreply\nsend \"More\"\n"))
+
+        assertEquals(0, exit)
+        assertEquals([2 to 4.seconds], pauses.toList())
+    }
+
+    @Test
+    fun `the read pause also follows a wait that ends with a pending confirmation`() {
+        answers["wait-idle 3m"] = FakeAnswer(200, "idle: confirmation pending (issuePayout)")
+
+        val exit = runDemo(script("wait-idle\napprove\n"))
+
+        assertEquals(0, exit)
+        assertEquals([1 to 4.seconds], pauses.toList())
+    }
+
+    @Test
+    fun `no pause follows the last line`() {
+        val exit = runDemo(script("send \"Hi\"\nwait-idle\n"))
+
+        assertEquals(0, exit)
+        assertEquals([], pauses.toList())
+    }
+
+    @Test
+    fun `no pause follows a failed line`() {
+        answers["approve"] = FakeAnswer(409, "there is nothing to approve")
+
+        val exit = runDemo(script("persona adjuster\napprove\nnew-conversation\n"))
+
+        assertEquals(1, exit)
+        assertEquals([1 to 1200.milliseconds], pauses.toList())
+    }
+
+    @Test
+    fun `a script sets its own pace and read pause for the rest of the run`() {
+        val file = script("pace 2s\nread-pause 500ms\npersona adjuster\nnew-conversation\nsend Hi\nwait-idle\nreply\n")
+
+        val exit = runDemo(file)
+
+        assertEquals(0, exit)
+        assertEquals([1 to 2.seconds, 2 to 2.seconds, 4 to 500.milliseconds], pauses.toList())
+        assertTrue("> pace 2s" in console.out && "> read-pause 500ms" in console.out, console.out)
+    }
+
+    @Test
+    fun `zero durations switch the pauses off`() {
+        val file = script("pace 0ms\nread-pause 0ms\npersona adjuster\nnew-conversation\nsend Hi\nwait-idle\nreply\n")
+
+        val exit = runDemo(file)
+
+        assertEquals(0, exit)
+        assertEquals([], pauses.toList())
+    }
+
+    @Test
+    fun `lines that are no actions get no pace`() {
+        val exit = runDemo(script("persona adjuster\nsleep 1s\nnew-conversation\nstate\nsend Hi\n"))
+
+        assertEquals(0, exit)
+        assertEquals([], pauses.toList())
+    }
+
+    @Test
+    fun `direct commands are not paced`() {
+        val services = KaijuServices(seeds = seeds, pause = recordingPause)
+        val env = mapOf("KAIJU_CONTROL_URL" to endpoint.url)
+
+        val exits = [kaiju(["send", "Hi"], env, console, services), kaiju(["approve"], env, console, services)]
+
+        assertEquals([0, 0], exits)
+        assertEquals([], pauses.toList())
     }
 }

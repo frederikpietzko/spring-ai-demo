@@ -1,5 +1,6 @@
 package dev.frederikpietzko.springaidemo.desktop.control
 
+import dev.frederikpietzko.springaidemo.chatprotocol.Persona as ChatPersona
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,6 +50,11 @@ sealed interface PressTarget {
     /** The persona switch. */
     data object Persona : PressTarget {
         override val label: String = "persona"
+    }
+
+    /** The option for [persona] in the open persona drop-down. */
+    data class PersonaOption(val persona: ChatPersona) : PressTarget {
+        override val label: String get() = "persona:${persona.name.lowercase()}"
     }
 
     /** The row of the stored conversation [id] in the conversation list. */

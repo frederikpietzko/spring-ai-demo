@@ -11,6 +11,7 @@ import dev.frederikpietzko.springaidemo.cli.daemon.DaemonFiles
 import dev.frederikpietzko.springaidemo.cli.daemon.DaemonLauncher
 import dev.frederikpietzko.springaidemo.cli.daemon.LocalDaemonConnector
 import dev.frederikpietzko.springaidemo.cli.daemon.NativeDaemonLauncher
+import kotlinx.coroutines.delay
 import java.nio.file.Path
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -69,6 +70,10 @@ class KaijuServices(
     val daemonStartTimeout: Duration = DEFAULT_DAEMON_START_TIMEOUT,
     /** Finds or starts the demo daemon; `null` for the daemon of the state directory. */
     val daemon: DaemonConnector? = null,
+    /** The pacing of `demo run`. */
+    val pacing: Pacing = Pacing.DEMO,
+    /** How `demo run` pauses between lines. */
+    val pause: suspend (Duration) -> Unit = { delay(it) },
 )
 
 /** How long a started daemon may take to answer before the command exits with 3. */

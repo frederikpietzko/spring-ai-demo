@@ -13,7 +13,8 @@ import kotlinx.coroutines.selects.select
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * One running demo: [lines] of the script [file] executed by [runner] in [scope], one line per `next` when [step].
+ * One running demo: [lines] of the script [file] executed by [runner] in [scope], one line per `next` when [step];
+ * only an unattended demo is paced.
  * Its progress is [status]; [onEnd] runs when it has ended (done, failed or stopped).
  */
 class DemoSession(
@@ -67,7 +68,7 @@ class DemoSession(
     @Suppress("TooGenericExceptionCaught") // any crash of a line must end the demo as failed, not wedge the daemon
     private suspend fun run() {
         try {
-            val failure = runner.run(lines, beforeLine = ::beforeLine, afterLine = ::afterLine)
+            val failure = runner.run(lines, paced = !step, beforeLine = ::beforeLine, afterLine = ::afterLine)
             if (failure == null && active) update { it.copy(state = DemoState.DONE.label) }
         } catch (e: CancellationException) {
             throw e

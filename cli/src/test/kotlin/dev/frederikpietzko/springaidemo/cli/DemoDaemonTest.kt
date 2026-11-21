@@ -29,6 +29,8 @@ import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.minutes
+import kotlinx.coroutines.delay
 
 class DemoDaemonTest {
     private val answers = mutableMapOf<String, FakeAnswer>()
@@ -42,7 +44,7 @@ class DemoDaemonTest {
         answers[line] ?: FakeAnswer(200, "ok")
     }
     private val seeds = FakeSeedRunner()
-    private val daemon = DemoDaemon(seeds = seeds, build = "build-a")
+    private val daemon = DemoDaemon(seeds = seeds, build = "build-a", pacing = Pacing.NONE)
     private val connector = DaemonConnector { DaemonConnection.Connected(DaemonClient(daemon.url)) }
 
     @TempDir
@@ -333,5 +335,67 @@ class DemoDaemonTest {
         assertEquals(403, response.statusCode())
         assertEquals("none", status().text("state"))
         assertEquals([], endpoint.lines)
+    }
+
+    @Test
+    fun `an unattended demo pauses between lines, is running during the pause and stop interrupts it`() {
+        val reachedPause = CountDownLatch(1)
+        val paced = DemoDaemon(seeds = seeds, build = "build-a", pacing = Pacing(1.minutes, 1.minutes), pause = {
+            reachedPause.countDown()
+            delay(it)
+        })
+        val pacedConnector = DaemonConnector { DaemonConnection.Connected(DaemonClient(paced.url)) }
+        fun pacedKaiju(vararg args: String) = RecordingConsole().let { console ->
+            Run(
+                kaiju(
+                    args.toList(),
+                    mapOf("KAIJU_CONTROL_URL" to endpoint.url),
+                    console,
+                    KaijuServices(daemon = pacedConnector),
+                ),
+                console,
+            )
+        }
+        paced.use {
+            val _ = pacedKaiju("demo", "start", script("persona adjuster\nnew-conversation\n").toString())
+            assertTrue(reachedPause.await(5, TimeUnit.SECONDS))
+
+            val running = pacedKaiju("demo", "status").console.out
+            val stopped = pacedKaiju("demo", "stop").console.out
+
+            assertTrue("state: running" in running.lines(), running)
+            assertTrue("state: stopped" in stopped.lines(), stopped)
+            Thread.sleep(200)
+            assertEquals(["persona adjuster"], endpoint.lines)
+        }
+    }
+
+    @Test
+    fun `step mode is not paced`() {
+        val pauses = java.util.concurrent.atomic.AtomicInteger()
+        val paced = DemoDaemon(
+            seeds = seeds,
+            build = "build-a",
+            pacing = Pacing(1.minutes, 1.minutes),
+            pause = { val _ = pauses.incrementAndGet() },
+        )
+        val pacedConnector = DaemonConnector { DaemonConnection.Connected(DaemonClient(paced.url)) }
+        fun pacedKaiju(vararg args: String) =
+            kaiju(
+                args.toList(),
+                mapOf("KAIJU_CONTROL_URL" to endpoint.url),
+                RecordingConsole(),
+                KaijuServices(daemon = pacedConnector),
+            )
+        paced.use {
+            val file = script("persona adjuster\nnew-conversation\nwait-idle\nreply\n").toString()
+            val _ = pacedKaiju("demo", "start", file, "--step")
+
+            val exits = [pacedKaiju("demo", "next"), pacedKaiju("demo", "next"), pacedKaiju("demo", "next")]
+
+            assertEquals([0, 0, 0], exits)
+            assertEquals(["persona adjuster", "new-conversation", "wait-idle 3m"], endpoint.lines)
+            assertEquals(0, pauses.get())
+        }
     }
 }

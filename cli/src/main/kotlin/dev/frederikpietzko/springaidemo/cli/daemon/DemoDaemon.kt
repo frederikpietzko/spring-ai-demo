@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpServer
 import dev.frederikpietzko.springaidemo.cli.ControlClient
 import dev.frederikpietzko.springaidemo.cli.DemoRunner
 import dev.frederikpietzko.springaidemo.cli.LineOutcome
+import dev.frederikpietzko.springaidemo.cli.Pacing
 import dev.frederikpietzko.springaidemo.cli.SeedRunner
 import dev.frederikpietzko.springaidemo.cli.SeedSet
 import dev.frederikpietzko.springaidemo.controlprotocol.ScriptResult
@@ -39,11 +40,13 @@ private val MAX_IDLE_POLL: Duration = 1.seconds
  * The demo daemon: owns the one demo that runs, nothing else. A JSON API over HTTP on the loopback address only
  * ([port] 0 picks a free one): `GET /health`, `POST /demo/start`, `POST /demo/next`, `GET /demo/status`,
  * `POST /demo/stop`. A request with an `Origin` header is refused with 403. [seeds] applies `seed` lines; [build] is
- * the identity of the executable it runs from.
+ * the identity of the executable it runs from. An unattended demo is paced by [pacing] through [pause].
  */
 class DemoDaemon(
     private val seeds: SeedRunner,
     private val build: String,
+    private val pacing: Pacing,
+    private val pause: suspend (Duration) -> Unit = { delay(it) },
     private val idle: Duration = DEFAULT_DAEMON_IDLE,
     private val onShutdown: () -> Unit = {},
     port: Int = 0,
@@ -139,7 +142,7 @@ class DemoDaemon(
             val running = session?.takeIf { it.active }
             if (running == null) {
                 val lines = (script as ScriptResult.Valid).lines
-                val runner = DemoRunner(ControlClient(request.controlUrl), seeds)
+                val runner = DemoRunner(ControlClient(request.controlUrl), seeds, pacing, pause)
                 session = DemoSession(request.name, lines, request.step, runner, scope, onEnd = ::touch)
             }
             running

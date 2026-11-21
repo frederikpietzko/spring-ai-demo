@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -63,6 +64,7 @@ import dev.frederikpietzko.springaidemo.desktop.components.DSelect
 import dev.frederikpietzko.springaidemo.desktop.components.DText
 import dev.frederikpietzko.springaidemo.desktop.components.DTextField
 import dev.frederikpietzko.springaidemo.desktop.components.SelectOption
+import dev.frederikpietzko.springaidemo.desktop.control.PersonaMenu
 import dev.frederikpietzko.springaidemo.desktop.control.PressFeedback
 import dev.frederikpietzko.springaidemo.desktop.control.PressTarget
 import dev.frederikpietzko.springaidemo.desktop.control.pressFeedback
@@ -70,6 +72,9 @@ import dev.frederikpietzko.springaidemo.desktop.theme.Demo
 import dev.frederikpietzko.springaidemo.desktop.theme.DemoTheme
 import dev.frederikpietzko.springaidemo.desktop.theme.ThemeMode
 import kotlinx.coroutines.launch
+
+/** The message input grows up to this many lines, then scrolls inside. */
+private const val INPUT_MAX_LINES = 5
 
 /** Both personas can be chosen; each is answered by its own agent. */
 private val personaOptions: List<SelectOption<Persona>> = [
@@ -93,13 +98,15 @@ fun App(chatApi: ChatApi, themeOverride: ThemeMode? = null, titleBar: TitleBar =
 
 /**
  * The chat screen over a prepared [viewModel], so `main` can share it with the control endpoint, and [feedback], which
- * shows the control the endpoint presses (by default one of its own that nothing presses). The other parameters are
+ * shows the control the endpoint presses (by default one of its own that nothing presses), and [personaMenu], the open
+ * state of the persona drop-down that the endpoint opens too (by default its own). The other parameters are
  * those of the `App(chatApi)` overload; the enablement of every control comes from the [ChatState] rules.
  */
 @Composable
 fun App(
     viewModel: ChatViewModel,
     feedback: PressFeedback = remember { PressFeedback() },
+    personaMenu: PersonaMenu = remember { PersonaMenu() },
     themeOverride: ThemeMode? = null,
     titleBar: TitleBar = TitleBar(),
 ) {
@@ -115,6 +122,7 @@ fun App(
                     startInset = titleBar.startInset,
                     onPersona = { persona -> scope.launch { viewModel.selectPersona(persona) } },
                     feedback = feedback,
+                    personaMenu = personaMenu,
                 )
             }
             Row(Modifier.weight(1f).fillMaxWidth()) {
@@ -269,7 +277,9 @@ private fun Header(
     startInset: Dp,
     onPersona: (Persona) -> Unit,
     feedback: PressFeedback,
+    personaMenu: PersonaMenu,
 ) {
+    val menuOpen by personaMenu.isOpen.collectAsState()
     Column(Modifier.fillMaxWidth().background(Demo.colors.surface)) {
         Row(
             modifier = Modifier.fillMaxWidth().height(64.dp).padding(start = 20.dp + startInset, end = 20.dp),
@@ -301,6 +311,9 @@ private fun Header(
                 modifier = Modifier.width(160.dp),
                 enabled = enabled,
                 fieldModifier = Modifier.pressFeedback(feedback, PressTarget.Persona),
+                expanded = menuOpen,
+                onExpandedChange = personaMenu::setOpen,
+                optionModifier = { option -> Modifier.pressFeedback(feedback, PressTarget.PersonaOption(option)) },
             )
         }
         Box(Modifier.fillMaxWidth().height(2.dp).background(Demo.colors.accentGradient))
@@ -431,9 +444,10 @@ private fun Avatar() {
 }
 
 /**
- * The message input with "Send" and "Prepare claim"; Enter sends too. The input text is the [state]'s, so the control
- * endpoint's typing shows here. Keeps a 16 dp transparent margin, so the window background shows around it (see the
- * render tests).
+ * The message input with "Send" and "Prepare claim". The input is a text area that grows up to [INPUT_MAX_LINES]
+ * lines; Enter sends (and never inserts a newline), Shift+Enter inserts one. The input text is the [state]'s, so the
+ * control endpoint's typing shows here. Keeps a 16 dp transparent margin, so the window background shows around it
+ * (see the render tests).
  */
 @Composable
 private fun InputRow(
@@ -445,19 +459,21 @@ private fun InputRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         DTextField(
             value = state.input,
             onValueChange = onInput,
             modifier = Modifier.weight(1f).onPreviewKeyEvent { event ->
-                val enter = event.type == KeyEventType.KeyDown && event.key == Key.Enter
-                if (enter && state.canSend && state.input.isNotBlank()) onSubmit()
+                val enter = event.key == Key.Enter && !event.isShiftPressed
+                val send = enter && event.type == KeyEventType.KeyDown && state.canSend && state.input.isNotBlank()
+                if (send) onSubmit()
                 enter
             },
             placeholder = "Type a message and press Enter",
             fieldModifier = Modifier.pressFeedback(feedback, PressTarget.Input),
+            maxLines = INPUT_MAX_LINES,
         )
         DButton(
             "Send",

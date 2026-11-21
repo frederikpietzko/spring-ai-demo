@@ -9,6 +9,9 @@
 # Seed: `seed reset` below puts the claims back to the scenario state and deletes every claim filed at runtime.
 # Run order: free. Each presentation script stands alone and can run any number of times (usual order 0, 1, 2, 3);
 #   3-back-office brings its own claim and does not need this one.
+# Pacing: made for unattended runs (`./kaiju demo run`): `pace` is the pause between two actions, `read-pause`
+#   the pause after each `wait-idle`, so the audience can read the answer (defaults 1200 ms and 4 s).
+#   Step mode (`--step`) is not paced: each `next` runs at once.
 # Run: ./kaiju demo run scripts/demos/presentation/1-happy-path.kaiju
 #   or step through it: ./kaiju demo start scripts/demos/presentation/1-happy-path.kaiju --step, then ./kaiju demo next
 #
@@ -16,6 +19,8 @@
 #   customer 1. Script 3 reviews the same story as the seeded claim 4810.
 
 seed reset
+pace 1200ms
+read-pause 5s
 
 persona claimant
 new-conversation

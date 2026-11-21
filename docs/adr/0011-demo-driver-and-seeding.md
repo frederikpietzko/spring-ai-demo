@@ -19,9 +19,17 @@ Rejected: driving the Compose semantics tree of a running window (internal API o
 
 ### 2. Visible effects
 
-The input text lives in `ChatState`, so `send` types into the real field character by character (default 40 ms, `typing-speed`). `PressFeedback` holds the one pressed control; `Modifier.pressFeedback` draws a 2 dp accent outline just outside the control (so it also shows around accent-filled buttons) and sets the state description `pressed` for the highlight time (default 300 ms, `highlight`), then the click runs.
+The input text lives in `ChatState`, so `send` types into the real field character by character (default 40 ms, `typing-speed`). `PressFeedback` holds the one pressed control; `Modifier.pressFeedback` draws a 3 dp accent outline just outside the control (so it also shows around accent-filled buttons) plus a translucent accent tint (about 15 percent) over it, so it is easy to see from a distance, and sets the state description `pressed` for the highlight time (default 300 ms, `highlight`), then the click runs.
 
 Rejected: OS-level automation (`java.awt.Robot`, AppleScript): needs permissions and focus, depends on pixels.
+
+The persona switch is opened visibly: `persona <name>` highlights the switch, opens its drop-down and holds it open for the highlight time, highlights the option (`pressed` is `persona:<name>`), then picks it and closes the drop-down. `DSelect` takes a hoisted open state and an `optionModifier`; the open flag (`PersonaMenu`) is shared by `App` and the endpoint like `PressFeedback`, and a user's click toggles the same flag. The chat input is a text area that grows up to five lines (Enter sends, Shift+Enter adds a line), so a long typed prompt is visible in full.
+
+### 3. Pacing lives in the runner
+
+An unattended run is paced by `DemoRunner`, not by the desktop: after a `wait-idle` it pauses for the read pause (default 4 s), between two actions for the pace (default 1200 ms), otherwise not; pauses never stack and there is none after the last or a failed line. The script-only lines `pace <duration>` and `read-pause <duration>` change the values for the rest of a run; `parseCommand` rejects them, so the desktop endpoint answers 400. `demo run` and the daemon use these defaults (`Pacing.DEMO`); step mode and direct commands are not paced, so agents and the endpoint's "return once the click happened" contract stay fast. What belongs to one press (the highlight, the open persona drop-down) stays in the desktop.
+
+Rejected: pausing inside the desktop after every action (slows agents and UI tests, needs a mode the endpoint does not have); a reading pause scaled by reply length (needs a `reply` per wait and a tuning rule).
 
 ### 5. One parser in `control-protocol`
 
@@ -59,4 +67,4 @@ Rejected: a token on the endpoint (no gain for a local, same-user tool; every sc
 
 - `settings.gradle.kts` includes `control-protocol` and `cli`. `./gradlew check` runs their JVM tests and needs no GraalVM; `:cli:nativeSmokeTest` (tag `native`) needs it and is not part of `check`.
 - The CLI is dev tooling like Flyway: it is not a runtime path from `backend` or `desktop` into the database `core` (ADR-0003 stays intact).
-- Follow-ups: screenshots for agents, assertion commands, a drawn pointer, opening the persona drop-down, a visible caret, clearing the backend's stored conversations, a Windows build.
+- Follow-ups: screenshots for agents, assertion commands, a drawn pointer, a visible caret, clearing the backend's stored conversations, a Windows build.

@@ -92,6 +92,17 @@ class AppSemanticsTest {
     }
 
     @Test
+    fun `a click on an option of the open persona switch picks it and closes the menu`() = runDesktopComposeUiTest {
+        setContent { App(FakeChatApi()) }
+        waitForIdle()
+
+        choosePersona("Adjuster")
+
+        onNode(isPersonaSwitch).assertTextContains("Adjuster")
+        onNodeWithText("Claimant").assertDoesNotExist()
+    }
+
+    @Test
     fun `a pending confirmation shows the tool, its arguments and the approve and deny buttons`() =
         runDesktopComposeUiTest {
             setContent { App(FakeChatApi { flowOf(ChatEvent.TextDelta("Ready to pay."), PAYOUT_CONFIRMATION) }) }

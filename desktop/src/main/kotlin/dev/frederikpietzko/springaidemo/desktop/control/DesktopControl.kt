@@ -1,6 +1,7 @@
 package dev.frederikpietzko.springaidemo.desktop.control
 
 import dev.frederikpietzko.springaidemo.chatprotocol.ChatJson
+import dev.frederikpietzko.springaidemo.chatprotocol.Persona
 import dev.frederikpietzko.springaidemo.controlprotocol.Command
 import dev.frederikpietzko.springaidemo.controlprotocol.EnabledControls
 import dev.frederikpietzko.springaidemo.controlprotocol.MessageSnapshot
@@ -55,7 +56,8 @@ sealed interface ControlReply {
 
 /**
  * Drives the chat screen like a user, visibly: every action highlights its control through [feedback] and then runs
- * the same [viewModel] function the control's click runs; `send` types into the input first. Actions run one at a
+ * the same [viewModel] function the control's click runs; `send` types into the input first, `persona` opens the
+ * drop-down through [personaMenu] first. Actions run one at a
  * time and return once the click happened, not when the answer ends; long-running view-model work is started in
  * [scope]. An action whose control is not usable ([ChatState] rules) is refused before anything is highlighted.
  * `wait-idle`, `sleep`, `state` and `reply` do not wait for a running action.
@@ -64,6 +66,7 @@ class DesktopControl(
     private val viewModel: ChatViewModel,
     private val feedback: PressFeedback,
     private val scope: CoroutineScope,
+    private val personaMenu: PersonaMenu = PersonaMenu(),
     @Volatile private var typingSpeed: Duration = DEFAULT_TYPING_SPEED,
     @Volatile private var highlight: Duration = DEFAULT_HIGHLIGHT,
 ) {
@@ -99,9 +102,7 @@ class DesktopControl(
     private suspend fun act(action: Command.Action): ControlReply {
         val state = viewModel.state.value
         return when (action) {
-            is Command.SelectPersona -> press(PressTarget.Persona, state.busyReason()) {
-                viewModel.selectPersona(action.persona)
-            }
+            is Command.SelectPersona -> selectPersona(state, action.persona)
             Command.NewConversation -> press(PressTarget.NewConversation, state.busyReason()) {
                 viewModel.newConversation()
             }
@@ -169,6 +170,25 @@ class DesktopControl(
         if (refusal != null) return ControlReply.Refused(refusal)
         feedback.press(target, highlight)
         click()
+        return ControlReply.Ok(OK)
+    }
+
+    /**
+     * Picks [persona] visibly: highlights the switch, opens its drop-down and holds it open, highlights the option,
+     * then picks it and closes the drop-down.
+     */
+    private suspend fun selectPersona(state: ChatState, persona: Persona): ControlReply {
+        val refusal = state.busyReason()
+        if (refusal != null) return ControlReply.Refused(refusal)
+        feedback.press(PressTarget.Persona, highlight)
+        personaMenu.setOpen(true)
+        try {
+            delay(highlight)
+            feedback.press(PressTarget.PersonaOption(persona), highlight)
+            viewModel.selectPersona(persona)
+        } finally {
+            personaMenu.setOpen(false)
+        }
         return ControlReply.Ok(OK)
     }
 

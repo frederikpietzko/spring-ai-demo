@@ -41,10 +41,14 @@ private const val DISABLED_FIELD_ALPHA = 0.55f
 private const val DISABLED_OPTION_ALPHA = 0.45f
 private const val POPUP_GAP_PX = 4
 
+/** Room around the options inside the scrolling menu, so a pressed option's outline (gap plus line) is not cut. */
+private val MENU_PADDING = 6.dp
+
 /**
  * A dropdown select. [selectedLabel] is the text in the closed field; [supportingText] is shown below the
  * field, in the error colour when [isError] is true. [fieldModifier] applies to the clickable field itself (not the
- * label), so its semantics land on the field's node.
+ * label), so its semantics land on the field's node. The drop-down's open state is internal unless [expanded] and
+ * [onExpandedChange] hoist it; [optionModifier] applies to the row of each option in the open drop-down.
  */
 @Composable
 fun <T> DSelect(
@@ -58,10 +62,18 @@ fun <T> DSelect(
     supportingText: String? = null,
     isError: Boolean = false,
     fieldModifier: Modifier = Modifier,
+    expanded: Boolean? = null,
+    onExpandedChange: (Boolean) -> Unit = {},
+    optionModifier: @Composable (T) -> Modifier = { Modifier },
 ) {
     val colors = Demo.colors
     val shape = Demo.shapes.small
-    var expanded by remember { mutableStateOf(false) }
+    var internalExpanded by remember { mutableStateOf(false) }
+    val isExpanded = expanded ?: internalExpanded
+    val setExpanded: (Boolean) -> Unit = { value ->
+        internalExpanded = value
+        onExpandedChange(value)
+    }
     var anchorHeight by remember { mutableIntStateOf(0) }
     var anchorWidth by remember { mutableIntStateOf(0) }
     val interaction = remember { MutableInteractionSource() }
@@ -76,14 +88,14 @@ fun <T> DSelect(
                     .alpha(if (enabled) 1f else DISABLED_FIELD_ALPHA)
                     .clip(shape)
                     .background(colors.surfaceRaised, shape)
-                    .demoOutline(focused || expanded, shape, error = isError)
+                    .demoOutline(focused || isExpanded, shape, error = isError)
                     .clickable(
                         interactionSource = interaction,
                         indication = null,
                         enabled = enabled,
                         role = Role.DropdownList,
                     ) {
-                        expanded = !expanded
+                        setExpanded(!isExpanded)
                     }
                     .pointerHoverIcon(if (enabled) PointerIcon.Hand else PointerIcon.Default)
                     .padding(horizontal = 10.dp, vertical = 7.dp),
@@ -95,19 +107,12 @@ fun <T> DSelect(
                     color = if (selectedLabel == null) colors.inkMuted else colors.ink,
                     maxLines = 1,
                 )
-                DText(if (expanded) "▴" else "▾", color = colors.inkMuted)
+                DText(if (isExpanded) "▴" else "▾", color = colors.inkMuted)
             }
-            if (expanded && enabled) {
-                Popup(
-                    alignment = Alignment.TopStart,
-                    offset = IntOffset(0, anchorHeight + POPUP_GAP_PX),
-                    onDismissRequest = { expanded = false },
-                    properties = PopupProperties(focusable = true),
-                ) {
-                    SelectMenu(options, width = with(LocalDensity.current) { anchorWidth.toDp() }) {
-                        onSelect(it)
-                        expanded = false
-                    }
+            if (isExpanded && enabled) {
+                SelectPopup(options, anchorHeight, anchorWidth, optionModifier, onClose = { setExpanded(false) }) {
+                    onSelect(it)
+                    setExpanded(false)
                 }
             }
         }
@@ -117,8 +122,38 @@ fun <T> DSelect(
     }
 }
 
+/** The open drop-down just below the field ([anchorHeight] and [anchorWidth] in pixels); [onClose] on dismissal. */
 @Composable
-private fun <T> SelectMenu(options: List<SelectOption<T>>, width: androidx.compose.ui.unit.Dp, onPick: (T) -> Unit) {
+private fun <T> SelectPopup(
+    options: List<SelectOption<T>>,
+    anchorHeight: Int,
+    anchorWidth: Int,
+    optionModifier: @Composable (T) -> Modifier,
+    onClose: () -> Unit,
+    onPick: (T) -> Unit,
+) {
+    Popup(
+        alignment = Alignment.TopStart,
+        offset = IntOffset(0, anchorHeight + POPUP_GAP_PX),
+        onDismissRequest = onClose,
+        properties = PopupProperties(focusable = true),
+    ) {
+        SelectMenu(
+            options,
+            width = with(LocalDensity.current) { anchorWidth.toDp() },
+            optionModifier = optionModifier,
+            onPick = onPick,
+        )
+    }
+}
+
+@Composable
+private fun <T> SelectMenu(
+    options: List<SelectOption<T>>,
+    width: androidx.compose.ui.unit.Dp,
+    optionModifier: @Composable (T) -> Modifier,
+    onPick: (T) -> Unit,
+) {
     val colors = Demo.colors
     val shape = Demo.shapes.medium
     Column(
@@ -129,7 +164,7 @@ private fun <T> SelectMenu(options: List<SelectOption<T>>, width: androidx.compo
             .background(colors.surface, shape)
             .border(1.dp, colors.border, shape)
             .verticalScroll(rememberScrollState())
-            .padding(4.dp),
+            .padding(MENU_PADDING),
     ) {
         var previousGroup: String? = null
         if (options.isEmpty()) {
@@ -146,7 +181,7 @@ private fun <T> SelectMenu(options: List<SelectOption<T>>, width: androidx.compo
             }
             previousGroup = option.group
             Row(
-                modifier = Modifier
+                modifier = optionModifier(option.value)
                     .fillMaxWidth()
                     .clip(Demo.shapes.small)
                     .clickable(enabled = option.enabled) { onPick(option.value) }

@@ -20,8 +20,9 @@ import androidx.compose.ui.unit.dp
 import dev.frederikpietzko.springaidemo.desktop.theme.Demo
 
 /**
- * A single-line text field with an optional [label] above and [supportingText] below. [fieldModifier] applies to the
- * editable field itself (not the label), so its semantics land on the field's node.
+ * A text field with an optional [label] above and [supportingText] below. [fieldModifier] applies to the editable
+ * field itself (not the label), so its semantics land on the field's node. By default it is a single line; with
+ * [maxLines] above 1 it wraps and grows from [minLines] to [maxLines] lines, then scrolls inside.
  */
 @Composable
 fun DTextField(
@@ -36,6 +37,8 @@ fun DTextField(
     numeric: Boolean = false,
     monospace: Boolean = false,
     fieldModifier: Modifier = Modifier,
+    minLines: Int = 1,
+    maxLines: Int = 1,
 ) {
     val colors = Demo.colors
     val shape = Demo.shapes.small
@@ -48,7 +51,9 @@ fun DTextField(
             value = value,
             onValueChange = onValueChange,
             enabled = enabled,
-            singleLine = true,
+            singleLine = maxLines == 1,
+            minLines = minLines,
+            maxLines = maxLines,
             textStyle = textStyle,
             cursorBrush = SolidColor(colors.accent),
             interactionSource = interaction,

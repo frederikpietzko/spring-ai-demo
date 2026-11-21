@@ -5,6 +5,9 @@ import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class ScriptParserTest {
     private val seedSets = ["reset", "desk-queue"]
@@ -77,5 +80,41 @@ class ScriptParserTest {
         val script = assertIs<ScriptResult.Valid>(parseScript("approve\r\ndeny\r\n", seedSets))
 
         assertEquals(["approve", "deny"], script.lines.map { it.text })
+    }
+
+    @Test
+    fun `pace and read-pause lines are script steps with their duration`() {
+        val script = assertIs<ScriptResult.Valid>(parseScript("pace 2s\nread-pause 500ms\npace 0ms", seedSets))
+
+        assertEquals(
+            [ScriptStep.Pace(2.seconds), ScriptStep.ReadPause(500.milliseconds), ScriptStep.Pace(Duration.ZERO)],
+            script.lines.map { it.step },
+        )
+    }
+
+    @Test
+    fun `a bad pacing duration is an invalid line naming the value`() {
+        val invalid = assertIs<ScriptResult.Invalid>(parseScript("persona adjuster\npace soon", seedSets))
+
+        assertEquals(2, invalid.lineNumber)
+        assertTrue("soon" in invalid.message, invalid.message)
+    }
+
+    @Test
+    fun `a pacing line without exactly one duration is an invalid line`() {
+        val missing = assertIs<ScriptResult.Invalid>(parseScript("read-pause", seedSets))
+        val surplus = assertIs<ScriptResult.Invalid>(parseScript("pace 1s 2s", seedSets))
+
+        assertTrue("read-pause" in missing.message, missing.message)
+        assertTrue("pace" in surplus.message, surplus.message)
+    }
+
+    @Test
+    fun `pacing lines are not control commands`() {
+        val pace = assertIs<ParseResult.Invalid>(parseCommand("pace 1s"))
+        val readPause = assertIs<ParseResult.Invalid>(parseCommand("read-pause 4s"))
+
+        assertTrue("'pace'" in pace.message, pace.message)
+        assertTrue("'read-pause'" in readPause.message, readPause.message)
     }
 }

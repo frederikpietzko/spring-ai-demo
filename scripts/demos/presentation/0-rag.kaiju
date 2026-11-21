@@ -7,6 +7,10 @@
 #   with DESKTOP_CONTROL_PORT=8765. Changes no data; `seed reset` below starts it from the scenario state like
 #   every presentation script.
 # Run order: free. Each presentation script stands alone and can run any number of times (usual order 0, 1, 2, 3).
+# Pacing: made for unattended runs (`./kaiju demo run`): `pace` is the pause between two actions, `read-pause`
+#   the pause after each `wait-idle`, so the audience can read the answer (defaults 1200 ms and 4 s). The answers
+#   here are long and cite clauses, so this script reads longer.
+#   Step mode (`--step`) is not paced: each `next` runs at once.
 # Run: ./kaiju demo run scripts/demos/presentation/0-rag.kaiju
 #   or step through it: ./kaiju demo start scripts/demos/presentation/0-rag.kaiju --step, then ./kaiju demo next
 #
@@ -14,6 +18,8 @@
 #   that reads like a command ("Is there an exclusion for ...?") can trip the input guardrail (see script 2).
 
 seed reset
+pace 1200ms
+read-pause 6s
 
 persona claimant
 new-conversation

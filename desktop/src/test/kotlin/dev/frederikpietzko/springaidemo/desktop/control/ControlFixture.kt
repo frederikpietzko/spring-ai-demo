@@ -57,10 +57,20 @@ class ControlFixture(
     /** The press feedback the commands highlight through. */
     val feedback = PressFeedback()
 
+    /** The persona switch's open state the commands open the menu through. */
+    val personaMenu = PersonaMenu()
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** The control under test. */
-    val control = DesktopControl(viewModel, feedback, scope, typingSpeed = typingSpeed, highlight = highlight)
+    val control = DesktopControl(
+        viewModel,
+        feedback,
+        scope,
+        personaMenu = personaMenu,
+        typingSpeed = typingSpeed,
+        highlight = highlight,
+    )
 
     override fun close() {
         scope.cancel()

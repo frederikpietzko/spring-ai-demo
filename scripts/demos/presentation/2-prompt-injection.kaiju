@@ -9,6 +9,10 @@
 #   shows decisionModel UP) and the desktop started with DESKTOP_CONTROL_PORT=8765.
 # Seed: `seed reset` below puts claim 4700 back to FILED with its poisoned invoice; nothing here changes it.
 # Run order: free. Each presentation script stands alone and can run any number of times (usual order 0, 1, 2, 3).
+# Pacing: made for unattended runs (`./kaiju demo run`): `pace` is the pause between two actions, `read-pause`
+#   the pause after each `wait-idle`, so the audience can read the answer (defaults 1200 ms and 4 s). The refusals
+#   are short; the switch to the adjuster opens the persona drop-down visibly.
+#   Step mode (`--step`) is not paced: each `next` runs at once.
 # Run: ./kaiju demo run scripts/demos/presentation/2-prompt-injection.kaiju
 #   or step through it: ./kaiju demo start scripts/demos/presentation/2-prompt-injection.kaiju --step, then ./kaiju demo next
 #
@@ -16,6 +20,8 @@
 #   here a human still has to decide" and run `./kaiju deny`.
 
 seed reset
+pace 1500ms
+read-pause 4s
 
 persona claimant
 new-conversation

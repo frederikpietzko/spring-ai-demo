@@ -11,6 +11,10 @@
 # Seed: `seed reset`, then `seed back-office` below, which adds claim 4810 (FILED) on customer 1's policy KP-1001.
 #   A re-run seeds it FILED again, so the script works after a previous run that paid it.
 # Run order: free. Each presentation script stands alone and can run any number of times (usual order 0, 1, 2, 3).
+# Pacing: made for unattended runs (`./kaiju demo run`): `pace` is the pause between two actions, `read-pause`
+#   the pause after each `wait-idle`, so the audience can read the answer (defaults 1200 ms and 4 s). Each Approve
+#   waits for the reading pause, so the confirmation card is on screen first.
+#   Step mode (`--step`) is not paced: each `next` runs at once.
 # Run: ./kaiju demo run scripts/demos/presentation/3-back-office.kaiju
 #   or step through it: ./kaiju demo start scripts/demos/presentation/3-back-office.kaiju --step, then ./kaiju demo next
 #
@@ -19,6 +23,8 @@
 
 seed reset
 seed back-office
+pace 1200ms
+read-pause 5s
 
 persona adjuster
 new-conversation

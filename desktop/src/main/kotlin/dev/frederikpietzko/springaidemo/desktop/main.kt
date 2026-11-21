@@ -12,6 +12,7 @@ import dev.frederikpietzko.springaidemo.desktop.chat.ChatViewModel
 import dev.frederikpietzko.springaidemo.desktop.chat.HttpChatApi
 import dev.frederikpietzko.springaidemo.desktop.chat.backendBaseUrl
 import dev.frederikpietzko.springaidemo.desktop.control.DesktopControl
+import dev.frederikpietzko.springaidemo.desktop.control.PersonaMenu
 import dev.frederikpietzko.springaidemo.desktop.control.PressFeedback
 import dev.frederikpietzko.springaidemo.desktop.control.startControlServer
 import dev.frederikpietzko.springaidemo.desktop.theme.KaijuPainter
@@ -31,16 +32,18 @@ private const val DOCK_ICON_SIZE = 512
 private val MAC_WINDOW_CONTROLS = 64.dp
 
 /**
- * Opens the demo window. The one HTTP client, the one view model and the press feedback are created here and shared
- * with the control endpoint, which is started only when `DESKTOP_CONTROL_PORT` is a valid port. The client and the
- * endpoint are closed when the window closes.
+ * Opens the demo window. The one HTTP client, the one view model, the press feedback and the persona menu are created
+ * here and shared with the control endpoint, which is started only when `DESKTOP_CONTROL_PORT` is a valid port. The
+ * client and the endpoint are closed when the window closes.
  */
 fun main() {
     val chatApi = HttpChatApi(backendBaseUrl(System::getenv))
     val viewModel = ChatViewModel(chatApi)
     val feedback = PressFeedback()
+    val personaMenu = PersonaMenu()
     val controlScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    val controlServer = startControlServer(System::getenv, DesktopControl(viewModel, feedback, controlScope))
+    val control = DesktopControl(viewModel, feedback, controlScope, personaMenu = personaMenu)
+    val controlServer = startControlServer(System::getenv, control)
     showDockIcon()
     application {
         Window(
@@ -68,7 +71,7 @@ fun main() {
             } else {
                 TitleBar()
             }
-            App(viewModel, feedback, titleBar = titleBar)
+            App(viewModel, feedback, personaMenu, titleBar = titleBar)
         }
     }
 }

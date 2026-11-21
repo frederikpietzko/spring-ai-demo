@@ -236,6 +236,14 @@ class DesktopControlActionsTest {
         assertEquals([], api.requests)
     }
 
+    @Test
+    suspend fun `a pacing line is not a control command and is answered as invalid naming it`() {
+        val result = control.execute("pace 1s")
+
+        val invalid = assertIs<ControlReply.Invalid>(result)
+        assertTrue("'pace'" in invalid.body, invalid.body)
+    }
+
     private companion object {
         val TYPING = 50.milliseconds
 

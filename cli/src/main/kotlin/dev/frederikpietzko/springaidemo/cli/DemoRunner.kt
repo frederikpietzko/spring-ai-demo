@@ -4,7 +4,9 @@ import dev.frederikpietzko.springaidemo.controlprotocol.ScriptLine
 import dev.frederikpietzko.springaidemo.controlprotocol.ScriptStep
 import dev.frederikpietzko.springaidemo.controlprotocol.render
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runInterruptible
+import kotlin.time.Duration
 
 /** The outcome of one script line. */
 @MustUseReturnValues
@@ -21,9 +23,15 @@ data class LineFailure(val line: ScriptLine, val outcome: LineOutcome.Failed)
 
 /**
  * The one executor of script lines: control commands go to the desktop app through [control], `seed` lines to
- * [seeds]. Used by `demo run` in the CLI process and by the daemon.
+ * [seeds]. Used by `demo run` in the CLI process and by the daemon. A paced run waits between lines through [pause],
+ * starting from [pacing] (see [Pacing.gap]); `pace` and `read-pause` lines change it for the rest of the run.
  */
-class DemoRunner(private val control: ControlClient, private val seeds: SeedRunner) {
+class DemoRunner(
+    private val control: ControlClient,
+    private val seeds: SeedRunner,
+    private val pacing: Pacing = Pacing.NONE,
+    private val pause: suspend (Duration) -> Unit = { delay(it) },
+) {
     /** Runs one [line] and waits until it has finished. */
     suspend fun execute(line: ScriptLine): LineOutcome = when (val step = line.step) {
         is ScriptStep.Control -> when (val result = control.send(render(step.command))) {
@@ -32,22 +40,30 @@ class DemoRunner(private val control: ControlClient, private val seeds: SeedRunn
                 LineOutcome.Failed(result.message, result.exitCode)
         }
         is ScriptStep.Seed -> seed(step.name)
+        is ScriptStep.Pace, is ScriptStep.ReadPause -> LineOutcome.Ok("")
     }
 
     /**
      * Runs [lines] in order, calling [beforeLine] before each (step mode suspends there) and [afterLine] after it;
-     * stops at the first failing line and answers it, or `null` when every line succeeded.
+     * when [paced], pauses after a succeeded line that is not the last. Stops at the first failing line and answers
+     * it, or `null` when every line succeeded.
      */
     suspend fun run(
         lines: List<ScriptLine>,
+        paced: Boolean = true,
         beforeLine: suspend (ScriptLine) -> Unit = {},
         afterLine: (ScriptLine, LineOutcome) -> Unit = { _, _ -> },
     ): LineFailure? {
-        for (line in lines) {
+        var current = pacing
+        for ([index, line] in lines.withIndex()) {
             beforeLine(line)
             val outcome = execute(line)
             afterLine(line, outcome)
             if (outcome is LineOutcome.Failed) return LineFailure(line, outcome)
+            current = current.after(line.step)
+            val next = lines.getOrNull(index + 1) ?: break
+            val gap = current.gap(line.step, next.step)
+            if (paced && gap > Duration.ZERO) pause(gap)
         }
         return null
     }

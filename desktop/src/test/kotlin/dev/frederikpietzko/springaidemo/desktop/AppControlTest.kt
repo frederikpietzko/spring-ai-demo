@@ -73,6 +73,22 @@ class AppControlTest {
     }
 
     @Test
+    fun `persona adjuster opens the menu with Adjuster pressed before the switch shows it, then closes the menu`() =
+        withApp(ControlFixture(highlight = SLOW)) { fixture ->
+            val persona = fixture.run("persona adjuster")
+
+            waitUntilExists(isPersonaSwitch and isPressed)
+            waitUntilExists(hasText("Adjuster") and isPressed)
+            onNode(isPersonaSwitch).assertTextContains("Claimant")
+            onNode(hasText("Claimant") and !isPersonaSwitch).assertExists()
+            waitUntil(timeoutMillis = WAIT_MS) { persona.isCompleted }
+            waitForIdle()
+            onNode(isPersonaSwitch).assertTextContains("Adjuster")
+            onNode(isPressed).assertDoesNotExist()
+            onNode(hasText("Claimant")).assertDoesNotExist()
+        }
+
+    @Test
     fun `open shows the transcript and marks the conversation's row`() = withApp { fixture ->
         waitUntilExists(hasText("Gnome"))
 
@@ -115,7 +131,7 @@ class AppControlTest {
         test: suspend ComposeUiTest.(ControlFixture) -> Unit,
     ) = fixture.use {
         runDesktopComposeUiTest {
-            setContent { App(fixture.viewModel, fixture.feedback) }
+            setContent { App(fixture.viewModel, fixture.feedback, fixture.personaMenu) }
             waitForIdle()
             test(fixture)
         }

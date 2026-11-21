@@ -39,11 +39,18 @@ fun demoCommand(cli: Cli): CoreCliktCommand = DemoGroup().subcommands(
 
 private class DemoGroup : CoreCliktCommand("demo") {
     override fun help(context: Context): String =
-        "Runs demo scripts: one command per line, `#` comments, `seed [set]` lines. `start`, `next`, `status` and " +
-            "`stop` work through a background daemon that starts itself; `run` runs a script in the foreground."
+        "Runs demo scripts: one command per line, `#` comments, `seed [set]` lines, `pace` and `read-pause` lines. " +
+            "`start`, `next`, `status` and `stop` work through a background daemon that starts itself; `run` runs a " +
+            "script in the foreground."
 
     override fun run() = Unit
 }
+
+/** How an unattended run is paced, for the help texts. */
+private const val PACING_HELP =
+    "The run pauses 1200 ms between two actions and 4 s after each `wait-idle` (the read pause), so an audience " +
+        "can follow; the script lines `pace <duration>` and `read-pause <duration>` change this (`0ms` for none). " +
+        "--step demos are not paced."
 
 /** A script file read and checked: its [file] path as given and its command [lines]. */
 class LoadedScript(val file: String, val lines: List<ScriptLine>)
@@ -74,11 +81,11 @@ private class DemoRunCommand(private val cli: Cli) : CoreCliktCommand("run") {
 
     override fun help(context: Context): String =
         "Checks the script, then runs it in this process without a daemon: prints each command and its output, " +
-            "stops at the first failing line with that line's exit code (1 or 2)."
+            "stops at the first failing line with that line's exit code (1 or 2). $PACING_HELP"
 
     override fun run() {
         val script = cli.loadScript(file)
-        val runner = DemoRunner(cli.control, cli.seeds)
+        val runner = DemoRunner(cli.control, cli.seeds, cli.services.pacing, cli.services.pause)
         val failure = runBlocking {
             runner.run(
                 script.lines,
@@ -98,7 +105,8 @@ private class DemoStartCommand(private val cli: Cli) : CoreCliktCommand("start")
     private val step by option("--step", help = "start paused; run one line per `kaiju demo next`").flag()
 
     override fun help(context: Context): String =
-        "Checks the script and starts it in the background; returns at once. Refused while another demo runs."
+        "Checks the script and starts it in the background; returns at once. Refused while another demo runs. " +
+            "$PACING_HELP With --step no pauses are made: `kaiju demo next` paces the demo."
 
     override fun run() {
         val script = cli.loadScript(file)

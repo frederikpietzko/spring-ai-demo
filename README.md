@@ -209,7 +209,7 @@ The title is the beginning of the first message (at most 60 characters).
 
 ## Desktop chat
 
-Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send**: the reply grows as the text deltas arrive. The persona switch selects `Claimant` (default) or `Adjuster`. Stored conversations and claim cards belong to the claimant. An adjuster reply with payout statistics shows them as a table (title, column headers, one line per group) under the reply text. When the adjuster's reply asks for a payout, a confirmation panel shows the tool and its arguments with **Approve** and **Deny**; while it is open no new message can be sent, and the decision's continuation is appended to the same reply. While the adjuster works through a todo list, a **Todo list** panel on the right shows its latest version: `[ ]` pending, `[>]` in progress (with its "-ing" text), `[x]` done. A new conversation, an opened conversation or a persona switch clears it. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key.
+Start the backend, then `./gradlew :desktop:run`. Type a message and press **Send** or Enter (Shift+Enter adds a line; the input grows up to five lines, then scrolls): the reply grows as the text deltas arrive. The persona switch selects `Claimant` (default) or `Adjuster`. Stored conversations and claim cards belong to the claimant. An adjuster reply with payout statistics shows them as a table (title, column headers, one line per group) under the reply text. When the adjuster's reply asks for a payout, a confirmation panel shows the tool and its arguments with **Approve** and **Deny**; while it is open no new message can be sent, and the decision's continuation is appended to the same reply. While the adjuster works through a todo list, a **Todo list** panel on the right shows its latest version: `[ ]` pending, `[>]` in progress (with its "-ing" text), `[x]` done. A new conversation, an opened conversation or a persona switch clears it. Failures appear under the reply: "Backend not reachable" when nothing listens at `BACKEND_URL`, the backend's generic error text without an API key.
 
 The column on the left lists the stored conversations, loaded at start and after every answer. Click one to see its transcript and continue it; **New conversation** clears the screen and starts a new one. The desktop gives every conversation its own id, so the backend remembers it across desktop and backend restarts. Without a backend the list stays empty.
 
@@ -217,7 +217,7 @@ Once the claimant has described what happened, what was damaged and the policy n
 
 ## Driving the desktop
 
-A script or an agent can press the desktop's controls the way a user does, visibly (the input fills character by character, each pressed control is outlined first), wait for answers and read the screen back (ADR-0011).
+A script or an agent can press the desktop's controls the way a user does, visibly (the input fills character by character, each pressed control is outlined and tinted first, the persona switch opens its drop-down and highlights the option before it picks it), wait for answers and read the screen back (ADR-0011).
 
 **Build `./kaiju`.** `./gradlew :cli:installKaiju` compiles the `cli` module into one native executable `./kaiju` in the project root (git-ignored, no JDK needed to run it). Only this task needs GraalVM 25: Gradle downloads it as a toolchain through the foojay resolver on first use (the native compile takes a minute or two and a few GB of RAM). If that is not possible (offline, no build for the platform), install one yourself (`sdk install java 25-graalce`, or any GraalVM 25 with `native-image`) and run with `GRAALVM_HOME` pointing at it. `./gradlew check` needs no GraalVM.
 
@@ -226,7 +226,7 @@ A script or an agent can press the desktop's controls the way a user does, visib
 **Commands** (`./kaiju --help`, `./kaiju <command> --help`):
 
 ```bash
-./kaiju persona adjuster             # switch the persona (claimant | adjuster)
+./kaiju persona adjuster             # open the persona switch and pick a persona (claimant | adjuster)
 ./kaiju new-conversation             # press "New conversation"
 ./kaiju open "Gnome"                 # open the stored conversation with this title
 ./kaiju send "Process claim #4711"   # type the text into the input, then press Send (--instant: all at once)
@@ -234,7 +234,7 @@ A script or an agent can press the desktop's controls the way a user does, visib
 ./kaiju confirm-claim                # press "Confirm" on the newest claim card
 ./kaiju approve                      # press "Approve" on the pending confirmation (deny: "Deny")
 ./kaiju typing-speed 40ms            # pause after each typed character (0ms: none)
-./kaiju highlight 300ms              # how long a pressed control is outlined before it acts (0ms: none)
+./kaiju highlight 300ms              # how long a pressed control is highlighted before it acts (0ms: none)
 ./kaiju wait-idle 5m                 # wait until the answer has ended (default 3m)
 ./kaiju sleep 2s                     # a fixed pause
 ./kaiju reply                        # the newest assistant message
@@ -245,7 +245,9 @@ Actions return once the click has happened, not when the answer ends: follow the
 
 **Agent recipe.** `./kaiju state --json` (one JSON object: persona, `sending`, `input`, `pressed`, messages, pending confirmation, todos, conversations, `enabled` per control), act, `./kaiju wait-idle`, then `./kaiju reply` or `state --json` again. For speed: `typing-speed 0ms`, `highlight 0ms` or `send --instant`.
 
-**Demo scripts.** One command per line, `#` comments, blank lines, and `seed [reset|desk-queue|back-office]` lines; examples in `scripts/demos/` (`adjuster-payout.kaiju` is paced for a live audience, `agent-fast.kaiju` is not). A script is checked completely before its first line runs.
+**Demo scripts.** One command per line, `#` comments, blank lines, `seed [reset|desk-queue|back-office]` lines and the pacing lines `pace <duration>` and `read-pause <duration>`; examples in `scripts/demos/` (`adjuster-payout.kaiju` is paced for a live audience, `agent-fast.kaiju` is not). A script is checked completely before its first line runs.
+
+**Pacing.** An unattended run (`demo run`, or `demo start` without `--step`) pauses between lines so an audience can follow: `pace` (default 1200 ms) between two actions (`persona`, `new-conversation`, `open`, `send`, `prepare-claim`, `confirm-claim`, `approve`, `deny`) and `read-pause` (default 4 s) after each `wait-idle`, also when it stops at a pending confirmation, so the answer can be read. Pauses never stack, there is none after the last or a failed line, and `0ms` turns one off. A `pace` or `read-pause` line changes the value for the rest of that run; both are script lines only (`./kaiju pace 1s` is not a command). Step mode and direct commands are not paced.
 
 ```bash
 ./kaiju demo run scripts/demos/adjuster-payout.kaiju            # in the foreground; stops at the first failing line

@@ -40,6 +40,16 @@ class HelpTest {
         assertEquals([], failing.map { it.path })
     }
 
+    @Test
+    fun `the help of demo run and demo start explains the pacing`() {
+        val helps = [["demo", "run"], ["demo", "start"]].map { path ->
+            RecordingConsole().also { val _ = kaiju(path + "--help", mapOf(), it) }.out
+        }
+
+        val missing = helps.filterNot { "pace" in it && "read-pause" in it && "--step" in it }
+        assertEquals([], missing)
+    }
+
     /** The plain-text help holds the description between the usage line and the first section. */
     private fun hasDescription(out: String): Boolean =
         out.substringAfter("Usage:").lines().drop(1).takeWhile { !it.endsWith(":") }.any { it.isNotBlank() }
