@@ -1,13 +1,17 @@
 package dev.frederikpietzko.springaidemo.backend.chat
 
+import dev.frederikpietzko.springai.kotlin.FlowAdvisor
+import dev.frederikpietzko.springai.kotlin.FlowAdvisorChain
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onEach
 import org.slf4j.LoggerFactory
-import org.springframework.ai.chat.client.ChatClientMessageAggregator
 import org.springframework.ai.chat.client.ChatClientRequest
 import org.springframework.ai.chat.client.ChatClientResponse
-import org.springframework.ai.chat.client.advisor.api.StreamAdvisor
-import org.springframework.ai.chat.client.advisor.api.StreamAdvisorChain
 import org.springframework.core.Ordered
-import reactor.core.publisher.Flux
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.TimeSource
 
 private val log = LoggerFactory.getLogger(AuditAdvisor::class.java)
@@ -16,36 +20,40 @@ private val log = LoggerFactory.getLogger(AuditAdvisor::class.java)
 private const val AUDIT_ORDER = Ordered.HIGHEST_PRECEDENCE + 100
 
 /**
- * A custom advisor: records one [AuditEntry] per streamed chat call, without touching the streamed chunks.
+ * A custom flow advisor: records one [AuditEntry] per streamed chat call, without touching the streamed chunks.
  *
- * Not a `BaseAdvisor`: its `after()` runs only for chunks with a finish reason. The aggregator's callback fires on
- * completion but never for a failed stream, hence the `doOnError`; a stream the client cancels is not audited.
+ * Per collection, it counts the reply characters as they pass and records once the stream has ended: completed
+ * (success), failed (failure) or cancelled by the client (cancelled), each with the characters received until then.
  */
-class AuditAdvisor(private val auditTrail: AuditTrail) : StreamAdvisor {
-    override fun getName(): String = "AuditAdvisor"
-
-    override fun getOrder(): Int = AUDIT_ORDER
-
-    override fun adviseStream(request: ChatClientRequest, chain: StreamAdvisorChain): Flux<ChatClientResponse> {
+class AuditAdvisor(private val auditTrail: AuditTrail) : FlowAdvisor(AUDIT_ORDER) {
+    override fun adviseFlow(request: ChatClientRequest, chain: FlowAdvisorChain): Flow<ChatClientResponse> {
         val userMessage = request.prompt().userMessage.text.orEmpty()
-        val started = TimeSource.Monotonic.markNow()
-
-        fun record(outcome: AuditOutcome, replyChars: Int) {
-            val entry = AuditEntry(userMessage, outcome, replyChars, started.elapsedNow().inWholeMilliseconds)
-            auditTrail.record(entry)
-            log.info(
-                "Chat stream audited: outcome={}, messageChars={}, replyChars={}, millis={}",
-                outcome,
-                userMessage.length,
-                replyChars,
-                entry.millis,
+        return flow {
+            val started = TimeSource.Monotonic.markNow()
+            var replyChars = 0
+            emitAll(
+                chain.next(request)
+                    .onEach { replyChars += it.chatResponse()?.result?.output?.text.orEmpty().length }
+                    .onCompletion { cause ->
+                        val outcome = when (cause) {
+                            null -> AuditOutcome.SUCCESS
+                            is CancellationException -> AuditOutcome.CANCELLED
+                            else -> AuditOutcome.FAILURE
+                        }
+                        record(AuditEntry(userMessage, outcome, replyChars, started.elapsedNow().inWholeMilliseconds))
+                    },
             )
         }
+    }
 
-        return ChatClientMessageAggregator()
-            .aggregateChatClientResponse(chain.nextStream(request)) { aggregated ->
-                record(AuditOutcome.SUCCESS, aggregated.chatResponse()?.result?.output?.text.orEmpty().length)
-            }
-            .doOnError { record(AuditOutcome.FAILURE, replyChars = 0) }
+    private fun record(entry: AuditEntry) {
+        auditTrail.record(entry)
+        log.info(
+            "Chat stream audited: outcome={}, messageChars={}, replyChars={}, millis={}",
+            entry.outcome,
+            entry.userMessage.length,
+            entry.replyChars,
+            entry.millis,
+        )
     }
 }

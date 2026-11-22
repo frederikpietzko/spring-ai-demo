@@ -66,7 +66,7 @@ The backend SHALL answer a chat request whose body is not valid JSON or has an u
 - **THEN** the response status is 400 and the model received no prompt
 
 ### Requirement: Every streamed chat call is audited
-The claimant agent SHALL record an audit entry for every streamed chat call that ends, by completion or by failure, with the user message, the outcome (success or failure), the reply length and the duration, once the stream has ended. A stream that is cancelled before it ends (the client disconnects) SHALL NOT be audited. Recording SHALL NOT delay or alter the streamed events.
+The claimant agent SHALL record an audit entry for every streamed chat call that ends, by completion, by failure or by cancellation (the client disconnects before the stream ends), with the user message, the outcome (success, failure or cancelled), the length of the reply received so far and the duration, once the stream has ended. Recording SHALL NOT delay or alter the streamed events.
 
 #### Scenario: Successful stream is audited
 - **WHEN** a claimant request with a unique message is answered with the chunks "Hel" and "lo"
@@ -75,6 +75,10 @@ The claimant agent SHALL record an audit entry for every streamed chat call that
 #### Scenario: Failed stream is audited
 - **WHEN** a claimant request with a unique message fails after the chunk "Hel"
 - **THEN** the audit trail holds an entry for that message with outcome failure
+
+#### Scenario: Cancelled stream is audited
+- **WHEN** a claimant request with a unique message is answered with the chunk "Hel" while the model is still writing, and the collector stops after that first chunk
+- **THEN** the audit trail holds one entry for that message with outcome cancelled and reply length 3
 
 #### Scenario: Auditing does not change the events
 - **WHEN** a claimant request is answered with the chunks "Hel" and "lo"

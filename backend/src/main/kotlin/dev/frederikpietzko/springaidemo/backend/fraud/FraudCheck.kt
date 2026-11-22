@@ -1,9 +1,10 @@
 package dev.frederikpietzko.springaidemo.backend.fraud
 
+import dev.frederikpietzko.springai.kotlin.build
+import dev.frederikpietzko.springai.kotlin.prompt
 import org.slf4j.LoggerFactory
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.chat.client.entity
-import org.springframework.ai.chat.client.advisor.StructuredOutputValidationAdvisor
 import org.springframework.ai.tool.ToolCallbackProvider
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
@@ -38,26 +39,20 @@ class FraudCheck(
         coreTools.toolCallbacks.filter { it.toolDefinition.name() == READ_ONLY_CORE_TOOL }.toTypedArray()
     }
 
-    private val chatClient = builder
-        .defaultSystem(systemPrompt, Charsets.UTF_8)
-        .defaultTools(readOnlyCoreTools, sightingBulletinSearch)
-        .defaultAdvisors(
-            // Inside the tool loop: it lets tool-call rounds through and checks only the final reply.
-            StructuredOutputValidationAdvisor.builder()
-                .outputType(FraudAssessment::class.java)
-                .maxRepeatAttempts(ASSESSMENT_RETRIES)
-                .build(),
-        )
-        .build()
+    private val chatClient = builder.build {
+        system(systemPrompt)
+        tools(readOnlyCoreTools, sightingBulletinSearch)
+        // Inside the tool loop: it lets tool-call rounds through and checks only the final reply.
+        advisors { structuredOutputValidation<FraudAssessment>(maxRepeatAttempts = ASSESSMENT_RETRIES) }
+    }
 
     /** Assesses claim [claimNumber]; a reply that is still no assessment after the retry is `Unreadable`. */
     fun assess(claimNumber: Long): FraudCheckResult {
         val assessment = try {
-            chatClient.prompt()
-                .user("Check claim $claimNumber against the sighting bulletins.")
-                .toolContext(ADJUSTER_IDENTITY)
-                .call()
-                .entity<FraudAssessment>()
+            chatClient.prompt {
+                user("Check claim $claimNumber against the sighting bulletins.")
+                toolContext(ADJUSTER_IDENTITY)
+            }.call().entity<FraudAssessment>()
         } catch (e: JacksonException) {
             // Malformed JSON, an unknown verdict or a value of the wrong type.
             log.warn("Unreadable fraud assessment", e)

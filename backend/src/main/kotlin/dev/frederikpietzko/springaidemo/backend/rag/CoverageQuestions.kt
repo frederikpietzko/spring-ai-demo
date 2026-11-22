@@ -1,5 +1,7 @@
 package dev.frederikpietzko.springaidemo.backend.rag
 
+import dev.frederikpietzko.springai.kotlin.build
+import dev.frederikpietzko.springai.kotlin.prompt
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.document.Document
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor
@@ -14,11 +16,11 @@ data class CoverageAnswer(val text: String, val citations: List<Citation>)
 /** The minimal RAG example: answers a coverage question from the policy wording, with citations. */
 @Service
 class CoverageQuestions(builder: ChatClient.Builder, policyWordingAdvisor: RetrievalAugmentationAdvisor) {
-    private val chatClient = builder.defaultAdvisors(policyWordingAdvisor).build()
+    private val chatClient = builder.build { advisors { +policyWordingAdvisor } }
 
     /** The citations are the retrieved clauses, not necessarily the ones the model relied on. */
     fun answer(question: String): CoverageAnswer {
-        val response = chatClient.prompt().user(question).call().chatClientResponse()
+        val response = chatClient.prompt { user(question) }.call().chatClientResponse()
         val clauses = response.context()[RetrievalAugmentationAdvisor.DOCUMENT_CONTEXT] as? List<*>
         return CoverageAnswer(
             text = response.chatResponse()?.result?.output?.text.orEmpty(),

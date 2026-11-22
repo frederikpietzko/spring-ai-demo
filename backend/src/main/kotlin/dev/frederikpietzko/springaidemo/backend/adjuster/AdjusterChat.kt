@@ -1,5 +1,7 @@
 package dev.frederikpietzko.springaidemo.backend.adjuster
 
+import dev.frederikpietzko.springai.kotlin.chatResponseFlow
+import dev.frederikpietzko.springai.kotlin.prompt
 import dev.frederikpietzko.springaidemo.backend.chat.ADJUSTER_AGENT
 import dev.frederikpietzko.springaidemo.backend.chat.Conversations
 import dev.frederikpietzko.springaidemo.backend.fraud.ADJUSTER_IDENTITY
@@ -14,7 +16,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.reactive.asFlow
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springaicommunity.agent.tools.TodoWriteTool
@@ -110,16 +111,18 @@ class AdjusterChat(
             val messages = withContext(Dispatchers.IO) { conversation(tools) }
             val rounds = RoundCapture()
             val reply = StringBuilder()
-            adjusterChatClient.prompt()
-                .system { it.param("today", LocalDate.now(ZoneOffset.UTC).toString()) }
-                .messages(messages)
-                .tools(tools)
-                .toolContext(ADJUSTER_IDENTITY)
-                .advisors(rounds, RoundBreaks())
-                .stream()
-                // Not content(): only the response metadata tells a paused reply apart.
-                .chatResponse()
-                .asFlow()
+            adjusterChatClient.prompt {
+                system { param("today", LocalDate.now(ZoneOffset.UTC).toString()) }
+                messages(messages)
+                tools(tools)
+                toolContext(ADJUSTER_IDENTITY)
+                advisors {
+                    +rounds
+                    +roundBreaks()
+                }
+            }.stream()
+                // Not contentFlow(): only the response metadata tells a paused reply apart.
+                .chatResponseFlow()
                 .collect { response ->
                     val text = response.result?.output?.text
                     when {

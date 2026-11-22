@@ -7,6 +7,7 @@ import com.tngtech.archunit.junit.AnalyzeClasses
 import com.tngtech.archunit.junit.ArchTest
 import com.tngtech.archunit.lang.ArchRule
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses
+import dev.frederikpietzko.springai.kotlin.FlowAdvisor
 import org.jetbrains.exposed.v1.core.Table
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor
@@ -24,6 +25,12 @@ private val unobservedChatClientFactories: DescribedPredicate<JavaMethodCall> =
             target.owner.isEquivalentTo(ToolCallingAdvisor::class.java) -> target.name == "builder"
             else -> false
         }
+    }
+
+/** The Java-style `default*` methods of `ChatClient.Builder`; the backend configures its clients with `build { }`. */
+private val javaStyleBuilderDefaults: DescribedPredicate<JavaMethodCall> =
+    DescribedPredicate.describe("ChatClient.Builder.default*(..)") {
+        it.target.owner.isEquivalentTo(ChatClient.Builder::class.java) && it.target.name.startsWith("default")
     }
 
 @AnalyzeClasses(packagesOf = [BackendApplication::class], importOptions = [ImportOption.DoNotIncludeTests::class])
@@ -111,4 +118,19 @@ class ArchitectureTest {
                 "org.jetbrains.exposed..",
             )
             .because("the chat configuration wires the guardrail; the guardrail itself needs only Spring AI")
+
+    /** ADR-0012: chat clients are configured with the builder DSL of `spring-ai-kotlin`, not the Java-style builder. */
+    @ArchTest
+    val chat_clients_use_the_builder_dsl: ArchRule =
+        noClasses()
+            .should().callMethodWhere(javaStyleBuilderDefaults)
+            .because("ADR-0012: the backend configures its chat clients with ChatClient.Builder.build { }")
+
+    /** ADR-0012: a flow advisor is plain Kotlin flows; the Reactor bridge stays hidden in `FlowAdvisor`. */
+    @ArchTest
+    val flow_advisors_are_reactor_free: ArchRule =
+        noClasses()
+            .that().areAssignableTo(FlowAdvisor::class.java)
+            .should().dependOnClassesThat().resideInAPackage("reactor..")
+            .because("ADR-0012: FlowAdvisor hides the Reactor bridge, its subclasses work with Kotlin flows")
 }

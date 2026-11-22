@@ -1,18 +1,19 @@
 package dev.frederikpietzko.springaidemo.backend.guardrail
 
+import dev.frederikpietzko.springai.kotlin.FlowAdvisor
+import dev.frederikpietzko.springai.kotlin.FlowAdvisorChain
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
 import org.springframework.ai.chat.client.ChatClientRequest
 import org.springframework.ai.chat.client.ChatClientResponse
-import org.springframework.ai.chat.client.advisor.api.BaseAdvisor
-import org.springframework.ai.chat.client.advisor.api.StreamAdvisor
-import org.springframework.ai.chat.client.advisor.api.StreamAdvisorChain
 import org.springframework.ai.chat.messages.AssistantMessage
 import org.springframework.ai.chat.model.ChatResponse
 import org.springframework.ai.chat.model.Generation
 import org.springframework.ai.decision.DecisionModel
 import org.springframework.ai.decision.question.YesNoQuestion
 import org.springframework.core.Ordered
-import reactor.core.publisher.Flux
-import reactor.core.publisher.Mono
 
 /** The one key each decision call asks its question under. */
 private const val QUESTION = "question"
@@ -41,45 +42,35 @@ private val PROMISES_PAYOUT = YesNoQuestion.builder()
  * of the model. Output: the reply streams through untouched; if it promises a payout, [NOTICE] is appended. A refusal
  * of the decision model counts as a yes and a failed decision call fails the stream (fail closed).
  *
- * A `StreamAdvisor`, not a `BaseAdvisor`, because it must be able to end the chain without calling the rest of it.
- * It is probabilistic: one layer of several, never the only one (`docs/walkthroughs/poisoned-invoice.md`).
+ * A [FlowAdvisor] (stream only), not a `BaseAdvisor`, because it must be able to end the chain without calling the
+ * rest of it. It is probabilistic: one layer of several, never the only one (`docs/walkthroughs/poisoned-invoice.md`).
  */
-class GuardrailAdvisor(private val decisionModel: DecisionModel) : StreamAdvisor {
-    override fun getName(): String = "GuardrailAdvisor"
-
-    override fun getOrder(): Int = ORDER
-
-    override fun adviseStream(request: ChatClientRequest, chain: StreamAdvisorChain): Flux<ChatClientResponse> {
+class GuardrailAdvisor(private val decisionModel: DecisionModel) : FlowAdvisor(ORDER) {
+    override fun adviseFlow(request: ChatClientRequest, chain: FlowAdvisorChain): Flow<ChatClientResponse> = flow {
         val message = request.prompt().userMessage.text.orEmpty()
         // The decision model rejects blank text.
-        if (message.isBlank()) return checkedReply(request, chain)
-        return decide(message, INJECTION).flatMapMany { flagged ->
-            if (flagged) Flux.just(reply(request, REFUSAL)) else checkedReply(request, chain)
+        if (message.isNotBlank() && decide(message, INJECTION)) {
+            emit(reply(request, REFUSAL))
+            return@flow
         }
+        // The rest of the chain, chunk by chunk, followed by NOTICE when the completed reply promises a payout.
+        val replyText = StringBuilder()
+        chain.next(request).collect { response ->
+            response.chatResponse()?.result?.output?.text?.let(replyText::append)
+            emit(response)
+        }
+        val text = replyText.toString()
+        if (text.isNotBlank() && decide(text, PROMISES_PAYOUT)) emit(reply(request, NOTICE))
     }
 
-    /** The rest of the chain, chunk by chunk, followed by [NOTICE] when the completed reply promises a payout. */
-    private fun checkedReply(request: ChatClientRequest, chain: StreamAdvisorChain): Flux<ChatClientResponse> =
-        Flux.defer {
-            val replyText = StringBuilder()
-            chain.nextStream(request)
-                .doOnNext { response -> response.chatResponse()?.result?.output?.text?.let(replyText::append) }
-                .concatWith(
-                    Mono.defer {
-                        val text = replyText.toString()
-                        if (text.isBlank()) Mono.empty() else decide(text, PROMISES_PAYOUT)
-                    }
-                        .filter { it }
-                        .map { reply(request, NOTICE) },
-                )
-        }
-
-    /** Asks the decision model one [question] about [text]; the call blocks, so it runs on its own scheduler. */
-    private fun decide(text: String, question: YesNoQuestion): Mono<Boolean> =
-        Mono.fromCallable {
-            val response = decisionModel.call(text, mapOf(QUESTION to question))
-            response.isRefused(QUESTION) || response.getYesNo(QUESTION).isYes
-        }.subscribeOn(BaseAdvisor.DEFAULT_SCHEDULER)
+    /**
+     * Asks the decision model one [question] about [text]. The call blocks and the flow runs on whatever thread
+     * signals it, so it moves to the IO dispatcher.
+     */
+    private suspend fun decide(text: String, question: YesNoQuestion): Boolean = withContext(Dispatchers.IO) {
+        val response = decisionModel.call(text, mapOf(QUESTION to question))
+        response.isRefused(QUESTION) || response.getYesNo(QUESTION).isYes
+    }
 
     /** A chunk of the reply that the chat model never wrote, built like `SafeGuardAdvisor` builds its own. */
     private fun reply(request: ChatClientRequest, text: String): ChatClientResponse =

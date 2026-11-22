@@ -1,5 +1,7 @@
 package dev.frederikpietzko.springaidemo.backend.intake
 
+import dev.frederikpietzko.springai.kotlin.build
+import dev.frederikpietzko.springai.kotlin.prompt
 import org.slf4j.LoggerFactory
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.chat.client.entity
@@ -35,7 +37,7 @@ class ClaimIntake(
     @Value("classpath:prompts/claim-intake-system.md") systemPrompt: Resource,
     private val claimFiling: ClaimFiling,
 ) {
-    private val chatClient = builder.defaultSystem(systemPrompt, Charsets.UTF_8).build()
+    private val chatClient = builder.build { system(systemPrompt) }
 
     /** The prepared claim of each conversation: validated, shown as a card, not yet confirmed. Lost on restart. */
     private val preparedClaims = ConcurrentHashMap<String, ValidClaim>()
@@ -68,12 +70,11 @@ class ClaimIntake(
         // Nothing said yet: every detail is missing and the model is not asked.
         if (history.none { it is UserMessage }) return NOTHING_REPORTED.validate()
         val report = try {
-            chatClient.prompt()
-                .system { it.param("today", LocalDate.now(ZoneOffset.UTC).toString()) }
-                .messages(history)
-                .user(INSTRUCTION)
-                .call()
-                .entity<ClaimReport>()
+            chatClient.prompt {
+                system { param("today", LocalDate.now(ZoneOffset.UTC).toString()) }
+                messages(history)
+                user(INSTRUCTION)
+            }.call().entity<ClaimReport>()
         } catch (e: JacksonException) {
             // Malformed JSON, an unknown enum constant or a value of the wrong type.
             log.warn("Unreadable claim report", e)

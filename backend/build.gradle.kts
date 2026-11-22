@@ -16,6 +16,8 @@ dependencies {
     implementation(platform(libs.spring.boot.dependencies))
     implementation(platform(libs.spring.ai.bom))
     implementation(project(":chat-protocol"))
+    // The Kotlin DSL for Spring AI's chat client and the coroutine flow advisors (ADR-0012).
+    implementation(project(":spring-ai-kotlin"))
 
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.springframework.boot:spring-boot-starter-actuator")

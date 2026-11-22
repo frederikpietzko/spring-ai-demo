@@ -20,4 +20,13 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
-include(":backend", ":desktop", ":chat-protocol", ":control-protocol", ":cli", ":core-mcp", ":auth-server")
+include(
+    ":backend",
+    ":desktop",
+    ":chat-protocol",
+    ":control-protocol",
+    ":cli",
+    ":core-mcp",
+    ":auth-server",
+    ":spring-ai-kotlin",
+)

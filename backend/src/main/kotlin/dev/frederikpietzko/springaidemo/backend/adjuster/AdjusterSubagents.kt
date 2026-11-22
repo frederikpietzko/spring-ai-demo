@@ -6,11 +6,12 @@ import dev.frederikpietzko.springaidemo.backend.fraud.SightingBulletinSearch
 import org.springaicommunity.agent.common.task.subagent.SubagentDefinition
 import org.springaicommunity.agent.common.task.subagent.SubagentExecutor
 import org.springaicommunity.agent.common.task.subagent.TaskCall
+import dev.frederikpietzko.springai.kotlin.build
+import dev.frederikpietzko.springai.kotlin.prompt
 import org.springaicommunity.agent.utils.Skills
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.chat.client.responseEntity
 import org.springframework.ai.chat.model.ChatResponse
-import org.springframework.ai.chat.prompt.ChatOptions
 import org.springframework.ai.model.tool.ToolCallDecisions
 import org.springframework.ai.support.ToolCallbacks
 import org.springframework.ai.tool.ToolCallbackProvider
@@ -45,12 +46,12 @@ class AdjusterSubagents(
     /** The subagent's answer to the task; the fraud investigator's is a [FraudAssessment] as JSON. */
     override fun execute(taskCall: TaskCall, subagent: SubagentDefinition): String {
         val definition = subagent as AdjusterSubagent
-        val call = chatClient(definition).prompt()
-            .system(instructions(definition))
-            .user(taskCall.prompt())
-            .tools(allowedTools(definition))
-            .toolContext(ADJUSTER_IDENTITY)
-            .call()
+        val call = chatClient(definition).prompt {
+            system(instructions(definition))
+            user(taskCall.prompt())
+            tools(allowedTools(definition))
+            toolContext(ADJUSTER_IDENTITY)
+        }.call()
         if (definition.name != FRAUD_INVESTIGATOR) return call.chatResponse().answer()
         val reply = call.responseEntity<FraudAssessment>()
         val _ = reply.response.answer()
@@ -67,11 +68,10 @@ class AdjusterSubagents(
     }
 
     /** A fresh client on the agent's model; without a `model:` line the default model. */
-    private fun chatClient(definition: AdjusterSubagent): ChatClient {
-        val builder = builders.getObject()
-        definition.model?.let { builder.defaultOptions(ChatOptions.builder().model(it)) }
-        return builder.build()
-    }
+    private fun chatClient(definition: AdjusterSubagent): ChatClient =
+        builders.getObject().build {
+            definition.model?.let { name -> options { model(name) } }
+        }
 
     /** The agent's instructions, followed by the full text of each skill it preloads. */
     private fun instructions(definition: AdjusterSubagent): String {

@@ -1,13 +1,13 @@
 package dev.frederikpietzko.springaidemo.backend.chat
 
+import dev.frederikpietzko.springai.kotlin.build
+import dev.frederikpietzko.springai.kotlin.windowCompaction
 import dev.frederikpietzko.springaidemo.backend.guardrail.GuardrailAdvisor
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.decision.DecisionModel
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor
 import org.springframework.ai.session.SessionService
-import org.springframework.ai.session.advisor.SessionAdvisors
 import org.springframework.ai.session.compaction.TurnCountTrigger
-import org.springframework.ai.session.compaction.WindowCompactionStrategy
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -36,18 +36,17 @@ class ChatConfiguration {
         sessionService: SessionService,
         conversationSearch: ConversationSearch,
         decisionModel: DecisionModel,
-    ): ChatClient = builder
-        .defaultSystem(claimantSystemPrompt, Charsets.UTF_8)
-        .defaultAdvisors(AuditAdvisor(auditTrail), GuardrailAdvisor(decisionModel), policyWordingAdvisor)
-        .defaultAdvisors(
-            SessionAdvisors.builder(sessionService)
-                // Synchronous and without a summarizer: no extra model call, done before the reply completes.
-                .compaction(
-                    TurnCountTrigger(MAX_TURNS),
-                    WindowCompactionStrategy.builder().lastTurns(KEPT_TURNS).build(),
-                )
-                .build(),
-        )
-        .defaultTools(conversationSearch)
-        .build()
+    ): ChatClient = builder.build {
+        system(claimantSystemPrompt)
+        advisors {
+            +AuditAdvisor(auditTrail)
+            +GuardrailAdvisor(decisionModel)
+            +policyWordingAdvisor
+            // Synchronous and without a summarizer: no extra model call, done before the reply completes.
+            session(sessionService) {
+                compaction(TurnCountTrigger(MAX_TURNS), windowCompaction(lastTurns = KEPT_TURNS))
+            }
+        }
+        tools(conversationSearch)
+    }
 }

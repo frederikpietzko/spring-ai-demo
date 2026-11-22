@@ -4,12 +4,12 @@ import org.springframework.stereotype.Component
 
 private const val CAPACITY = 100
 
-/** How a streamed chat call ended. */
-enum class AuditOutcome { SUCCESS, FAILURE }
+/** How a streamed chat call ended: completed, failed, or cancelled by the client before it ended. */
+enum class AuditOutcome { SUCCESS, FAILURE, CANCELLED }
 
 /**
- * One audited chat call: the [userMessage], how it ended, the length of the completed reply (0 for a failed stream,
- * whose partial reply is not aggregated) and the duration.
+ * One audited chat call: the [userMessage], how it ended, the length of the reply received until then (the whole reply
+ * for a completed stream, the part before the failure or the cancellation otherwise) and the duration.
  */
 data class AuditEntry(val userMessage: String, val outcome: AuditOutcome, val replyChars: Int, val millis: Long)
 

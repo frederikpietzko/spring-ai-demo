@@ -10,6 +10,7 @@ Small, runnable examples of Spring AI 2.1 features (Kotlin, Spring Boot 4.2). Th
 | `core-mcp` | Spring Boot 4.2 application on port 8081: the insurer core system (policies, claims, payouts) as a Spring AI MCP server over Streamable HTTP, Exposed, Flyway, its own database `core` (ADR-0003); an OAuth 2 resource server that checks token, scope and claimant ownership (ADR-0009) |
 | `auth-server` | Spring Boot 4.2 application on port 9000: OAuth 2 authorization server (Spring Authorization Server with the community `mcp-authorization-server`) for the two agent clients (ADR-0009) |
 | `control-protocol` | Shared library module (no runtime): the desktop control's command and script syntax, `render`, `parseScript` and the `state` snapshot type, used by `desktop` and `cli` (ADR-0011) |
+| `spring-ai-kotlin` | Shared library module (no runtime): a Kotlin DSL for Spring AI's chat client (`ChatClient.Builder.build { }`, `chatClient.prompt { }`, `contentFlow()`, `chatResponseFlow()`) and `FlowAdvisor`, stream advisors written with coroutine flows; used by `backend` (ADR-0012) |
 | `cli` | The `kaiju` command line (Clikt), built as one native executable `./kaiju`: drives the desktop app, runs demo scripts through a small daemon, seeds the demo data (ADR-0011) |
 | `build-logic` | Included build with the `demo.kotlin-jvm` convention plugin (Kotlin flags, JUnit 6, power-assert, detekt) |
 
@@ -360,7 +361,7 @@ Generation never runs as part of `build`, `check` or startup.
 ## Renaming the group and base package
 
 - Group: change `projectGroup` in `gradle.properties`.
-- Base package: change `basePackage` in `gradle.properties` (it feeds the desktop `mainClass` and the Exposed `tablesPackage` of every module with tables), then rename the source package root `dev.frederikpietzko.springaidemo` in `backend/`, `desktop/`, `chat-protocol/` and `core-mcp/` with one IDE rename.
+- Base package: change `basePackage` in `gradle.properties` (it feeds the desktop `mainClass` and the Exposed `tablesPackage` of every module with tables), then rename the source package root `dev.frederikpietzko.springaidemo` in `backend/`, `desktop/`, `chat-protocol/` and `core-mcp/` with one IDE rename. `spring-ai-kotlin` has its own package `dev.frederikpietzko.springai.kotlin`, independent of `basePackage`.
 
 ## Versions
 

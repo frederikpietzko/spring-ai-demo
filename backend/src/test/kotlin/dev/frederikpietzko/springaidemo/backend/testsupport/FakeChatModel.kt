@@ -78,6 +78,14 @@ class FakeChatModel(private val observationRegistry: ObservationRegistry = Obser
         script.add(Step(AssistantMessage(chunks.joinToString("")), chunks = chunks.toList(), failure = failure))
     }
 
+    /**
+     * Queues a reply that streams [chunks] and then neither ends nor fails, like a model still writing; only a
+     * cancelled subscription ends it. A blocking call answers the chunks joined.
+     */
+    fun replyChunksThenStall(vararg chunks: String) {
+        script.add(Step(AssistantMessage(chunks.joinToString("")), chunks = chunks.toList(), stalls = true))
+    }
+
     /** Queues one reply that is bare JSON text, for structured output. */
     fun replyJson(json: String) = reply(json)
 
@@ -123,7 +131,11 @@ class FakeChatModel(private val observationRegistry: ObservationRegistry = Obser
                     .concatWith(Flux.just(ChatResponse([Generation(toolCalls)])))
             } else {
                 val chunks = Flux.fromIterable(step.chunks).map { ChatResponse([Generation(AssistantMessage(it))]) }
-                step.failure?.let { chunks.concatWith(Flux.error(it)) } ?: chunks
+                when {
+                    step.failure != null -> chunks.concatWith(Flux.error(step.failure))
+                    step.stalls -> chunks.concatWith(Flux.never())
+                    else -> chunks
+                }
             }
         }
 
@@ -138,7 +150,12 @@ class FakeChatModel(private val observationRegistry: ObservationRegistry = Obser
 
     /**
      * One scripted answer: the full message for blocking calls and the text chunks for streamed calls, optionally
-     * followed by the [failure].
+     * followed by the [failure] or, if it [stalls], by nothing at all.
      */
-    private data class Step(val message: AssistantMessage, val chunks: List<String>, val failure: Throwable? = null)
+    private data class Step(
+        val message: AssistantMessage,
+        val chunks: List<String>,
+        val failure: Throwable? = null,
+        val stalls: Boolean = false,
+    )
 }

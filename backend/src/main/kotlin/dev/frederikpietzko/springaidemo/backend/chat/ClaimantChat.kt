@@ -1,10 +1,10 @@
 package dev.frederikpietzko.springaidemo.backend.chat
 
+import dev.frederikpietzko.springai.kotlin.contentFlow
+import dev.frederikpietzko.springai.kotlin.prompt
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.reactive.asFlow
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.session.SessionAttributes
-import org.springframework.ai.session.advisor.SessionAdvisors
 import org.springframework.ai.session.advisor.SessionMemoryAdvisor
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
@@ -17,16 +17,19 @@ class ClaimantChat(@Qualifier("claimantChatClient") private val claimantChatClie
      * turns and store this one; the typed text also travels as metadata, because retrieval rewrites the user message.
      */
     fun stream(conversationId: String, message: String): Flow<String> =
-        claimantChatClient.prompt()
-            .user { it.text(message).metadata(CLAIMANT_TEXT, message) }
-            .advisors(SessionAdvisors.session(conversationId))
-            // Applied only when the session is created: later turns do not change the title.
-            .advisors {
-                it.param(
+        claimantChatClient.prompt {
+            user {
+                text(message)
+                metadata(CLAIMANT_TEXT, message)
+            }
+            advisors {
+                session(conversationId)
+                // Applied only when the session is created: later turns do not change the title.
+                param(
                     SessionMemoryAdvisor.SESSION_METADATA_CONTEXT_KEY,
                     mapOf(SessionAttributes.AGENT_NAME to CLAIMANT_AGENT, TITLE to message.take(TITLE_LENGTH)),
                 )
             }
-            .toolContext(mapOf(CONVERSATION_ID to conversationId))
-            .stream().content().asFlow()
+            toolContext(mapOf(CONVERSATION_ID to conversationId))
+        }.stream().contentFlow()
 }

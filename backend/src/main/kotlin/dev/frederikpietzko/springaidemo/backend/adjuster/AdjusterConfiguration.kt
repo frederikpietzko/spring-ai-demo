@@ -1,8 +1,8 @@
 package dev.frederikpietzko.springaidemo.backend.adjuster
 
+import dev.frederikpietzko.springai.kotlin.build
 import org.springaicommunity.agent.tools.SkillsTool
 import org.springframework.ai.chat.client.ChatClient
-import org.springframework.ai.chat.prompt.ChatOptions
 import org.springframework.ai.model.tool.ToolCallConfirmationPolicy
 import org.springframework.ai.tool.ToolCallback
 import org.springframework.beans.factory.annotation.Value
@@ -26,10 +26,10 @@ class AdjusterConfiguration {
         builder: ChatClient.Builder,
         @Value("classpath:prompts/adjuster-system.md") adjusterSystemPrompt: Resource,
         @Value($$"${demo.adjuster.model}") model: String,
-    ): ChatClient = builder
-        .defaultSystem(adjusterSystemPrompt, Charsets.UTF_8)
-        .defaultOptions(ChatOptions.builder().model(model))
-        .build()
+    ): ChatClient = builder.build {
+        system(adjusterSystemPrompt)
+        options { model(model) }
+    }
 
     /**
      * Approving a claim waits for a human, like a payout. `spring.ai.tools.confirmation.tools` gates by tool name
