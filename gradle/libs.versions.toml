@@ -18,6 +18,9 @@ mcpSecurity = "0.1.14"
 clikt = "5.2.1"
 # Native image of the kaiju CLI (ADR-0011); GraalVM 25 only for :cli:nativeCompile.
 graalvmNative = "1.1.18"
+# Evaluation suite: LLM evaluators with a Spring AI judge and a Kotlin DSL. Built against Spring AI 1.1; verified on
+# 2.1.0-RC2 by DokimosCompatibilityTest.
+dokimos = "0.31.0"
 
 [libraries]
 # Plugins used by the convention plugin in build-logic
@@ -43,6 +46,9 @@ exposed-migration-jdbc = { module = "org.jetbrains.exposed:exposed-migration-jdb
 exposed-java-time = { module = "org.jetbrains.exposed:exposed-java-time", version.ref = "exposed" }
 # Adjuster todo list and skills (TodoWriteTool, SkillsTool), ADR-0007
 spring-ai-agent-utils = { module = "org.springaicommunity:spring-ai-agent-utils", version.ref = "springAiAgentUtils" }
+# Evaluation suite (backend source set `evaluation` only)
+dokimos-spring-ai = { module = "dev.dokimos:dokimos-spring-ai", version.ref = "dokimos" }
+dokimos-kotlin = { module = "dev.dokimos:dokimos-kotlin", version.ref = "dokimos" }
 archunit-junit6 = { module = "com.tngtech.archunit:archunit-junit6", version.ref = "archunit" }
 
 # MCP security (ADR-0009): plain modules only, no *-spring-boot auto-configuration modules

@@ -120,7 +120,7 @@ val secretsScan = tasks.register<Test>("secretsScan") {
     systemProperty("secrets.scan.root", repositoryRoot)
 }
 
-// The evaluation suite (ADR-0004 addendum): real models judged by Spring AI evaluators, in its own source set with
+// The evaluation suite (ADR-0004 addendum): real models judged by dokimos evaluators, in its own source set with
 // the test dependencies and its own Spring context. `check` compiles and analyses it but never runs it.
 val evaluation: SourceSet = sourceSets.create("evaluation") {
     compileClasspath += sourceSets.main.get().output
@@ -134,8 +134,14 @@ configurations.named(evaluation.runtimeOnlyConfigurationName) {
     extendsFrom(configurations.testRuntimeOnly.get())
 }
 
+dependencies {
+    // dokimos: the evaluators, the Spring AI judge adapter and the Kotlin DSL; the evaluation suite only.
+    evaluation.implementationConfigurationName(libs.dokimos.spring.ai)
+    evaluation.implementationConfigurationName(libs.dokimos.kotlin)
+}
+
 tasks.register<Test>("evaluate") {
-    description = "Judges real-model answers with Spring AI evaluators (needs ANTHROPIC_API_KEY, Ollama and Docker)."
+    description = "Judges real-model answers with dokimos evaluators (needs ANTHROPIC_API_KEY, Ollama and Docker)."
     group = "verification"
     testClassesDirs = evaluation.output.classesDirs
     classpath = evaluation.runtimeClasspath
