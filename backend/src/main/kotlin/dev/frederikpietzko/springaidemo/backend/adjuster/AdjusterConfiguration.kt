@@ -39,10 +39,11 @@ class AdjusterConfiguration {
     @Bean
     fun claimApprovalConfirmation(json: JsonMapper): ToolCallConfirmationPolicy =
         ToolCallConfirmationPolicy { call, _ ->
-            call.name() == UPDATE_CLAIM_STATUS && isApproval(json, call.arguments())
+            call.name() == UPDATE_CLAIM_STATUS && needsConfirmation(json, call.arguments())
         }
 
-    private fun isApproval(json: JsonMapper, arguments: String): Boolean =
+    /** Approvals wait for a human; unreadable arguments do too (deny by default). */
+    private fun needsConfirmation(json: JsonMapper, arguments: String): Boolean =
         runCatching { json.readTree(arguments).path("status").asString(null) == "APPROVED" }.getOrDefault(true)
 
     /** The `Task` tool: delegates to the subagents `fraud-investigator` and `damage-assessor`, run by [subagents]. */
