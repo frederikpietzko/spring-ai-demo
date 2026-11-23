@@ -14,6 +14,10 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 // Same image as the local database in compose.yaml and the test context; keep them in sync.
 private const val POSTGRES_IMAGE = "pgvector/pgvector:pg18"
 
+/** Keeps the judge's JSON to the keys each dokimos prompt names; see [EvaluationInfrastructure.judge]. */
+private const val JUDGE_SYSTEM = "You are a strict evaluator. When a prompt asks for JSON, use exactly the keys its " +
+    "example shows and no others; a trailing ... in an example never stands for further keys."
+
 /**
  * Infrastructure of the evaluation context: a real PostgreSQL with pgvector, stub core tools and the judge. No
  * `ChatClient.Builder` bean: one would switch off the auto-configured prototype builder. The judge takes its own fresh
@@ -43,9 +47,10 @@ class EvaluationInfrastructure {
     fun claimantCore(): ClaimantCore = ClaimantCore { error("The evaluation runs without the core system") }
 
     /**
-     * The judge of every dokimos evaluator: the configured chat model behind a fresh builder, without a system text,
-     * because each evaluator writes its own prompt and reads a JSON answer.
+     * The judge of every dokimos evaluator: the configured chat model behind a fresh builder. Each evaluator writes its
+     * own prompt and reads a JSON answer; the system text only keeps that JSON to the keys the prompt shows, because
+     * dokimos 0.31 rejects any other key (faithfulness's example ends in `...`, and the model then adds a "claim").
      */
     @Bean
-    fun judge(builder: ChatClient.Builder): JudgeLM = SpringAiSupport.asJudge(builder)
+    fun judge(builder: ChatClient.Builder): JudgeLM = SpringAiSupport.asJudge(builder.defaultSystem(JUDGE_SYSTEM))
 }
